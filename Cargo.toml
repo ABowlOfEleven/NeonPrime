@@ -13,3 +13,7 @@ nvml-wrapper = "0.10"
 
 [build-dependencies]
 slint-build = "1"
+
+# Dev-only: rasterize SVG icons to PNG so they can be previewed during design.
+[dev-dependencies]
+resvg = "0.47"

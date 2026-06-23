@@ -73,6 +73,10 @@ Rollback, modes, and config-export are all the same primitive: a **reversible, d
 
 Early. Phase 0. The reactor is warming up.
 
+## Credits
+
+- Crowbar icon (HEV theme) — ["Crowbar"](https://game-icons.net/1x1/delapouite/crowbar.html) by Delapouite, [game-icons.net](https://game-icons.net), licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Recolored for theming. All other icons are original.
+
 ---
 
 <sub>NeonPrime borrows a name Valve filed and never shipped — seemed only fair to finish what they started, and to count past two.</sub>
