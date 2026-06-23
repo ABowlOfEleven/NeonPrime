@@ -1,7 +1,5 @@
-// NeonPrime UI — Phase 0 shell.
-// Two first-class themes driven by a single `Theme.hev` toggle:
-//   Holographic (default) — cyan / ember on deep glass.
-//   HEV — Half-Life HEV-suit skin — Black Mesa amber, danger-red overheats.
+// NeonPrime UI — Phase 1: live telemetry HUD.
+// Two first-class themes driven by `Theme.hev`; live data flows in via `Sys`.
 
 global Theme {
     in-out property <bool> hev: false;
@@ -26,8 +24,23 @@ global Theme {
     out property <string> tweaks-label: hev ? "PRY BLOAT" : "TWEAKS";
     out property <string> logo-glyph: hev ? "λ" : "◢";
     out property <string> tagline: hev ? "HEV · v3.0" : "v3.0.0";
-    out property <string> temp-value: hev ? "82°C" : "71°C";
     out property <string> toggle-label: hev ? "THEME: HEV" : "THEME: HOLO";
+}
+
+// Live system vitals, written each tick from Rust.
+export global Sys {
+    in-out property <float> cpu-ratio: 0;
+    in-out property <string> cpu-text: "—";
+    in-out property <float> ram-ratio: 0;
+    in-out property <string> ram-text: "—";
+    in-out property <bool> gpu-available: false;
+    in-out property <float> gpu-ratio: 0;
+    in-out property <string> gpu-text: "—";
+    in-out property <float> vram-ratio: 0;
+    in-out property <string> vram-text: "—";
+    in-out property <float> temp-ratio: 0;
+    in-out property <string> temp-text: "—";
+    in-out property <bool> temp-warn: false;
 }
 
 component NavItem inherits Rectangle {
@@ -107,10 +120,68 @@ component Meter inherits VerticalLayout {
         Rectangle {
             x: 0;
             y: 0;
-            width: parent.width * root.ratio;
+            width: parent.width * clamp(root.ratio, 0, 1);
             height: parent.height;
             border-radius: 5px;
             background: root.warn ? Theme.ember : Theme.accent;
+        }
+    }
+}
+
+// Circular load gauge. The value arc is an SVG arc computed from `ratio`.
+component Gauge inherits Rectangle {
+    in property <float> ratio;
+    in property <string> value-text;
+    in property <string> caption;
+    in property <bool> warn;
+    width: 132px;
+    height: 132px;
+
+    // Geometry in a 124x124 box: centre (62,62), radius 58, sweep from the top.
+    property <float> r: clamp(root.ratio, 0, 0.9999);
+    property <angle> end-ang: -90deg + r * 359.9deg;
+    property <float> ex: 62 + 58 * cos(end-ang);
+    property <float> ey: 62 + 58 * sin(end-ang);
+    property <int> large: r * 359.9 > 180 ? 1 : 0;
+
+    Rectangle {
+        x: 4px;
+        y: 4px;
+        width: 124px;
+        height: 124px;
+        border-radius: 62px;
+        border-width: 8px;
+        border-color: Theme.track;
+        background: transparent;
+    }
+    Path {
+        x: 4px;
+        y: 4px;
+        width: 124px;
+        height: 124px;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 124;
+        viewbox-height: 124;
+        commands: "M 62 4 A 58 58 0 \{root.large} 1 \{root.ex} \{root.ey}";
+        stroke: root.warn ? Theme.ember : Theme.accent;
+        stroke-width: 7px;
+        fill: transparent;
+    }
+    VerticalLayout {
+        alignment: center;
+        spacing: 2px;
+        Text {
+            text: root.value-text;
+            color: root.warn ? Theme.ember-soft : Theme.accent-soft;
+            horizontal-alignment: center;
+            font-size: 30px;
+        }
+        Text {
+            text: root.caption;
+            color: Theme.text-dim;
+            horizontal-alignment: center;
+            font-size: 11px;
         }
     }
 }
@@ -226,7 +297,8 @@ export component AppWindow inherits Window {
                 horizontal-stretch: 1;
                 VerticalLayout {
                     padding: 20px;
-                    spacing: 18px;
+                    spacing: 20px;
+                    // Header row
                     HorizontalLayout {
                         spacing: 8px;
                         alignment: stretch;
@@ -243,9 +315,45 @@ export component AppWindow inherits Window {
                         ModePill { label: "GAME"; }
                         ModePill { label: "WORK"; }
                     }
-                    Meter { label: "VRAM"; value: "11.2 / 24G"; ratio: 0.47; }
-                    Meter { label: "CPU"; value: "38%"; ratio: 0.38; }
-                    Meter { label: "GPU TEMP"; value: Theme.temp-value; ratio: 0.7; warn: true; }
+                    // HUD row: gauge + meters
+                    HorizontalLayout {
+                        spacing: 26px;
+                        alignment: stretch;
+                        VerticalLayout {
+                            alignment: center;
+                            Gauge {
+                                ratio: Sys.gpu-ratio;
+                                value-text: Sys.gpu-text;
+                                caption: "GPU LOAD";
+                            }
+                        }
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            alignment: center;
+                            spacing: 14px;
+                            Meter {
+                                label: "VRAM";
+                                value: Sys.vram-text;
+                                ratio: Sys.vram-ratio;
+                            }
+                            Meter {
+                                label: "RAM";
+                                value: Sys.ram-text;
+                                ratio: Sys.ram-ratio;
+                            }
+                            Meter {
+                                label: "CPU";
+                                value: Sys.cpu-text;
+                                ratio: Sys.cpu-ratio;
+                            }
+                            Meter {
+                                label: "GPU TEMP";
+                                value: Sys.temp-text;
+                                ratio: Sys.temp-ratio;
+                                warn: Sys.temp-warn;
+                            }
+                        }
+                    }
                     Rectangle { vertical-stretch: 1; }
                 }
             }
@@ -265,7 +373,7 @@ export component AppWindow inherits Window {
                 padding-left: 20px;
                 padding-right: 20px;
                 Text {
-                    text: "BROKER CONNECTED";
+                    text: Sys.gpu-available ? "BROKER CONNECTED · GPU LINKED" : "BROKER CONNECTED · NO GPU";
                     color: Theme.text-dim;
                     vertical-alignment: center;
                     font-size: 11px;
