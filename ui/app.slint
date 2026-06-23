@@ -1,32 +1,29 @@
-// NeonPrime UI — Phase 1: live telemetry HUD.
-// Two first-class themes driven by `Theme.hev`; live data flows in via `Sys`.
+// NeonPrime UI — P3: nav-driven views + the Tweaks panel.
+// Themes via `Theme.hev`; live telemetry via `Sys`; tweak rows via `Tweaks`.
+
+import { ListView } from "std-widgets.slint";
 
 global Theme {
     in-out property <bool> hev: false;
 
-    // Surfaces
     out property <color> bg: hev ? #0d0b06 : #061119;
     out property <color> divider: hev ? #463209 : #123043;
     out property <color> track: hev ? #261b07 : #0e2230;
 
-    // Accents — `accent` reports nominal data, `ember` flags attention / active state.
     out property <color> accent: hev ? #ff9f2e : #34d2ff;
     out property <color> accent-soft: hev ? #ffc061 : #8ae9ff;
     out property <color> ember: hev ? #e24b4a : #ce8a1f;
     out property <color> ember-soft: hev ? #ff7a6a : #e6ae45;
 
-    // Text
     out property <color> text-dim: hev ? #8a6a2a : #5c7e92;
     out property <color> text-body: hev ? #c9a766 : #a9c6d6;
 
-    // Theme-dependent copy
     out property <string> overview-title: hev ? "HAZARD SYSTEMS ONLINE" : "SYSTEM OVERVIEW";
     out property <string> tweaks-label: hev ? "PRY BLOAT" : "TWEAKS";
     out property <string> tagline: hev ? "HEV · v3.0" : "v3.0.0";
     out property <string> toggle-label: hev ? "THEME: HEV" : "THEME: HOLO";
 }
 
-// Live system vitals, written each tick from Rust.
 export global Sys {
     in-out property <float> cpu-ratio: 0;
     in-out property <string> cpu-text: "—";
@@ -42,10 +39,43 @@ export global Sys {
     in-out property <bool> temp-warn: false;
 }
 
+// Which page the sidebar has selected.
+global Nav {
+    in-out property <int> page: 0;
+}
+
+export struct TweakRow {
+    id: int,
+    name: string,
+    desc: string,
+    category: string,
+    applied: bool,
+    elevated: bool,
+}
+
+export global Tweaks {
+    in property <[TweakRow]> rows;
+    // (row-id, desired-applied)
+    callback toggle(int, bool);
+}
+
+export struct AppRow {
+    id: int,
+    name: string,
+    publisher: string,
+    category: string,
+}
+
+export global Installer {
+    in property <[AppRow]> rows;
+    callback install(int);
+}
+
 component NavItem inherits Rectangle {
     in property <string> label;
-    in property <bool> active;
+    in property <int> index;
     in property <image> icon;
+    property <bool> active: Nav.page == root.index;
     height: 34px;
     background: active ? Theme.accent.with-alpha(0.08) : transparent;
 
@@ -66,7 +96,7 @@ component NavItem inherits Rectangle {
                 width: 20px;
                 height: 20px;
                 source: root.icon;
-                colorize: root.active ? Theme.accent : Theme.text-dim;
+                colorize: active ? Theme.accent : Theme.text-dim;
             }
         }
         Text {
@@ -74,6 +104,11 @@ component NavItem inherits Rectangle {
             color: active ? Theme.accent-soft : Theme.text-dim;
             vertical-alignment: center;
             font-size: 12px;
+        }
+    }
+    TouchArea {
+        clicked => {
+            Nav.page = root.index;
         }
     }
 }
@@ -131,7 +166,6 @@ component Meter inherits VerticalLayout {
     }
 }
 
-// Circular load gauge. The value arc is an SVG arc computed from `ratio`.
 component Gauge inherits Rectangle {
     in property <float> ratio;
     in property <string> value-text;
@@ -140,7 +174,6 @@ component Gauge inherits Rectangle {
     width: 132px;
     height: 132px;
 
-    // Geometry in a 124x124 box: centre (62,62), radius 58, sweep from the top.
     property <float> r: clamp(root.ratio, 0, 0.9999);
     property <angle> end-ang: -90deg + r * 359.9deg;
     property <float> ex: 62 + 58 * cos(end-ang);
@@ -186,6 +219,285 @@ component Gauge inherits Rectangle {
             horizontal-alignment: center;
             font-size: 11px;
         }
+    }
+}
+
+component Toggle inherits Rectangle {
+    in property <bool> on;
+    callback toggled(bool);
+    width: 44px;
+    height: 22px;
+    border-radius: 11px;
+    border-width: 1px;
+    border-color: on ? Theme.accent : Theme.divider;
+    background: on ? Theme.accent.with-alpha(0.2) : transparent;
+
+    Rectangle {
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        y: 3px;
+        x: on ? parent.width - 19px : 3px;
+        background: on ? Theme.accent : Theme.text-dim;
+        animate x { duration: 110ms; easing: ease-out; }
+    }
+    TouchArea {
+        clicked => {
+            root.toggled(!root.on);
+        }
+    }
+}
+
+component PushButton inherits Rectangle {
+    in property <string> label;
+    callback clicked;
+    width: 78px;
+    height: 26px;
+    border-radius: 7px;
+    border-width: 1px;
+    border-color: Theme.accent;
+    background: touch.pressed ? Theme.accent.with-alpha(0.28) : Theme.accent.with-alpha(0.12);
+    Text {
+        text: root.label;
+        color: Theme.accent-soft;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        font-size: 11px;
+    }
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component AppRowView inherits Rectangle {
+    in property <AppRow> app;
+    height: 54px;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: root.app.name;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.app.category;
+                    color: Theme.text-dim;
+                    font-size: 9px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: root.app.publisher;
+                color: Theme.text-dim;
+                font-size: 11px;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            PushButton {
+                label: "INSTALL";
+                clicked => {
+                    Installer.install(root.app.id);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component InstallView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 12px;
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        Text {
+            text: "INSTALL";
+            color: Theme.accent-soft;
+            font-size: 14px;
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Text {
+            text: "via winget";
+            color: Theme.text-dim;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+    }
+    ListView {
+        vertical-stretch: 1;
+        for a in Installer.rows: AppRowView {
+            app: a;
+        }
+    }
+}
+
+component TweakRowView inherits Rectangle {
+    in property <TweakRow> tw;
+    height: 60px;
+
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: root.tw.name;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.tw.category;
+                    color: Theme.text-dim;
+                    font-size: 9px;
+                    vertical-alignment: center;
+                }
+                if root.tw.elevated: Text {
+                    text: "· ADMIN";
+                    color: Theme.ember-soft;
+                    font-size: 9px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: root.tw.desc;
+                color: Theme.text-dim;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Toggle {
+                on: root.tw.applied;
+                toggled(v) => {
+                    Tweaks.toggle(root.tw.id, v);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component DashboardView inherits VerticalLayout {
+    padding: 20px;
+    spacing: 20px;
+    HorizontalLayout {
+        spacing: 8px;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: Theme.overview-title;
+                color: Theme.accent-soft;
+                font-size: 14px;
+            }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        ModePill { label: "AI"; active: true; }
+        ModePill { label: "GAME"; }
+        ModePill { label: "WORK"; }
+    }
+    HorizontalLayout {
+        spacing: 26px;
+        alignment: stretch;
+        VerticalLayout {
+            alignment: center;
+            Gauge {
+                ratio: Sys.gpu-ratio;
+                value-text: Sys.gpu-text;
+                caption: "GPU LOAD";
+            }
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            spacing: 14px;
+            Meter { label: "VRAM"; value: Sys.vram-text; ratio: Sys.vram-ratio; }
+            Meter { label: "RAM"; value: Sys.ram-text; ratio: Sys.ram-ratio; }
+            Meter { label: "CPU"; value: Sys.cpu-text; ratio: Sys.cpu-ratio; }
+            Meter { label: "GPU TEMP"; value: Sys.temp-text; ratio: Sys.temp-ratio; warn: Sys.temp-warn; }
+        }
+    }
+    Rectangle { vertical-stretch: 1; }
+}
+
+component TweaksView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 12px;
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        Text {
+            text: Theme.hev ? "PRY THE BLOAT" : "TWEAKS";
+            color: Theme.accent-soft;
+            font-size: 14px;
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Text {
+            text: "● ROLLBACK ARMED";
+            color: Theme.ember-soft;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+    }
+    ListView {
+        vertical-stretch: 1;
+        for row in Tweaks.rows: TweakRowView {
+            tw: row;
+        }
+    }
+}
+
+component PlaceholderView inherits VerticalLayout {
+    in property <string> label;
+    in property <string> sub;
+    alignment: center;
+    spacing: 8px;
+    Text {
+        text: root.label;
+        color: Theme.accent-soft;
+        font-size: 18px;
+        horizontal-alignment: center;
+    }
+    Text {
+        text: root.sub;
+        color: Theme.text-dim;
+        font-size: 12px;
+        horizontal-alignment: center;
     }
 }
 
@@ -265,34 +577,17 @@ export component AppWindow inherits Window {
 
         // ── Body ───────────────────────────────────────────────────
         HorizontalLayout {
-            // Sidebar
             Rectangle {
                 width: 160px;
                 VerticalLayout {
                     padding-top: 26px;
                     padding-bottom: 16px;
                     spacing: 4px;
-                    NavItem {
-                        label: "DASHBOARD";
-                        active: true;
-                        icon: @image-url("icons/dashboard.svg");
-                    }
-                    NavItem {
-                        label: Theme.tweaks-label;
-                        icon: Theme.hev ? @image-url("icons/crowbar.svg") : @image-url("icons/tweaks.svg");
-                    }
-                    NavItem {
-                        label: "INSTALL";
-                        icon: @image-url("icons/install.svg");
-                    }
-                    NavItem {
-                        label: "MODES";
-                        icon: @image-url("icons/modes.svg");
-                    }
-                    NavItem {
-                        label: "CONFIG";
-                        icon: @image-url("icons/config.svg");
-                    }
+                    NavItem { label: "DASHBOARD"; index: 0; icon: @image-url("icons/dashboard.svg"); }
+                    NavItem { label: Theme.tweaks-label; index: 1; icon: Theme.hev ? @image-url("icons/crowbar.svg") : @image-url("icons/tweaks.svg"); }
+                    NavItem { label: "INSTALL"; index: 2; icon: @image-url("icons/install.svg"); }
+                    NavItem { label: "MODES"; index: 3; icon: @image-url("icons/modes.svg"); }
+                    NavItem { label: "CONFIG"; index: 4; icon: @image-url("icons/config.svg"); }
                     Rectangle { vertical-stretch: 1; }
                     HorizontalLayout {
                         padding-left: 18px;
@@ -321,69 +616,32 @@ export component AppWindow inherits Window {
                 }
             }
 
-            // Main content
+            // Main content — switches on Nav.page.
             Rectangle {
                 horizontal-stretch: 1;
-                VerticalLayout {
-                    padding: 20px;
-                    spacing: 20px;
-                    // Header row
-                    HorizontalLayout {
-                        spacing: 8px;
-                        alignment: stretch;
-                        VerticalLayout {
-                            alignment: center;
-                            Text {
-                                text: Theme.overview-title;
-                                color: Theme.accent-soft;
-                                font-size: 14px;
-                            }
-                        }
-                        Rectangle { horizontal-stretch: 1; }
-                        ModePill { label: "AI"; active: true; }
-                        ModePill { label: "GAME"; }
-                        ModePill { label: "WORK"; }
-                    }
-                    // HUD row: gauge + meters
-                    HorizontalLayout {
-                        spacing: 26px;
-                        alignment: stretch;
-                        VerticalLayout {
-                            alignment: center;
-                            Gauge {
-                                ratio: Sys.gpu-ratio;
-                                value-text: Sys.gpu-text;
-                                caption: "GPU LOAD";
-                            }
-                        }
-                        VerticalLayout {
-                            horizontal-stretch: 1;
-                            alignment: center;
-                            spacing: 14px;
-                            Meter {
-                                label: "VRAM";
-                                value: Sys.vram-text;
-                                ratio: Sys.vram-ratio;
-                            }
-                            Meter {
-                                label: "RAM";
-                                value: Sys.ram-text;
-                                ratio: Sys.ram-ratio;
-                            }
-                            Meter {
-                                label: "CPU";
-                                value: Sys.cpu-text;
-                                ratio: Sys.cpu-ratio;
-                            }
-                            Meter {
-                                label: "GPU TEMP";
-                                value: Sys.temp-text;
-                                ratio: Sys.temp-ratio;
-                                warn: Sys.temp-warn;
-                            }
-                        }
-                    }
-                    Rectangle { vertical-stretch: 1; }
+                if Nav.page == 0: DashboardView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 1: TweaksView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 2: InstallView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 3: PlaceholderView {
+                    width: parent.width;
+                    height: parent.height;
+                    label: "MODES";
+                    sub: "AI / Game / Work — coming in P4";
+                }
+                if Nav.page == 4: PlaceholderView {
+                    width: parent.width;
+                    height: parent.height;
+                    label: "CONFIG";
+                    sub: "declarative export / import — coming in P5";
                 }
             }
         }
