@@ -73,12 +73,65 @@ impl Tweak {
 const EXPLORER_ADV: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
 const PERSONALIZE: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
 const SEARCH: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Search";
+const ADV_INFO: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\AdvertisingInfo";
+const PRIVACY: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Privacy";
+const CDM: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager";
+const DESKTOP: &str = "Control Panel\\Desktop";
+const EXPLORER_POLICY: &str = "Software\\Policies\\Microsoft\\Windows\\Explorer";
+const CLSID_CTX: &str =
+    "Software\\Classes\\CLSID\\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\\InprocServer32";
 
 fn set(hive: Hive, path: &str, name: &str, v: RegValue) -> Action {
     Action::SetReg { hive, path: path.into(), name: name.into(), value: v }
 }
 fn del(hive: Hive, path: &str, name: &str) -> Action {
     Action::DeleteReg { hive, path: path.into(), name: name.into() }
+}
+
+/// A DWORD tweak whose `off` restores an explicit default value.
+#[allow(clippy::too_many_arguments)]
+fn dw(
+    id: &'static str,
+    name: &'static str,
+    desc: &'static str,
+    category: Category,
+    hive: Hive,
+    path: &'static str,
+    key: &'static str,
+    on_val: u32,
+    off_val: u32,
+) -> Tweak {
+    Tweak {
+        id,
+        name,
+        desc,
+        category,
+        on: vec![set(hive, path, key, RegValue::Dword(on_val))],
+        off: vec![set(hive, path, key, RegValue::Dword(off_val))],
+        probe: Probe { hive, path: path.into(), name: key.into(), applied: Some(RegValue::Dword(on_val)) },
+    }
+}
+
+/// A DWORD tweak whose default is "value absent", so `off` deletes it.
+fn dw_del(
+    id: &'static str,
+    name: &'static str,
+    desc: &'static str,
+    category: Category,
+    hive: Hive,
+    path: &'static str,
+    key: &'static str,
+    on_val: u32,
+) -> Tweak {
+    Tweak {
+        id,
+        name,
+        desc,
+        category,
+        on: vec![set(hive, path, key, RegValue::Dword(on_val))],
+        off: vec![del(hive, path, key)],
+        probe: Probe { hive, path: path.into(), name: key.into(), applied: Some(RegValue::Dword(on_val)) },
+    }
 }
 
 /// The full catalog. Index in this vec doubles as the UI row id.
@@ -88,81 +141,98 @@ pub fn catalog() -> Vec<Tweak> {
 
     vec![
         // ── Sandbox (safe to toggle in automated tests) ──────────────
-        Tweak {
-            id: "sandbox-demo",
-            name: "Demo toggle (safe sandbox)",
-            desc: "Writes only to HKCU\\Software\\NeonPrime\\Test — proves the apply/undo pipeline, changes nothing real.",
-            category: Sandbox,
-            on: vec![set(Hkcu, "Software\\NeonPrime\\Test", "DemoTweak", RegValue::Dword(1))],
-            off: vec![del(Hkcu, "Software\\NeonPrime\\Test", "DemoTweak")],
-            probe: Probe { hive: Hkcu, path: "Software\\NeonPrime\\Test".into(), name: "DemoTweak".into(), applied: Some(RegValue::Dword(1)) },
-        },
+        dw_del("sandbox-demo", "Demo toggle (safe sandbox)",
+            "Writes only to HKCU\\Software\\NeonPrime\\Test — proves the apply/undo pipeline, changes nothing real.",
+            Sandbox, Hkcu, "Software\\NeonPrime\\Test", "DemoTweak", 1),
+
         // ── Interface (HKCU, no elevation) ───────────────────────────
+        dw("show-file-extensions", "Show file extensions",
+            "Reveal extensions for known file types in Explorer.",
+            Interface, Hkcu, EXPLORER_ADV, "HideFileExt", 0, 1),
+        dw("show-hidden-files", "Show hidden files",
+            "Display hidden files and folders in Explorer.",
+            Interface, Hkcu, EXPLORER_ADV, "Hidden", 1, 2),
+        dw("dark-mode", "Dark mode (apps)",
+            "Use the dark theme for apps that follow the system setting.",
+            Interface, Hkcu, PERSONALIZE, "AppsUseLightTheme", 0, 1),
+        dw("dark-mode-system", "Dark mode (system / taskbar)",
+            "Use the dark theme for the taskbar, Start, and system surfaces.",
+            Interface, Hkcu, PERSONALIZE, "SystemUsesLightTheme", 0, 1),
+        dw("disable-transparency", "Disable transparency effects",
+            "Turn off acrylic/transparency for a flatter, snappier shell.",
+            Interface, Hkcu, PERSONALIZE, "EnableTransparency", 0, 1),
+        dw("taskbar-align-left", "Left-align the taskbar",
+            "Move taskbar icons to the left edge (Windows 11).",
+            Interface, Hkcu, EXPLORER_ADV, "TaskbarAl", 0, 1),
+        dw("hide-task-view", "Hide Task View button",
+            "Remove the Task View button from the taskbar.",
+            Interface, Hkcu, EXPLORER_ADV, "ShowTaskViewButton", 0, 1),
+        dw("hide-widgets", "Hide Widgets button",
+            "Remove the Widgets button from the taskbar (Windows 11).",
+            Interface, Hkcu, EXPLORER_ADV, "TaskbarDa", 0, 1),
+        dw("hide-taskbar-search", "Hide taskbar search box",
+            "Collapse the taskbar search field to reclaim space.",
+            Interface, Hkcu, SEARCH, "SearchboxTaskbarMode", 0, 1),
+        dw("show-seconds-clock", "Show seconds in the clock",
+            "Display seconds on the taskbar clock.",
+            Interface, Hkcu, EXPLORER_ADV, "ShowSecondsInSystemClock", 1, 0),
+        dw("explorer-to-thispc", "Open Explorer to This PC",
+            "Start File Explorer at This PC instead of Home / Quick access.",
+            Interface, Hkcu, EXPLORER_ADV, "LaunchTo", 1, 2),
         Tweak {
-            id: "show-file-extensions",
-            name: "Show file extensions",
-            desc: "Reveal extensions for known file types in Explorer.",
+            id: "classic-context-menu",
+            name: "Classic right-click menu",
+            desc: "Restore the full Windows 10 context menu (Windows 11). Needs an Explorer restart.",
             category: Interface,
-            on: vec![set(Hkcu, EXPLORER_ADV, "HideFileExt", RegValue::Dword(0))],
-            off: vec![set(Hkcu, EXPLORER_ADV, "HideFileExt", RegValue::Dword(1))],
-            probe: Probe { hive: Hkcu, path: EXPLORER_ADV.into(), name: "HideFileExt".into(), applied: Some(RegValue::Dword(0)) },
+            on: vec![set(Hkcu, CLSID_CTX, "", RegValue::Sz(String::new()))],
+            off: vec![del(Hkcu, CLSID_CTX, "")],
+            probe: Probe { hive: Hkcu, path: CLSID_CTX.into(), name: String::new(), applied: Some(RegValue::Sz(String::new())) },
         },
+
+        // ── Privacy (HKCU, no elevation) ─────────────────────────────
+        dw_del("disable-start-web-search", "Disable Start menu web search",
+            "Stop the Start menu from sending searches to Bing.",
+            Privacy, Hkcu, EXPLORER_POLICY, "DisableSearchBoxSuggestions", 1),
+        dw("disable-advertising-id", "Disable advertising ID",
+            "Stop apps from using your advertising ID to profile you.",
+            Privacy, Hkcu, ADV_INFO, "Enabled", 0, 1),
+        dw("disable-tailored-experiences", "Disable tailored experiences",
+            "Stop Windows tailoring tips and ads from your diagnostic data.",
+            Privacy, Hkcu, PRIVACY, "TailoredExperiencesWithDiagnosticDataEnabled", 0, 1),
+        dw("disable-start-tracking", "Disable recently-opened tracking",
+            "Stop tracking recently opened files in Start and Jump Lists.",
+            Privacy, Hkcu, EXPLORER_ADV, "Start_TrackDocs", 0, 1),
+        dw("disable-suggestions", "Disable Settings suggestions",
+            "Turn off 'suggested content' ads in the Settings app.",
+            Privacy, Hkcu, CDM, "SystemPaneSuggestionsEnabled", 0, 1),
+
+        // ── Performance (HKCU) ───────────────────────────────────────
         Tweak {
-            id: "show-hidden-files",
-            name: "Show hidden files",
-            desc: "Display hidden files and folders in Explorer.",
-            category: Interface,
-            on: vec![set(Hkcu, EXPLORER_ADV, "Hidden", RegValue::Dword(1))],
-            off: vec![set(Hkcu, EXPLORER_ADV, "Hidden", RegValue::Dword(2))],
-            probe: Probe { hive: Hkcu, path: EXPLORER_ADV.into(), name: "Hidden".into(), applied: Some(RegValue::Dword(1)) },
+            id: "fast-menu-delay",
+            name: "Faster menu animations",
+            desc: "Drop the menu show delay from 400ms to 0 for a snappier shell.",
+            category: Performance,
+            on: vec![set(Hkcu, DESKTOP, "MenuShowDelay", RegValue::Sz("0".into()))],
+            off: vec![set(Hkcu, DESKTOP, "MenuShowDelay", RegValue::Sz("400".into()))],
+            probe: Probe { hive: Hkcu, path: DESKTOP.into(), name: "MenuShowDelay".into(), applied: Some(RegValue::Sz("0".into())) },
         },
-        Tweak {
-            id: "dark-mode",
-            name: "Dark mode (apps)",
-            desc: "Use the dark theme for apps that follow the system setting.",
-            category: Interface,
-            on: vec![set(Hkcu, PERSONALIZE, "AppsUseLightTheme", RegValue::Dword(0))],
-            off: vec![set(Hkcu, PERSONALIZE, "AppsUseLightTheme", RegValue::Dword(1))],
-            probe: Probe { hive: Hkcu, path: PERSONALIZE.into(), name: "AppsUseLightTheme".into(), applied: Some(RegValue::Dword(0)) },
-        },
-        Tweak {
-            id: "hide-taskbar-search",
-            name: "Hide taskbar search box",
-            desc: "Collapse the taskbar search field to reclaim space.",
-            category: Interface,
-            on: vec![set(Hkcu, SEARCH, "SearchboxTaskbarMode", RegValue::Dword(0))],
-            off: vec![set(Hkcu, SEARCH, "SearchboxTaskbarMode", RegValue::Dword(1))],
-            probe: Probe { hive: Hkcu, path: SEARCH.into(), name: "SearchboxTaskbarMode".into(), applied: Some(RegValue::Dword(0)) },
-        },
-        // ── Privacy (HKCU policy, no elevation) ──────────────────────
-        Tweak {
-            id: "disable-start-web-search",
-            name: "Disable Start menu web search",
-            desc: "Stop the Start menu from sending searches to Bing.",
-            category: Privacy,
-            on: vec![set(Hkcu, "Software\\Policies\\Microsoft\\Windows\\Explorer", "DisableSearchBoxSuggestions", RegValue::Dword(1))],
-            off: vec![del(Hkcu, "Software\\Policies\\Microsoft\\Windows\\Explorer", "DisableSearchBoxSuggestions")],
-            probe: Probe { hive: Hkcu, path: "Software\\Policies\\Microsoft\\Windows\\Explorer".into(), name: "DisableSearchBoxSuggestions".into(), applied: Some(RegValue::Dword(1)) },
-        },
+
         // ── Privacy / Performance (HKLM, needs elevated broker) ──────
-        Tweak {
-            id: "disable-telemetry",
-            name: "Disable Windows telemetry",
-            desc: "Set the diagnostic data collection policy to the minimum.",
-            category: Privacy,
-            on: vec![set(Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection", "AllowTelemetry", RegValue::Dword(0))],
-            off: vec![del(Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection", "AllowTelemetry")],
-            probe: Probe { hive: Hklm, path: "SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection".into(), name: "AllowTelemetry".into(), applied: Some(RegValue::Dword(0)) },
-        },
-        Tweak {
-            id: "disable-copilot",
-            name: "Disable Windows Copilot",
-            desc: "Turn off the Copilot integration system-wide.",
-            category: Privacy,
-            on: vec![set(Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot", "TurnOffWindowsCopilot", RegValue::Dword(1))],
-            off: vec![del(Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot", "TurnOffWindowsCopilot")],
-            probe: Probe { hive: Hklm, path: "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot".into(), name: "TurnOffWindowsCopilot".into(), applied: Some(RegValue::Dword(1)) },
-        },
+        dw_del("disable-telemetry", "Disable Windows telemetry",
+            "Set the diagnostic data collection policy to the minimum.",
+            Privacy, Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection", "AllowTelemetry", 0),
+        dw_del("disable-copilot", "Disable Windows Copilot",
+            "Turn off the Copilot integration system-wide.",
+            Privacy, Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot", "TurnOffWindowsCopilot", 1),
+        dw_del("disable-consumer-features", "Disable consumer app pushes",
+            "Stop Windows auto-installing promoted and sponsored apps.",
+            Privacy, Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent", "DisableWindowsConsumerFeatures", 1),
+        dw_del("disable-cortana", "Disable Cortana",
+            "Turn off Cortana via policy.",
+            Privacy, Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows\\Windows Search", "AllowCortana", 0),
+        dw("long-paths", "Enable long file paths",
+            "Allow paths longer than 260 characters (dev-friendly).",
+            Performance, Hklm, "SYSTEM\\CurrentControlSet\\Control\\FileSystem", "LongPathsEnabled", 1, 0),
     ]
 }
 
