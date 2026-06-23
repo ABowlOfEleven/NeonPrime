@@ -3,7 +3,7 @@
 
 import { ListView } from "std-widgets.slint";
 
-global Theme {
+export global Theme {
     in-out property <bool> hev: false;
 
     out property <color> bg: hev ? #0d0b06 : #061119;
@@ -89,6 +89,13 @@ export global Configuration {
     in-out property <string> status;
     callback export-config();
     callback import-config();
+}
+
+export global Ui {
+    in-out property <string> toast-message;
+    in-out property <string> toast-kind; // "error" | "success" | "info"
+    callback toggle-theme();
+    callback undo-last();
 }
 
 component NavItem inherits Rectangle {
@@ -568,11 +575,12 @@ component TweaksView inherits VerticalLayout {
             font-size: 14px;
         }
         Rectangle { horizontal-stretch: 1; }
-        Text {
-            text: "● ROLLBACK ARMED";
-            color: Theme.ember-soft;
-            font-size: 11px;
-            vertical-alignment: center;
+        PushButton {
+            w: 96px;
+            label: "UNDO LAST";
+            clicked => {
+                Ui.undo-last();
+            }
         }
     }
     ListView {
@@ -639,6 +647,40 @@ component ConfigView inherits VerticalLayout {
     }
 }
 
+component Toast inherits Rectangle {
+    in property <string> message;
+    in property <string> kind;
+    property <color> tint: kind == "error" ? Theme.ember : Theme.accent;
+    property <color> tint-soft: kind == "error" ? Theme.ember-soft : Theme.accent-soft;
+    visible: message != "";
+    height: 38px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: tint;
+    background: Theme.track;
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 7px;
+                height: 7px;
+                border-radius: 4px;
+                background: tint;
+            }
+        }
+        Text {
+            text: root.message;
+            color: tint-soft;
+            vertical-alignment: center;
+            font-size: 12px;
+            overflow: elide;
+        }
+    }
+}
+
 export component AppWindow inherits Window {
     title: "NeonPrime";
     default-font-size: 13px;
@@ -699,7 +741,7 @@ export component AppWindow inherits Window {
                     }
                     TouchArea {
                         clicked => {
-                            Theme.hev = !Theme.hev;
+                            Ui.toggle-theme();
                         }
                     }
                 }
@@ -776,6 +818,14 @@ export component AppWindow inherits Window {
                 if Nav.page == 4: ConfigView {
                     width: parent.width;
                     height: parent.height;
+                }
+
+                Toast {
+                    message: Ui.toast-message;
+                    kind: Ui.toast-kind;
+                    x: 16px;
+                    width: parent.width - 32px;
+                    y: parent.height - self.height - 14px;
                 }
             }
         }

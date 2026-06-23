@@ -9,4 +9,5 @@ pub mod journal;
 pub mod modes;
 pub mod registry;
 pub mod session;
+pub mod settings;
 pub mod tweaks;

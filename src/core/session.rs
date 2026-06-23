@@ -66,8 +66,9 @@ impl BrokerSession {
                 .spawn()?;
         }
 
-        // Retry-connect: elevation + UAC can take a while.
-        let deadline = Instant::now() + Duration::from_secs(30);
+        // Retry-connect: elevation + UAC can take a while. Bounded so a declined
+        // UAC prompt doesn't hang the caller indefinitely.
+        let deadline = Instant::now() + Duration::from_secs(12);
         loop {
             match Client::connect(port, &token) {
                 Ok(client) => return Ok(BrokerSession { client, elevated }),
