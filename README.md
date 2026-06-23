@@ -31,11 +31,16 @@ The heart of NeonPrime. One click changes who your PC is:
 
 ## Features
 
-- **Telemetry HUD** — live GPU / VRAM / CPU / temp / net gauges. Cyan reports, ember warns.
-- **Tweaks & debloat** — privacy, performance, telemetry-off, appx removal, service control.
-- **Reversible everything** — an action journal with one-click undo and restore points.
+- **Telemetry HUD** — live GPU load / VRAM / CPU / temps. Vendor-neutral GPU stats (NVIDIA / AMD / Intel) via DXGI + PDH; GPU temp via NVML; best-effort CPU temp via WMI. Cyan reports, ember warns.
+- **System specs** — OS / CPU / GPU / RAM / live uptime strip on the dashboard.
+- **Tweaks & debloat** — 24 reversible tweaks across Interface / Privacy / Performance, with **live search + category filter**.
+- **Reversible everything** — an action journal with one-click **undo last**. Failures self-correct the toggle.
+- **System modes** — one-click AI / Game / Work, persisted across restarts.
+- **Quick Actions** — restart Explorer, flush DNS, clear temp, empty Recycle Bin, create restore point.
+- **Startup manager** — enable/disable per-user startup apps (reversibly).
 - **App installs** — a `winget`-backed picker.
 - **Declarative config** — export your setup to TOML, replay it on a clean install.
+- **Two themes** — Holographic (cyan) and HEV (Half-Life amber), the choice persisted.
 
 ## Aesthetic — "holographic glass, calm until it isn't"
 
@@ -67,18 +72,22 @@ Rollback, modes, and config-export are all the same primitive: a **reversible, d
 
 ## Stack
 
-`rust` · `slint` · `sysinfo` · `nvml-wrapper` · `windows-rs` · `serde` + `toml`
+`rust` · `slint` · `sysinfo` · `nvml-wrapper` · `windows` (DXGI / PDH) · `wmi` · `winreg` · `serde` + `toml`
 
 ## Status
 
-All six phases (P0–P5) are built and tested — full HUD, two themes, the reversible
-action engine + elevated broker, the Tweaks / Install / Modes / Config panels, and
-declarative export/import. 17 unit + integration tests pass.
+Phases P0–P5 plus the Dashboard / Tweaks / Install / Modes / Config / Actions /
+Startup panels are built and tested. Elevated work runs off the UI thread (no
+freeze during UAC). 20 unit + integration tests pass.
 
 **Known limitations / next steps:**
 - The elevated broker (HKLM tweaks) needs an interactive UAC prompt, so the
-  elevated end-to-end path hasn't been exercised headlessly — it's implemented and
-  unit-tested, but try the HKLM tweaks (e.g. "Disable telemetry") supervised.
+  elevated end-to-end path hasn't been exercised headlessly — implemented and
+  unit-tested; try the HKLM tweaks (e.g. "Disable telemetry") supervised.
+- **CPU temperature** is best-effort via WMI ACPI thermal zones and reads `N/A`
+  on machines that don't expose one; accurate per-core temps need a driver
+  (LibreHardwareMonitor). **GPU temperature** is NVIDIA-only (NVML); AMD/Intel
+  GPU temp would need a vendor SDK.
 - Mode `actions` are currently benign markers; real power-plan / service / GPU /
   network actions plug into the same engine as new `Action` variants.
 - IPC token is passed on the broker's command line — hardening TODO: named pipe
