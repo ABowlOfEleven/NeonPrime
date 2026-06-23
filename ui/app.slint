@@ -98,6 +98,19 @@ export global Ui {
     callback undo-last();
 }
 
+export struct QuickRow {
+    id: int,
+    name: string,
+    desc: string,
+    danger: bool,
+    elevated: bool,
+}
+
+export global Quick {
+    in property <[QuickRow]> rows;
+    callback run(int);
+}
+
 component NavItem inherits Rectangle {
     in property <string> label;
     in property <int> index;
@@ -284,16 +297,19 @@ component Toggle inherits Rectangle {
 component PushButton inherits Rectangle {
     in property <string> label;
     in property <length> w: 78px;
+    in property <bool> danger: false;
+    property <color> tint: danger ? Theme.ember : Theme.accent;
+    property <color> tint-soft: danger ? Theme.ember-soft : Theme.accent-soft;
     callback clicked;
     width: root.w;
     height: 26px;
     border-radius: 7px;
     border-width: 1px;
-    border-color: Theme.accent;
-    background: touch.pressed ? Theme.accent.with-alpha(0.28) : Theme.accent.with-alpha(0.12);
+    border-color: tint;
+    background: touch.pressed ? tint.with-alpha(0.28) : tint.with-alpha(0.12);
     Text {
         text: root.label;
-        color: Theme.accent-soft;
+        color: tint-soft;
         horizontal-alignment: center;
         vertical-alignment: center;
         font-size: 11px;
@@ -301,6 +317,88 @@ component PushButton inherits Rectangle {
     touch := TouchArea {
         clicked => {
             root.clicked();
+        }
+    }
+}
+
+component QuickActionRow inherits Rectangle {
+    in property <QuickRow> qa;
+    height: 56px;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: root.qa.name;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                }
+                if root.qa.elevated: Text {
+                    text: "· ADMIN";
+                    color: Theme.ember-soft;
+                    font-size: 9px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: root.qa.desc;
+                color: Theme.text-dim;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            PushButton {
+                label: "RUN";
+                danger: root.qa.danger;
+                clicked => {
+                    Quick.run(root.qa.id);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component QuickActionsView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 12px;
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        Text {
+            text: "QUICK ACTIONS";
+            color: Theme.accent-soft;
+            font-size: 14px;
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Text {
+            text: "one-click maintenance";
+            color: Theme.text-dim;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+    }
+    ListView {
+        vertical-stretch: 1;
+        for a in Quick.rows: QuickActionRow {
+            qa: a;
         }
     }
 }
@@ -768,6 +866,7 @@ export component AppWindow inherits Window {
                     NavItem { label: "INSTALL"; index: 2; icon: @image-url("icons/install.svg"); }
                     NavItem { label: "MODES"; index: 3; icon: @image-url("icons/modes.svg"); }
                     NavItem { label: "CONFIG"; index: 4; icon: @image-url("icons/config.svg"); }
+                    NavItem { label: "ACTIONS"; index: 5; icon: @image-url("icons/bolt.svg"); }
                     Rectangle { vertical-stretch: 1; }
                     HorizontalLayout {
                         padding-left: 18px;
@@ -816,6 +915,10 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 4: ConfigView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 5: QuickActionsView {
                     width: parent.width;
                     height: parent.height;
                 }

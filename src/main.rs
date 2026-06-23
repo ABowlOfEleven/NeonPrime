@@ -20,7 +20,7 @@ use neonprime::core::action::{Action, Reversal};
 use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
-use neonprime::core::{config, engine, installs, journal, modes, settings, tweaks};
+use neonprime::core::{config, engine, installs, journal, modes, quick, settings, tweaks};
 
 use telemetry::{Sample, Telemetry};
 
@@ -438,6 +438,54 @@ fn wire_undo(
     });
 }
 
+fn wire_quick(app: &AppWindow, notify: &Notify) {
+    let catalog = Rc::new(quick::catalog());
+    let rows: Vec<QuickRow> = catalog
+        .iter()
+        .enumerate()
+        .map(|(i, a)| QuickRow {
+            id: i as i32,
+            name: a.name.into(),
+            desc: a.desc.into(),
+            danger: a.danger,
+            elevated: a.elevated,
+        })
+        .collect();
+    app.global::<Quick>().set_rows(Rc::new(VecModel::from(rows)).into());
+
+    let cat = catalog.clone();
+    let notify = notify.clone();
+    app.global::<Quick>().on_run(move |id| {
+        let Some(a) = cat.get(id as usize) else { return };
+        let Some(inv) = quick::invocation(a.id) else { return };
+
+        let result = if inv.elevated {
+            // Launch elevated via UAC (Start-Process -Verb RunAs). Returns at once.
+            let arglist = inv
+                .args
+                .iter()
+                .map(|s| format!("'{}'", s.replace('\'', "''")))
+                .collect::<Vec<_>>()
+                .join(",");
+            let ps = format!(
+                "Start-Process -FilePath '{}' -ArgumentList {arglist} -Verb RunAs -WindowStyle Hidden",
+                inv.program
+            );
+            Command::new("powershell")
+                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
+                .spawn()
+                .map(|_| ())
+        } else {
+            Command::new(&inv.program).args(&inv.args).spawn().map(|_| ())
+        };
+
+        match result {
+            Ok(()) => notify("info", &format!("Running: {}", a.name)),
+            Err(e) => notify("error", &format!("{} failed: {e}", a.name)),
+        }
+    });
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     // Single-instance guard — a second launch exits rather than racing the journal.
     let instance = single_instance::SingleInstance::new("neonprime-singleton").ok();
@@ -480,6 +528,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let _tweak_pump = wire_tweaks(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model);
     wire_modes(&app, &jrnl, &journal_path, &notify, &modes_catalog);
     wire_installs(&app, &notify);
+    wire_quick(&app, &notify);
     wire_config(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
     wire_undo(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
 
