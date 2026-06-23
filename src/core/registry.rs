@@ -3,6 +3,7 @@
 use std::io;
 
 use winreg::enums::*;
+use winreg::types::FromRegValue;
 use winreg::RegKey;
 
 use crate::core::action::{Hive, RegValue};
@@ -39,6 +40,20 @@ pub fn write(hive: Hive, path: &str, name: &str, value: &RegValue) -> io::Result
         RegValue::Dword(v) => key.set_value(name, v),
         RegValue::Sz(s) => key.set_value(name, s),
     }
+}
+
+/// List all string (`REG_SZ` / `REG_EXPAND_SZ`) values under a key as
+/// `(name, data)` pairs. Missing key → empty.
+pub fn list_string_values(hive: Hive, path: &str) -> Vec<(String, String)> {
+    let key = match root(hive).open_subkey(path) {
+        Ok(k) => k,
+        Err(_) => return Vec::new(),
+    };
+    key.enum_values()
+        .filter_map(|r| r.ok())
+        .filter_map(|(name, val)| String::from_reg_value(&val).ok().map(|s| (name, s)))
+        .filter(|(name, _)| !name.is_empty())
+        .collect()
 }
 
 /// Delete a value. Absent key or value is treated as success (idempotent).

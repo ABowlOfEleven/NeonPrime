@@ -11,4 +11,5 @@ pub mod quick;
 pub mod registry;
 pub mod session;
 pub mod settings;
+pub mod startup;
 pub mod tweaks;

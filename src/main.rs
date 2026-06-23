@@ -22,7 +22,7 @@ use neonprime::core::action::{Action, Reversal};
 use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
-use neonprime::core::{config, engine, installs, journal, modes, quick, settings, tweaks};
+use neonprime::core::{config, engine, installs, journal, modes, quick, settings, startup, tweaks};
 
 use telemetry::{Sample, Telemetry};
 
@@ -544,6 +544,48 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
     });
 }
 
+fn wire_startup(app: &AppWindow, notify: &Notify) {
+    let model: Rc<VecModel<StartupRow>> = Rc::new(VecModel::default());
+
+    let rebuild = {
+        let model = model.clone();
+        Rc::new(move || {
+            let rows: Vec<StartupRow> = startup::list()
+                .into_iter()
+                .enumerate()
+                .map(|(i, e)| StartupRow {
+                    id: i as i32,
+                    name: e.name.as_str().into(),
+                    command: e.command.as_str().into(),
+                    enabled: e.enabled,
+                })
+                .collect();
+            model.set_vec(rows);
+        })
+    };
+    rebuild();
+    app.global::<Startup>().set_rows(model.clone().into());
+
+    let notify = notify.clone();
+    let rebuild2 = rebuild.clone();
+    let model2 = model.clone();
+    app.global::<Startup>().on_toggle(move |id, want| {
+        if let Some(row) = model2.row_data(id as usize) {
+            let (name, cmd) = (row.name.to_string(), row.command.to_string());
+            let res = if want {
+                startup::enable(&name, &cmd)
+            } else {
+                startup::disable(&name, &cmd)
+            };
+            match res {
+                Ok(()) => notify("success", &format!("{} {}", name, if want { "enabled" } else { "disabled" })),
+                Err(e) => notify("error", &format!("{name}: {e}")),
+            }
+        }
+        rebuild2();
+    });
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     // Single-instance guard — a second launch exits rather than racing the journal.
     let instance = single_instance::SingleInstance::new("neonprime-singleton").ok();
@@ -587,6 +629,7 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_modes(&app, &jrnl, &journal_path, &notify, &modes_catalog);
     wire_installs(&app, &notify);
     wire_quick(&app, &notify);
+    wire_startup(&app, &notify);
     wire_config(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
     wire_undo(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
     apply_specs(&app);

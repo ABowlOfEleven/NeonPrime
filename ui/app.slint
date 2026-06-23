@@ -122,6 +122,18 @@ export global Quick {
     callback run(int);
 }
 
+export struct StartupRow {
+    id: int,
+    name: string,
+    command: string,
+    enabled: bool,
+}
+
+export global Startup {
+    in property <[StartupRow]> rows;
+    callback toggle(int, bool);
+}
+
 component NavItem inherits Rectangle {
     in property <string> label;
     in property <int> index;
@@ -866,6 +878,83 @@ component ConfigView inherits VerticalLayout {
     }
 }
 
+component StartupRowView inherits Rectangle {
+    in property <StartupRow> entry;
+    height: 52px;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.entry.name;
+                color: Theme.text-body;
+                font-size: 13px;
+                overflow: elide;
+            }
+            Text {
+                text: root.entry.command;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Toggle {
+                on: root.entry.enabled;
+                toggled(v) => {
+                    Startup.toggle(root.entry.id, v);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component StartupView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 12px;
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        Text {
+            text: "STARTUP";
+            color: Theme.accent-soft;
+            font-size: 14px;
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Text {
+            text: "user startup apps";
+            color: Theme.text-dim;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+    }
+    if Startup.rows.length == 0: Text {
+        text: "No user startup entries found.";
+        color: Theme.text-dim;
+        font-size: 12px;
+        horizontal-alignment: center;
+    }
+    ListView {
+        vertical-stretch: 1;
+        for e in Startup.rows: StartupRowView {
+            entry: e;
+        }
+    }
+}
+
 component Toast inherits Rectangle {
     in property <string> message;
     in property <string> kind;
@@ -988,6 +1077,7 @@ export component AppWindow inherits Window {
                     NavItem { label: "MODES"; index: 3; icon: @image-url("icons/modes.svg"); }
                     NavItem { label: "CONFIG"; index: 4; icon: @image-url("icons/config.svg"); }
                     NavItem { label: "ACTIONS"; index: 5; icon: @image-url("icons/bolt.svg"); }
+                    NavItem { label: "STARTUP"; index: 6; icon: @image-url("icons/power.svg"); }
                     Rectangle { vertical-stretch: 1; }
                     HorizontalLayout {
                         padding-left: 18px;
@@ -1040,6 +1130,10 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 5: QuickActionsView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 6: StartupView {
                     width: parent.width;
                     height: parent.height;
                 }
