@@ -84,6 +84,13 @@ export global Modes {
     callback activate(int);
 }
 
+export global Configuration {
+    in-out property <string> preview;
+    in-out property <string> status;
+    callback export-config();
+    callback import-config();
+}
+
 component NavItem inherits Rectangle {
     in property <string> label;
     in property <int> index;
@@ -269,8 +276,9 @@ component Toggle inherits Rectangle {
 
 component PushButton inherits Rectangle {
     in property <string> label;
+    in property <length> w: 78px;
     callback clicked;
-    width: 78px;
+    width: root.w;
     height: 26px;
     border-radius: 7px;
     border-width: 1px;
@@ -575,22 +583,59 @@ component TweaksView inherits VerticalLayout {
     }
 }
 
-component PlaceholderView inherits VerticalLayout {
-    in property <string> label;
-    in property <string> sub;
-    alignment: center;
-    spacing: 8px;
+component ConfigView inherits VerticalLayout {
+    padding: 20px;
+    spacing: 14px;
     Text {
-        text: root.label;
+        text: "CONFIG";
         color: Theme.accent-soft;
-        font-size: 18px;
-        horizontal-alignment: center;
+        font-size: 14px;
     }
     Text {
-        text: root.sub;
+        text: "Capture your tuned setup to a portable TOML file, and replay it on a fresh install.";
         color: Theme.text-dim;
         font-size: 12px;
-        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+    HorizontalLayout {
+        spacing: 12px;
+        alignment: start;
+        PushButton {
+            label: "EXPORT";
+            clicked => {
+                Configuration.export-config();
+            }
+        }
+        PushButton {
+            w: 128px;
+            label: "IMPORT & APPLY";
+            clicked => {
+                Configuration.import-config();
+            }
+        }
+    }
+    Text {
+        text: Configuration.status;
+        color: Theme.ember-soft;
+        font-size: 11px;
+        wrap: word-wrap;
+    }
+    Rectangle {
+        vertical-stretch: 1;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: Theme.divider;
+        background: Theme.track;
+        VerticalLayout {
+            padding: 12px;
+            Text {
+                text: Configuration.preview == "" ? "// Click EXPORT to snapshot your current tweaks + active mode." : Configuration.preview;
+                color: Theme.text-body;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+            Rectangle { vertical-stretch: 1; }
+        }
     }
 }
 
@@ -728,11 +773,9 @@ export component AppWindow inherits Window {
                     width: parent.width;
                     height: parent.height;
                 }
-                if Nav.page == 4: PlaceholderView {
+                if Nav.page == 4: ConfigView {
                     width: parent.width;
                     height: parent.height;
-                    label: "CONFIG";
-                    sub: "declarative export / import — coming in P5";
                 }
             }
         }

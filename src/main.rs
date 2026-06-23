@@ -17,7 +17,7 @@ use neonprime::core::action::Action;
 use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
-use neonprime::core::{engine, installs, journal, modes, tweaks};
+use neonprime::core::{config, engine, installs, journal, modes, tweaks};
 
 use telemetry::{Sample, Telemetry};
 
@@ -194,6 +194,69 @@ fn wire_installs(app: &AppWindow) {
     });
 }
 
+fn wire_config(app: &AppWindow, jrnl: &SharedJournal, journal_path: &Path) {
+    let cfg_path = config::default_path();
+
+    {
+        let weak = app.as_weak();
+        let cfg_path = cfg_path.clone();
+        app.global::<Configuration>().on_export_config(move || {
+            let cfg = config::capture();
+            let toml = cfg.to_toml().unwrap_or_default();
+            let _ = std::fs::write(&cfg_path, &toml);
+            if let Some(app) = weak.upgrade() {
+                let c = app.global::<Configuration>();
+                c.set_preview(toml.as_str().into());
+                c.set_status(
+                    format!(
+                        "Exported {} tweak(s), mode {} → {}",
+                        cfg.tweaks.len(),
+                        cfg.mode.as_deref().unwrap_or("none"),
+                        cfg_path.display()
+                    )
+                    .as_str()
+                    .into(),
+                );
+            }
+        });
+    }
+
+    {
+        let weak = app.as_weak();
+        let jrnl = jrnl.clone();
+        let jpath = journal_path.to_path_buf();
+        app.global::<Configuration>().on_import_config(move || {
+            let Some(app) = weak.upgrade() else { return };
+            let c = app.global::<Configuration>();
+            let toml = match std::fs::read_to_string(&cfg_path) {
+                Ok(s) => s,
+                Err(_) => {
+                    c.set_status(format!("No config at {}", cfg_path.display()).as_str().into());
+                    return;
+                }
+            };
+            let cfg = match config::Config::from_toml(&toml) {
+                Ok(cfg) => cfg,
+                Err(e) => {
+                    c.set_status(format!("Parse error: {e}").as_str().into());
+                    return;
+                }
+            };
+            let applied = config::apply(&cfg, &mut jrnl.borrow_mut(), &jpath);
+            c.set_preview(toml.as_str().into());
+            c.set_status(
+                format!(
+                    "Applied {} tweak action(s), mode {}",
+                    applied,
+                    cfg.mode.as_deref().unwrap_or("none")
+                )
+                .as_str()
+                .into(),
+            );
+        });
+    }
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     let app = AppWindow::new()?;
 
@@ -203,6 +266,7 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_tweaks(&app, &jrnl, &journal_path);
     wire_modes(&app, &jrnl, &journal_path);
     wire_installs(&app);
+    wire_config(&app, &jrnl, &journal_path);
 
     let mut tele = Telemetry::new();
     apply_telemetry(&app, &tele.sample());

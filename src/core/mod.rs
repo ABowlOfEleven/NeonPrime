@@ -1,6 +1,7 @@
 //! Core domain: everything privileged-but-reversible flows through here.
 
 pub mod action;
+pub mod config;
 pub mod engine;
 pub mod installs;
 pub mod ipc;
