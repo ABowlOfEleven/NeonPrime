@@ -71,6 +71,19 @@ export global Installer {
     callback install(int);
 }
 
+export struct ModeCard {
+    id: int,
+    name: string,
+    tagline: string,
+    desc: string,
+}
+
+export global Modes {
+    in property <[ModeCard]> cards;
+    in-out property <int> active: -1;
+    callback activate(int);
+}
+
 component NavItem inherits Rectangle {
     in property <string> label;
     in property <int> index;
@@ -116,6 +129,7 @@ component NavItem inherits Rectangle {
 component ModePill inherits Rectangle {
     in property <string> label;
     in property <bool> active;
+    callback clicked;
     width: 58px;
     height: 26px;
     border-radius: 8px;
@@ -128,6 +142,11 @@ component ModePill inherits Rectangle {
         horizontal-alignment: center;
         vertical-alignment: center;
         font-size: 11px;
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
     }
 }
 
@@ -351,6 +370,80 @@ component InstallView inherits VerticalLayout {
     }
 }
 
+component ModeCardView inherits Rectangle {
+    in property <ModeCard> card;
+    in property <bool> active;
+    callback activate;
+    height: 96px;
+    border-radius: 12px;
+    border-width: active ? 2px : 1px;
+    border-color: active ? Theme.accent : Theme.divider;
+    background: active ? Theme.accent.with-alpha(0.08) : transparent;
+    HorizontalLayout {
+        padding: 16px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 4px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: root.card.name;
+                    color: Theme.accent-soft;
+                    font-size: 15px;
+                    vertical-alignment: center;
+                }
+                if root.active: Text {
+                    text: "● ACTIVE";
+                    color: Theme.accent;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: root.card.tagline;
+                color: Theme.text-body;
+                font-size: 12px;
+            }
+            Text {
+                text: root.card.desc;
+                color: Theme.text-dim;
+                font-size: 11px;
+                wrap: word-wrap;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            PushButton {
+                label: root.active ? "ACTIVE" : "ACTIVATE";
+                clicked => {
+                    root.activate();
+                }
+            }
+        }
+    }
+}
+
+component ModesView inherits VerticalLayout {
+    padding: 20px;
+    spacing: 14px;
+    Text {
+        text: Theme.hev ? "OPERATING MODES" : "SYSTEM MODES";
+        color: Theme.accent-soft;
+        font-size: 14px;
+    }
+    for card[i] in Modes.cards: ModeCardView {
+        card: card;
+        active: Modes.active == i;
+        activate => {
+            Modes.activate(i);
+        }
+    }
+    Rectangle { vertical-stretch: 1; }
+}
+
 component TweakRowView inherits Rectangle {
     in property <TweakRow> tw;
     height: 60px;
@@ -426,9 +519,9 @@ component DashboardView inherits VerticalLayout {
             }
         }
         Rectangle { horizontal-stretch: 1; }
-        ModePill { label: "AI"; active: true; }
-        ModePill { label: "GAME"; }
-        ModePill { label: "WORK"; }
+        ModePill { label: "AI"; active: Modes.active == 0; clicked => { Modes.activate(0); } }
+        ModePill { label: "GAME"; active: Modes.active == 1; clicked => { Modes.activate(1); } }
+        ModePill { label: "WORK"; active: Modes.active == 2; clicked => { Modes.activate(2); } }
     }
     HorizontalLayout {
         spacing: 26px;
@@ -631,11 +724,9 @@ export component AppWindow inherits Window {
                     width: parent.width;
                     height: parent.height;
                 }
-                if Nav.page == 3: PlaceholderView {
+                if Nav.page == 3: ModesView {
                     width: parent.width;
                     height: parent.height;
-                    label: "MODES";
-                    sub: "AI / Game / Work — coming in P4";
                 }
                 if Nav.page == 4: PlaceholderView {
                     width: parent.width;

@@ -5,6 +5,7 @@ pub mod engine;
 pub mod installs;
 pub mod ipc;
 pub mod journal;
+pub mod modes;
 pub mod registry;
 pub mod session;
 pub mod tweaks;
