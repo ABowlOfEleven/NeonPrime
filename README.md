@@ -93,9 +93,26 @@ freeze during UAC). 20 unit + integration tests pass.
 - IPC token is passed on the broker's command line — hardening TODO: named pipe
   with an explicit DACL.
 
+## Hardware sensors (optional, accurate CPU temp)
+
+Accurate CPU package temperature and motherboard sensors need ring-0 access (an
+MSR/Super-I/O driver) — the same reason HWiNFO ships one. NeonPrime gets these by
+embedding a small C# sidecar (`sensors/`) built on **LibreHardwareMonitor**, which
+streams a JSON sensor snapshot to a temp file the app polls. Click **"Enable HW
+sensors"** on the dashboard to launch it elevated (one UAC); CPU/board temps and
+fans then light up. GPU temps work without elevation.
+
+Build + stage the sidecar next to the app binary:
+
+```
+dotnet build sensors/NeonPrime.Sensors.csproj -c Release
+# copy sensors/bin/Release/net9.0-windows/* → target/debug/sensors/
+```
+
 ## Credits
 
 - Crowbar icon (HEV theme) — ["Crowbar"](https://game-icons.net/1x1/delapouite/crowbar.html) by Delapouite, [game-icons.net](https://game-icons.net), licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Recolored for theming. All other icons are original.
+- Hardware sensors — [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) (`LibreHardwareMonitorLib`), licensed under [MPL-2.0](https://www.mozilla.org/en-US/MPL/2.0/), used unmodified via the `sensors/` sidecar.
 
 ---
 
