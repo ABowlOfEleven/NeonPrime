@@ -1,0 +1,283 @@
+// NeonPrime UI — Phase 0 shell.
+// Two first-class themes driven by a single `Theme.hev` toggle:
+//   Holographic (default) — cyan / ember on deep glass.
+//   HEV — Half-Life HEV-suit skin — Black Mesa amber, danger-red overheats.
+
+global Theme {
+    in-out property <bool> hev: false;
+
+    // Surfaces
+    out property <color> bg: hev ? #0d0b06 : #061119;
+    out property <color> divider: hev ? #463209 : #123043;
+    out property <color> track: hev ? #261b07 : #0e2230;
+
+    // Accents — `accent` reports nominal data, `ember` flags attention / active state.
+    out property <color> accent: hev ? #ff9f2e : #34d2ff;
+    out property <color> accent-soft: hev ? #ffc061 : #8ae9ff;
+    out property <color> ember: hev ? #e24b4a : #ce8a1f;
+    out property <color> ember-soft: hev ? #ff7a6a : #e6ae45;
+
+    // Text
+    out property <color> text-dim: hev ? #8a6a2a : #5c7e92;
+    out property <color> text-body: hev ? #c9a766 : #a9c6d6;
+
+    // Theme-dependent copy
+    out property <string> overview-title: hev ? "HAZARD SYSTEMS ONLINE" : "SYSTEM OVERVIEW";
+    out property <string> tweaks-label: hev ? "PRY BLOAT" : "TWEAKS";
+    out property <string> logo-glyph: hev ? "λ" : "◢";
+    out property <string> tagline: hev ? "HEV · v3.0" : "v3.0.0";
+    out property <string> temp-value: hev ? "82°C" : "71°C";
+    out property <string> toggle-label: hev ? "THEME: HEV" : "THEME: HOLO";
+}
+
+component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    height: 34px;
+    background: active ? Theme.accent.with-alpha(0.08) : transparent;
+
+    Rectangle {
+        x: 0;
+        y: 0;
+        width: 3px;
+        height: parent.height;
+        background: active ? Theme.accent : transparent;
+    }
+    HorizontalLayout {
+        padding-left: 18px;
+        spacing: 12px;
+        alignment: start;
+        Rectangle {
+            width: 6px;
+            height: 6px;
+            border-radius: 3px;
+            background: active ? Theme.accent : Theme.text-dim;
+        }
+        Text {
+            text: root.label;
+            color: active ? Theme.accent-soft : Theme.text-dim;
+            vertical-alignment: center;
+            font-size: 12px;
+        }
+    }
+}
+
+component ModePill inherits Rectangle {
+    in property <string> label;
+    in property <bool> active;
+    width: 58px;
+    height: 26px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: active ? Theme.accent : Theme.divider;
+    background: active ? Theme.accent.with-alpha(0.16) : transparent;
+    Text {
+        text: root.label;
+        color: active ? Theme.accent-soft : Theme.text-dim;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        font-size: 11px;
+    }
+}
+
+component Meter inherits VerticalLayout {
+    in property <string> label;
+    in property <string> value;
+    in property <float> ratio;
+    in property <bool> warn;
+    spacing: 6px;
+
+    HorizontalLayout {
+        Text {
+            text: root.label;
+            color: Theme.text-dim;
+            font-size: 11px;
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Text {
+            text: root.value;
+            color: root.warn ? Theme.ember-soft : Theme.accent;
+            font-size: 11px;
+        }
+    }
+    Rectangle {
+        height: 10px;
+        border-radius: 5px;
+        background: Theme.track;
+        Rectangle {
+            x: 0;
+            y: 0;
+            width: parent.width * root.ratio;
+            height: parent.height;
+            border-radius: 5px;
+            background: root.warn ? Theme.ember : Theme.accent;
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: "NeonPrime";
+    preferred-width: 680px;
+    preferred-height: 470px;
+    min-width: 560px;
+    min-height: 400px;
+    background: Theme.bg;
+
+    VerticalLayout {
+        // ── Title bar ──────────────────────────────────────────────
+        Rectangle {
+            height: 44px;
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 14px;
+                spacing: 12px;
+                alignment: start;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: Theme.logo-glyph + " NEONPRIME";
+                        color: Theme.accent-soft;
+                        font-size: 16px;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: Theme.tagline;
+                        color: Theme.text-dim;
+                        font-size: 11px;
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Rectangle {
+                    width: 112px;
+                    height: 26px;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: Theme.divider;
+                    background: Theme.accent.with-alpha(0.08);
+                    Text {
+                        text: Theme.toggle-label;
+                        color: Theme.accent-soft;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        font-size: 11px;
+                    }
+                    TouchArea {
+                        clicked => {
+                            Theme.hev = !Theme.hev;
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                x: 0;
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.divider;
+            }
+        }
+
+        // ── Body ───────────────────────────────────────────────────
+        HorizontalLayout {
+            // Sidebar
+            Rectangle {
+                width: 160px;
+                VerticalLayout {
+                    padding-top: 26px;
+                    padding-bottom: 16px;
+                    spacing: 4px;
+                    NavItem { label: "DASHBOARD"; active: true; }
+                    NavItem { label: Theme.tweaks-label; }
+                    NavItem { label: "INSTALL"; }
+                    NavItem { label: "MODES"; }
+                    NavItem { label: "CONFIG"; }
+                    Rectangle { vertical-stretch: 1; }
+                    HorizontalLayout {
+                        padding-left: 18px;
+                        spacing: 10px;
+                        alignment: start;
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: Theme.accent;
+                        }
+                        Text {
+                            text: "BROKER · linked";
+                            color: Theme.text-dim;
+                            vertical-alignment: center;
+                            font-size: 11px;
+                        }
+                    }
+                }
+                Rectangle {
+                    x: parent.width - 1px;
+                    y: 0;
+                    width: 1px;
+                    height: parent.height;
+                    background: Theme.divider;
+                }
+            }
+
+            // Main content
+            Rectangle {
+                horizontal-stretch: 1;
+                VerticalLayout {
+                    padding: 20px;
+                    spacing: 18px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: stretch;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: Theme.overview-title;
+                                color: Theme.accent-soft;
+                                font-size: 14px;
+                            }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        ModePill { label: "AI"; active: true; }
+                        ModePill { label: "GAME"; }
+                        ModePill { label: "WORK"; }
+                    }
+                    Meter { label: "VRAM"; value: "11.2 / 24G"; ratio: 0.47; }
+                    Meter { label: "CPU"; value: "38%"; ratio: 0.38; }
+                    Meter { label: "GPU TEMP"; value: Theme.temp-value; ratio: 0.7; warn: true; }
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+        }
+
+        // ── Status bar ─────────────────────────────────────────────
+        Rectangle {
+            height: 32px;
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: 1px;
+                background: Theme.divider;
+            }
+            HorizontalLayout {
+                padding-left: 20px;
+                padding-right: 20px;
+                Text {
+                    text: "BROKER CONNECTED";
+                    color: Theme.text-dim;
+                    vertical-alignment: center;
+                    font-size: 11px;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                Text {
+                    text: "◢ NOMINAL";
+                    color: Theme.accent-soft;
+                    vertical-alignment: center;
+                    font-size: 11px;
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,13 @@
+[package]
+name = "neonprime"
+version = "3.0.0"
+edition = "2021"
+description = "A holographic system control deck for Windows. One machine, three modes — it counts all the way to three."
+authors = ["Ethan Belanger <belangerethan@gmail.com>"]
+license = "MIT"
+
+[dependencies]
+slint = "1"
+
+[build-dependencies]
+slint-build = "1"
