@@ -14,7 +14,7 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use slint::{Model, Timer, TimerMode, VecModel};
+use slint::{FilterModel, Model, ModelRc, Timer, TimerMode, VecModel};
 
 use neonprime::core::action::{Action, Reversal};
 use neonprime::core::ipc::{Request, Response};
@@ -93,6 +93,15 @@ fn make_row(index: usize, t: &tweaks::Tweak) -> TweakRow {
         applied: t.is_applied(),
         elevated: t.needs_elevation(),
     }
+}
+
+/// Search/category predicate for a tweak row. `text` is already lowercased.
+fn tweak_matches(row: &TweakRow, text: &str, cat: &str) -> bool {
+    let cat_ok = cat == "ALL" || row.category.as_str() == cat;
+    let text_ok = text.is_empty()
+        || row.name.to_lowercase().contains(text)
+        || row.desc.to_lowercase().contains(text);
+    cat_ok && text_ok
 }
 
 /// Re-probe every tweak row from live registry state.
@@ -176,6 +185,30 @@ fn wire_tweaks(
 ) -> Timer {
     let broker: Arc<Mutex<Option<BrokerSession>>> = Arc::new(Mutex::new(None));
     let (tx, rx) = mpsc::channel::<ElevatedMsg>();
+
+    // Live search/category filter over the full source model. Toggles still
+    // address rows by catalog id, so filtering never desyncs the source.
+    let filter_state = Rc::new(RefCell::new((String::new(), "ALL".to_string())));
+    let filtered = Rc::new(FilterModel::new(ModelRc::from(model.clone()), {
+        let fs = filter_state.clone();
+        move |row: &TweakRow| {
+            let f = fs.borrow();
+            tweak_matches(row, &f.0, &f.1)
+        }
+    }));
+    app.global::<Tweaks>().set_rows(ModelRc::from(filtered.clone()));
+    {
+        let weak = app.as_weak();
+        let fs = filter_state.clone();
+        let filtered = filtered.clone();
+        app.global::<Tweaks>().on_filter(move || {
+            if let Some(app) = weak.upgrade() {
+                let t = app.global::<Tweaks>();
+                *fs.borrow_mut() = (t.get_filter_text().to_lowercase(), t.get_filter_cat().to_string());
+                filtered.reset();
+            }
+        });
+    }
 
     {
         let cat = catalog.clone();
@@ -507,7 +540,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let tweaks_catalog = Rc::new(tweaks::catalog());
     let rows: Vec<TweakRow> = tweaks_catalog.iter().enumerate().map(|(i, t)| make_row(i, t)).collect();
     let tweaks_model = Rc::new(VecModel::from(rows));
-    app.global::<Tweaks>().set_rows(tweaks_model.clone().into());
+    // Tweaks.rows is set inside wire_tweaks (wrapped in a FilterModel).
 
     // Modes model.
     let modes_catalog = Rc::new(modes::catalog());
