@@ -3,6 +3,8 @@
 // On Windows we don't want a console window tagging along with the GUI.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+mod cputemp;
+mod gpu;
 mod telemetry;
 
 use std::cell::{Cell, RefCell};
@@ -70,6 +72,10 @@ fn apply_telemetry(app: &AppWindow, s: &Sample) {
     let sys = app.global::<Sys>();
     sys.set_cpu_ratio(s.cpu_ratio);
     sys.set_cpu_text(s.cpu_text.as_str().into());
+    sys.set_cpu_temp_ratio(s.cpu_temp_ratio);
+    sys.set_cpu_temp_text(s.cpu_temp_text.as_str().into());
+    sys.set_cpu_temp_warn(s.cpu_temp_warn);
+    sys.set_gpu_name(s.gpu_name.as_str().into());
     sys.set_ram_ratio(s.ram_ratio);
     sys.set_ram_text(s.ram_text.as_str().into());
     sys.set_gpu_available(s.gpu_available);

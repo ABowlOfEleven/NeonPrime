@@ -27,6 +27,10 @@ export global Theme {
 export global Sys {
     in-out property <float> cpu-ratio: 0;
     in-out property <string> cpu-text: "—";
+    in-out property <float> cpu-temp-ratio: 0;
+    in-out property <string> cpu-temp-text: "—";
+    in-out property <bool> cpu-temp-warn: false;
+    in-out property <string> gpu-name: "—";
     in-out property <float> ram-ratio: 0;
     in-out property <string> ram-text: "—";
     in-out property <bool> gpu-available: false;
@@ -657,6 +661,7 @@ component DashboardView inherits VerticalLayout {
             Meter { label: "VRAM"; value: Sys.vram-text; ratio: Sys.vram-ratio; }
             Meter { label: "RAM"; value: Sys.ram-text; ratio: Sys.ram-ratio; }
             Meter { label: "CPU"; value: Sys.cpu-text; ratio: Sys.cpu-ratio; }
+            Meter { label: "CPU TEMP"; value: Sys.cpu-temp-text; ratio: Sys.cpu-temp-ratio; warn: Sys.cpu-temp-warn; }
             Meter { label: "GPU TEMP"; value: Sys.temp-text; ratio: Sys.temp-ratio; warn: Sys.temp-warn; }
         }
     }
