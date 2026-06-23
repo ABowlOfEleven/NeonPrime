@@ -10,11 +10,13 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::rc::Rc;
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use slint::{Model, Timer, TimerMode, VecModel};
 
-use neonprime::core::action::Action;
+use neonprime::core::action::{Action, Reversal};
 use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
@@ -27,6 +29,13 @@ slint::include_modules!();
 type SharedJournal = Rc<RefCell<Journal>>;
 /// `notify(kind, message)` — kind is "success" | "error" | "info".
 type Notify = Rc<dyn Fn(&str, &str)>;
+
+/// Result of an off-thread elevated tweak, marshalled back to the UI thread.
+/// Only `Send` data crosses the boundary (no `Rc`).
+enum ElevatedMsg {
+    Done { row_id: i32, name: String, want: bool, results: Vec<(Action, Reversal)> },
+    Failed { row_id: i32, name: String, error: String },
+}
 
 // ── Toast notifier ──────────────────────────────────────────────────
 
@@ -114,32 +123,49 @@ fn run_local(actions: &[Action], jrnl: &SharedJournal, t: &tweaks::Tweak, want: 
     Ok(())
 }
 
-fn run_elevated(
-    broker: &Rc<RefCell<Option<BrokerSession>>>,
-    jrnl: &SharedJournal,
-    actions: &[Action],
-    t: &tweaks::Tweak,
-) -> io::Result<()> {
-    if broker.borrow().is_none() {
-        *broker.borrow_mut() = Some(BrokerSession::spawn(true)?); // triggers UAC
-    }
-    let mut guard = broker.borrow_mut();
-    let session = guard.as_mut().unwrap();
-    for a in actions {
-        match session
-            .client
-            .call(&Request::Apply { label: t.name.into(), action: a.clone() })?
-        {
-            Response::Applied { reversal } => {
-                jrnl.borrow_mut().record(t.name.to_string(), a.clone(), reversal);
+/// Worker-thread body: spawn/reuse the elevated broker (UAC), apply the actions,
+/// and report back over the channel. Runs OFF the UI thread so the UAC prompt
+/// never freezes the window.
+fn elevated_worker(
+    broker: Arc<Mutex<Option<BrokerSession>>>,
+    tx: mpsc::Sender<ElevatedMsg>,
+    actions: Vec<Action>,
+    row_id: i32,
+    name: String,
+    want: bool,
+) {
+    let mut guard = broker.lock().unwrap();
+    if guard.is_none() {
+        match BrokerSession::spawn(true) {
+            Ok(s) => *guard = Some(s),
+            Err(e) => {
+                let _ = tx.send(ElevatedMsg::Failed { row_id, name, error: format!("elevation failed: {e}") });
+                return;
             }
-            Response::Error(e) => return Err(io::Error::other(e)),
-            _ => {}
         }
     }
-    Ok(())
+    let session = guard.as_mut().unwrap();
+    let mut results = Vec::new();
+    for a in &actions {
+        match session.client.call(&Request::Apply { label: name.clone(), action: a.clone() }) {
+            Ok(Response::Applied { reversal }) => results.push((a.clone(), reversal)),
+            Ok(Response::Error(e)) => {
+                let _ = tx.send(ElevatedMsg::Failed { row_id, name, error: e });
+                return;
+            }
+            Ok(_) => {}
+            Err(e) => {
+                *guard = None; // drop a dead broker so the next attempt respawns it
+                let _ = tx.send(ElevatedMsg::Failed { row_id, name, error: format!("broker link lost: {e}") });
+                return;
+            }
+        }
+    }
+    let _ = tx.send(ElevatedMsg::Done { row_id, name, want, results });
 }
 
+/// Wire the Tweaks panel. Returns the result-pump `Timer`, which the caller must
+/// keep alive for the lifetime of the app.
 fn wire_tweaks(
     app: &AppWindow,
     jrnl: &SharedJournal,
@@ -147,31 +173,83 @@ fn wire_tweaks(
     notify: &Notify,
     catalog: &Rc<Vec<tweaks::Tweak>>,
     model: &Rc<VecModel<TweakRow>>,
-) {
-    let broker: Rc<RefCell<Option<BrokerSession>>> = Rc::new(RefCell::new(None));
+) -> Timer {
+    let broker: Arc<Mutex<Option<BrokerSession>>> = Arc::new(Mutex::new(None));
+    let (tx, rx) = mpsc::channel::<ElevatedMsg>();
+
+    {
+        let cat = catalog.clone();
+        let model = model.clone();
+        let jrnl = jrnl.clone();
+        let path = journal_path.to_path_buf();
+        let notify = notify.clone();
+        let broker = broker.clone();
+        let tx = tx.clone();
+
+        app.global::<Tweaks>().on_toggle(move |id, want| {
+            let Some(t) = cat.get(id as usize) else { return };
+
+            if t.needs_elevation() {
+                // Optimistic UI now; the privileged work happens off-thread so a
+                // UAC prompt can't freeze the window. The pump corrects on failure.
+                let mut r = make_row(id as usize, t);
+                r.applied = want;
+                model.set_row_data(id as usize, r);
+                notify("info", "Requesting elevation — approve the UAC prompt…");
+
+                let actions: Vec<Action> = if want { t.on.clone() } else { t.off.clone() };
+                std::thread::spawn({
+                    let broker = broker.clone();
+                    let tx = tx.clone();
+                    let name = t.name.to_string();
+                    move || elevated_worker(broker, tx, actions, id, name, want)
+                });
+            } else {
+                let actions = if want { &t.on } else { &t.off };
+                match run_local(actions, &jrnl, t, want) {
+                    Ok(()) => notify("success", &format!("{} {}", t.name, if want { "applied" } else { "reverted" })),
+                    Err(e) => notify("error", &format!("{}: {}", t.name, e)),
+                }
+                let _ = jrnl.borrow().save(&path);
+                // Re-probe: on failure the row snaps back to reality.
+                model.set_row_data(id as usize, make_row(id as usize, t));
+            }
+        });
+    }
+
+    // Result pump (UI thread): drain worker messages and apply them safely.
     let cat = catalog.clone();
     let model = model.clone();
     let jrnl = jrnl.clone();
     let path = journal_path.to_path_buf();
     let notify = notify.clone();
-
-    app.global::<Tweaks>().on_toggle(move |id, want| {
-        let Some(t) = cat.get(id as usize) else { return };
-        let actions = if want { &t.on } else { &t.off };
-
-        let result = if t.needs_elevation() {
-            run_elevated(&broker, &jrnl, actions, t)
-        } else {
-            run_local(actions, &jrnl, t, want)
-        };
-        match &result {
-            Ok(()) => notify("success", &format!("{} {}", t.name, if want { "applied" } else { "reverted" })),
-            Err(e) => notify("error", &format!("{}: {}", t.name, e)),
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(150), move || {
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                ElevatedMsg::Done { row_id, name, want, results } => {
+                    {
+                        let mut j = jrnl.borrow_mut();
+                        for (a, rev) in results {
+                            j.record(format!("{}: {}", name, if want { "on" } else { "off" }), a, rev);
+                        }
+                    }
+                    let _ = jrnl.borrow().save(&path);
+                    if let Some(t) = cat.get(row_id as usize) {
+                        model.set_row_data(row_id as usize, make_row(row_id as usize, t));
+                    }
+                    notify("success", &format!("{} {}", name, if want { "applied" } else { "reverted" }));
+                }
+                ElevatedMsg::Failed { row_id, name, error } => {
+                    if let Some(t) = cat.get(row_id as usize) {
+                        model.set_row_data(row_id as usize, make_row(row_id as usize, t));
+                    }
+                    notify("error", &format!("{}: {}", name, error));
+                }
+            }
         }
-        let _ = jrnl.borrow().save(&path);
-        // Re-probe: on failure the row snaps back to reality (no lying toggle).
-        model.set_row_data(id as usize, make_row(id as usize, t));
     });
+    timer
 }
 
 // ── Modes ───────────────────────────────────────────────────────────
@@ -399,7 +477,7 @@ fn main() -> Result<(), slint::PlatformError> {
     refresh_modes(&app, &modes_catalog);
 
     wire_theme(&app);
-    wire_tweaks(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model);
+    let _tweak_pump = wire_tweaks(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model);
     wire_modes(&app, &jrnl, &journal_path, &notify, &modes_catalog);
     wire_installs(&app, &notify);
     wire_config(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
