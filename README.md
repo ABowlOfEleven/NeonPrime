@@ -58,12 +58,12 @@ Rollback, modes, and config-export are all the same primitive: a **reversible, d
 
 ## Roadmap
 
-- [ ] **P0** — Slint shell + the holographic visual language
-- [ ] **P1** — Telemetry HUD (read-only, no elevation)
-- [ ] **P2** — Action engine + broker + rollback journal
-- [ ] **P3** — Tweak & install library
-- [ ] **P4** — System modes
-- [ ] **P5** — Declarative export / import
+- [x] **P0** — Slint shell + the holographic visual language
+- [x] **P1** — Telemetry HUD (live GPU / VRAM / CPU / temp via NVML + sysinfo)
+- [x] **P2** — Reversible action engine + rollback journal + elevated broker (IPC)
+- [x] **P3** — Tweak catalog with live apply/revert + winget install panel
+- [x] **P4** — System modes (AI / Game / Work), persisted active mode
+- [x] **P5** — Declarative config export / import (TOML)
 
 ## Stack
 
@@ -71,7 +71,18 @@ Rollback, modes, and config-export are all the same primitive: a **reversible, d
 
 ## Status
 
-Early. Phase 0. The reactor is warming up.
+All six phases (P0–P5) are built and tested — full HUD, two themes, the reversible
+action engine + elevated broker, the Tweaks / Install / Modes / Config panels, and
+declarative export/import. 17 unit + integration tests pass.
+
+**Known limitations / next steps:**
+- The elevated broker (HKLM tweaks) needs an interactive UAC prompt, so the
+  elevated end-to-end path hasn't been exercised headlessly — it's implemented and
+  unit-tested, but try the HKLM tweaks (e.g. "Disable telemetry") supervised.
+- Mode `actions` are currently benign markers; real power-plan / service / GPU /
+  network actions plug into the same engine as new `Action` variants.
+- IPC token is passed on the broker's command line — hardening TODO: named pipe
+  with an explicit DACL.
 
 ## Credits
 
