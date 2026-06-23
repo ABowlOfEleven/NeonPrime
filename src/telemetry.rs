@@ -34,6 +34,18 @@ pub struct Sample {
     pub temp_ratio: f32,
     pub temp_text: String,
     pub temp_warn: bool,
+    pub uptime_text: String,
+}
+
+fn fmt_uptime(secs: u64) -> String {
+    let (d, h, m) = (secs / 86400, (secs % 86400) / 3600, (secs % 3600) / 60);
+    if d > 0 {
+        format!("{d}d {h}h {m}m")
+    } else if h > 0 {
+        format!("{h}h {m}m")
+    } else {
+        format!("{m}m")
+    }
 }
 
 pub struct Telemetry {
@@ -155,6 +167,7 @@ impl Telemetry {
             None => s.cpu_temp_text = "N/A".into(),
         }
 
+        s.uptime_text = fmt_uptime(System::uptime());
         s
     }
 }

@@ -86,6 +86,25 @@ fn apply_telemetry(app: &AppWindow, s: &Sample) {
     sys.set_temp_ratio(s.temp_ratio);
     sys.set_temp_text(s.temp_text.as_str().into());
     sys.set_temp_warn(s.temp_warn);
+    sys.set_spec_uptime(s.uptime_text.as_str().into());
+}
+
+/// One-time static system specs (OS / CPU / RAM) for the Dashboard strip.
+fn apply_specs(app: &AppWindow) {
+    let sp = sysinfo::System::new_all();
+    let cpu = sp
+        .cpus()
+        .first()
+        .map(|c| c.brand().trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Unknown CPU".into());
+    let os = sysinfo::System::long_os_version().unwrap_or_else(|| "Windows".into());
+    let ram = format!("{:.0} GiB", sp.total_memory() as f64 / (1024.0 * 1024.0 * 1024.0));
+
+    let sys = app.global::<Sys>();
+    sys.set_spec_os(os.as_str().into());
+    sys.set_spec_cpu(cpu.as_str().into());
+    sys.set_spec_ram(ram.as_str().into());
 }
 
 // ── Tweaks ──────────────────────────────────────────────────────────
@@ -570,6 +589,7 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_quick(&app, &notify);
     wire_config(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
     wire_undo(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
+    apply_specs(&app);
 
     let mut tele = Telemetry::new();
     apply_telemetry(&app, &tele.sample());

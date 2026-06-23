@@ -41,6 +41,10 @@ export global Sys {
     in-out property <float> temp-ratio: 0;
     in-out property <string> temp-text: "—";
     in-out property <bool> temp-warn: false;
+    in-out property <string> spec-os: "—";
+    in-out property <string> spec-cpu: "—";
+    in-out property <string> spec-ram: "—";
+    in-out property <string> spec-uptime: "—";
 }
 
 // Which page the sidebar has selected.
@@ -624,6 +628,27 @@ component TweakRowView inherits Rectangle {
     }
 }
 
+component SpecRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 10px;
+    Text {
+        text: root.label;
+        color: Theme.text-dim;
+        font-size: 11px;
+        width: 64px;
+        vertical-alignment: center;
+    }
+    Text {
+        text: root.value;
+        color: Theme.text-body;
+        font-size: 11px;
+        horizontal-stretch: 1;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
 component DashboardView inherits VerticalLayout {
     padding: 20px;
     spacing: 20px;
@@ -665,7 +690,24 @@ component DashboardView inherits VerticalLayout {
             Meter { label: "GPU TEMP"; value: Sys.temp-text; ratio: Sys.temp-ratio; warn: Sys.temp-warn; }
         }
     }
-    Rectangle { vertical-stretch: 1; }
+    // System specs strip
+    Rectangle {
+        vertical-stretch: 1;
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: Theme.divider;
+        background: Theme.track;
+        VerticalLayout {
+            padding: 14px;
+            spacing: 7px;
+            alignment: start;
+            SpecRow { label: "OS"; value: Sys.spec-os; }
+            SpecRow { label: "CPU"; value: Sys.spec-cpu; }
+            SpecRow { label: "GPU"; value: Sys.gpu-name; }
+            SpecRow { label: "RAM"; value: Sys.spec-ram; }
+            SpecRow { label: "UPTIME"; value: Sys.spec-uptime; }
+        }
+    }
 }
 
 component FilterChip inherits Rectangle {
