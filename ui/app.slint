@@ -107,6 +107,7 @@ export global Ui {
     in-out property <string> toast-kind; // "error" | "success" | "info"
     callback toggle-theme();
     callback undo-last();
+    callback enable-sensors();
 }
 
 export struct QuickRow {
@@ -718,6 +719,17 @@ component DashboardView inherits VerticalLayout {
             SpecRow { label: "GPU"; value: Sys.gpu-name; }
             SpecRow { label: "RAM"; value: Sys.spec-ram; }
             SpecRow { label: "UPTIME"; value: Sys.spec-uptime; }
+            Rectangle { vertical-stretch: 1; }
+            HorizontalLayout {
+                Rectangle { horizontal-stretch: 1; }
+                PushButton {
+                    w: 184px;
+                    label: "ENABLE HW SENSORS (admin)";
+                    clicked => {
+                        Ui.enable-sensors();
+                    }
+                }
+            }
         }
     }
 }

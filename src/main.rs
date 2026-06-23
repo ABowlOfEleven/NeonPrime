@@ -5,6 +5,7 @@
 
 mod cputemp;
 mod gpu;
+mod sensors;
 mod telemetry;
 
 use std::cell::{Cell, RefCell};
@@ -633,6 +634,14 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_config(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
     wire_undo(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
     apply_specs(&app);
+
+    {
+        let notify = notify.clone();
+        app.global::<Ui>().on_enable_sensors(move || match sensors::spawn_elevated() {
+            Ok(()) => notify("info", "Requesting elevation for hardware sensors…"),
+            Err(e) => notify("error", &format!("Sensors failed: {e}")),
+        });
+    }
 
     let mut tele = Telemetry::new();
     apply_telemetry(&app, &tele.sample());

@@ -157,8 +157,9 @@ impl Telemetry {
             }
         }
 
-        // ── CPU temperature (best-effort, WMI) ───────────────────────
-        match self.cpu_temp.get() {
+        // ── CPU temperature: LHM sidecar (accurate) → WMI → N/A ──────
+        let cpu_c = crate::sensors::read().cpu_temp.or_else(|| self.cpu_temp.get());
+        match cpu_c {
             Some(c) => {
                 s.cpu_temp_ratio = (c / 100.0).clamp(0.0, 1.0);
                 s.cpu_temp_text = format!("{c:.0}°C");
