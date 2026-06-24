@@ -53,6 +53,17 @@ pub struct Telemetry {
     nvml: Option<Nvml>,
     gpu_counters: GpuCounters,
     cpu_temp: CpuTempMonitor,
+    /// Background (unelevated) LHM sidecar — started for non-NVIDIA GPUs so their
+    /// GPU temperature is available without a UAC prompt. Killed on drop.
+    sidecar: Option<std::process::Child>,
+}
+
+impl Drop for Telemetry {
+    fn drop(&mut self) {
+        if let Some(child) = self.sidecar.as_mut() {
+            let _ = child.kill();
+        }
+    }
 }
 
 impl Telemetry {
@@ -60,11 +71,23 @@ impl Telemetry {
         let mut sys = System::new_all();
         sys.refresh_cpu_usage();
         sys.refresh_memory();
+
+        let nvml = Nvml::init().ok();
+        // NVIDIA temps come from NVML; for AMD/Intel, auto-start the sidecar so
+        // GPU temperature works out of the box (GPU sensors need no elevation).
+        let sidecar = if nvml.is_none() {
+            crate::sensors::kill_strays();
+            crate::sensors::spawn_background()
+        } else {
+            None
+        };
+
         Self {
             sys,
-            nvml: Nvml::init().ok(),
+            nvml,
             gpu_counters: GpuCounters::new(),
             cpu_temp: CpuTempMonitor::start(),
+            sidecar,
         }
     }
 
@@ -89,6 +112,7 @@ impl Telemetry {
         // ── GPU: name + total via DXGI; util + VRAM-used via PDH ──────
         let dxgi = gpu::query();
         let (mut util, pdh_vram_used) = self.gpu_counters.sample();
+        let lhm = crate::sensors::read();
 
         let mut vram_used: Option<u64> = pdh_vram_used.filter(|&u| u > 0);
         let mut vram_total: Option<u64> = None;
@@ -143,6 +167,15 @@ impl Telemetry {
             s.vram_text = format!("{:.1} / {:.0}G", u as f64 / GIB, tot as f64 / GIB);
         }
 
+        // GPU temp fallback for AMD/Intel (NVML only covers NVIDIA).
+        if s.temp_text.is_empty() {
+            if let Some(t) = lhm.gpu_core {
+                s.temp_ratio = (t / 100.0).clamp(0.0, 1.0);
+                s.temp_text = format!("{t:.0}°C");
+                s.temp_warn = t >= 85.0;
+            }
+        }
+
         if !s.gpu_available {
             s.gpu_name = "No GPU".into();
             s.gpu_text = "N/A".into();
@@ -158,7 +191,7 @@ impl Telemetry {
         }
 
         // ── CPU temperature: LHM sidecar (accurate) → WMI → N/A ──────
-        let cpu_c = crate::sensors::read().cpu_temp.or_else(|| self.cpu_temp.get());
+        let cpu_c = lhm.cpu_temp.or_else(|| self.cpu_temp.get());
         match cpu_c {
             Some(c) => {
                 s.cpu_temp_ratio = (c / 100.0).clamp(0.0, 1.0);

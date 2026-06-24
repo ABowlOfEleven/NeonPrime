@@ -98,15 +98,21 @@ freeze during UAC). 20 unit + integration tests pass.
 Accurate CPU package temperature and motherboard sensors need ring-0 access (an
 MSR/Super-I/O driver) — the same reason HWiNFO ships one. NeonPrime gets these by
 embedding a small C# sidecar (`sensors/`) built on **LibreHardwareMonitor**, which
-streams a JSON sensor snapshot to a temp file the app polls. Click **"Enable HW
-sensors"** on the dashboard to launch it elevated (one UAC); CPU/board temps and
-fans then light up. GPU temps work without elevation.
+streams a JSON sensor snapshot to a temp file the app polls.
 
-Build + stage the sidecar next to the app binary:
+- **GPU temps (all vendors)** work without elevation. On AMD/Intel the sidecar is
+  auto-started in the background so GPU temperature just works; on NVIDIA, NVML
+  already covers it.
+- **CPU package + motherboard temps + fans** need the LHM driver (ring-0), so they
+  need admin — click **"Enable HW sensors"** on the dashboard to launch the sidecar
+  elevated (one UAC).
+
+Build a **self-contained** sidecar (bundles the .NET runtime — nothing to install
+on the target) and stage it next to the app binary:
 
 ```
-dotnet build sensors/NeonPrime.Sensors.csproj -c Release
-# copy sensors/bin/Release/net9.0-windows/* → target/debug/sensors/
+./publish-sensors.ps1                       # → target/debug/sensors
+./publish-sensors.ps1 -AppDir target/release
 ```
 
 ## Credits

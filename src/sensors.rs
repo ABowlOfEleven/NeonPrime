@@ -23,6 +23,7 @@ struct Reading {
 #[derive(Default)]
 pub struct Sensors {
     pub cpu_temp: Option<f32>,
+    pub gpu_core: Option<f32>,
     pub gpu_hotspot: Option<f32>,
 }
 
@@ -59,11 +60,22 @@ pub fn read() -> Sensors {
 
     let mut cpu_pkg: Option<f32> = None;
     let mut cpu_max: Option<f32> = None;
+    let mut gpu_core_exact: Option<f32> = None;
+    let mut gpu_core_any: Option<f32> = None;
     let mut gpu_hotspot: Option<f32> = None;
 
     for r in &readings {
-        if r.kind == "Temperature" && r.name.contains("Hot Spot") {
-            gpu_hotspot = Some(r.value);
+        if r.hw_type.starts_with("Gpu") && r.kind == "Temperature" {
+            if r.name == "GPU Core" {
+                gpu_core_exact = Some(r.value);
+            } else if r.name.contains("Hot Spot") {
+                gpu_hotspot = Some(r.value);
+            } else if gpu_core_any.is_none()
+                && !r.name.contains("Junction")
+                && !r.name.contains("Memory")
+            {
+                gpu_core_any = Some(r.value);
+            }
         }
         if r.hw_type == "Cpu" && r.kind == "Temperature" && r.value > 0.0 {
             if r.name.contains("Package") || r.name.contains("Tctl") || r.name.contains("Tdie") {
@@ -75,8 +87,30 @@ pub fn read() -> Sensors {
 
     Sensors {
         cpu_temp: cpu_pkg.or(cpu_max),
+        gpu_core: gpu_core_exact.or(gpu_core_any),
         gpu_hotspot,
     }
+}
+
+/// Kill any leftover sidecar processes (best-effort cleanup from a prior run).
+pub fn kill_strays() {
+    let _ = std::process::Command::new("taskkill")
+        .args(["/f", "/im", "neonprime-sensors.exe"])
+        .output();
+}
+
+/// Launch the sidecar UNelevated (background). GPU temps work without the
+/// driver, so this gives AMD/Intel GPU temps without any UAC prompt. Returns the
+/// child so the caller can terminate it on exit.
+pub fn spawn_background() -> Option<std::process::Child> {
+    let exe = sidecar_exe();
+    if !exe.exists() {
+        return None;
+    }
+    std::process::Command::new(exe)
+        .args(["--out", &snapshot_path().to_string_lossy()])
+        .spawn()
+        .ok()
 }
 
 /// Launch the sidecar elevated (UAC) so it can load the LHM driver and report
