@@ -115,6 +115,17 @@ on the target) and stage it next to the app binary:
 ./publish-sensors.ps1 -AppDir target/release
 ```
 
+## Installer
+
+```
+./build-installer.ps1          # → NeonPrime-3.0.0-Setup.msi
+```
+
+Produces a Windows MSI (via WiX 5 — `dotnet tool install --global wix --version 5.0.2`)
+that installs `neonprime.exe`, the elevated `broker.exe`, and the **self-contained**
+sensor sidecar to `Program Files\NeonPrime`, with a Start-Menu shortcut, an
+uninstaller, and major-upgrade handling. No runtime prerequisites on the target.
+
 ## Credits
 
 - Crowbar icon (HEV theme) — ["Crowbar"](https://game-icons.net/1x1/delapouite/crowbar.html) by Delapouite, [game-icons.net](https://game-icons.net), licensed under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/). Recolored for theming. All other icons are original.

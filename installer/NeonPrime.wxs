@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="NeonPrime"
+           Manufacturer="Ethan Belanger"
+           Version="3.0.0"
+           UpgradeCode="8F3A2C1E-7B4D-4E9A-9C2F-1A2B3C4D5E6F"
+           Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of NeonPrime is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="NeonPrimeIcon" SourceFile="$(var.DistDir)\neonprime.ico" />
+    <Property Id="ARPPRODUCTICON" Value="NeonPrimeIcon" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="NeonPrime" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppShortcutDir" Name="NeonPrime" />
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="NeonPrime" Level="1">
+      <!-- Harvest the whole staged payload: app + broker + self-contained sensors -->
+      <Files Directory="INSTALLFOLDER" Include="$(var.DistDir)\**" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+
+    <Component Id="StartMenuShortcut" Directory="AppShortcutDir" Guid="A1B2C3D4-1111-2222-3333-444455556666">
+      <Shortcut Id="StartShortcut"
+                Name="NeonPrime"
+                Target="[INSTALLFOLDER]neonprime.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="NeonPrimeIcon" />
+      <RemoveFolder Id="RemoveAppShortcutDir" On="uninstall" />
+      <RegistryValue Root="HKCU" Key="Software\NeonPrime\Install" Name="shortcut" Type="integer" Value="1" KeyPath="yes" />
+    </Component>
+  </Package>
+</Wix>

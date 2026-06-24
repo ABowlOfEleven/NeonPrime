@@ -24,7 +24,6 @@ struct Reading {
 pub struct Sensors {
     pub cpu_temp: Option<f32>,
     pub gpu_core: Option<f32>,
-    pub gpu_hotspot: Option<f32>,
 }
 
 /// Shared snapshot file, written by the sidecar and read here.
@@ -62,15 +61,13 @@ pub fn read() -> Sensors {
     let mut cpu_max: Option<f32> = None;
     let mut gpu_core_exact: Option<f32> = None;
     let mut gpu_core_any: Option<f32> = None;
-    let mut gpu_hotspot: Option<f32> = None;
 
     for r in &readings {
         if r.hw_type.starts_with("Gpu") && r.kind == "Temperature" {
             if r.name == "GPU Core" {
                 gpu_core_exact = Some(r.value);
-            } else if r.name.contains("Hot Spot") {
-                gpu_hotspot = Some(r.value);
             } else if gpu_core_any.is_none()
+                && !r.name.contains("Hot")
                 && !r.name.contains("Junction")
                 && !r.name.contains("Memory")
             {
@@ -88,7 +85,6 @@ pub fn read() -> Sensors {
     Sensors {
         cpu_temp: cpu_pkg.or(cpu_max),
         gpu_core: gpu_core_exact.or(gpu_core_any),
-        gpu_hotspot,
     }
 }
 

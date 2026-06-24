@@ -28,6 +28,7 @@ features = [
 
 [build-dependencies]
 slint-build = "1"
+winresource = "0.1"
 
 # Dev-only: rasterize SVG icons to PNG so they can be previewed during design.
 [dev-dependencies]

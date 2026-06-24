@@ -3,3 +3,5 @@
 *.pdb
 sensors/bin/
 sensors/obj/
+/dist
+*.msi
