@@ -22,6 +22,7 @@ Copy-Item "$root\target\release\broker.exe" $dist
 Copy-Item "$root\assets\neonprime.ico" $dist
 Copy-Item "$root\README.md" $dist
 Copy-Item "$root\LICENSE" $dist
+Copy-Item "$root\profile" $dist -Recurse   # PowerShell profile + installer
 
 Write-Host "[3/4] Publishing self-contained sensor sidecar..."
 & "$root\publish-sensors.ps1" -AppDir "dist" | Out-Null

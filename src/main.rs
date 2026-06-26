@@ -516,6 +516,24 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
     let notify = notify.clone();
     app.global::<Quick>().on_run(move |id| {
         let Some(a) = cat.get(id as usize) else { return };
+
+        // The PowerShell profile installer runs in a visible console (shows
+        // winget/module install progress) from a script beside the app.
+        if a.id == "install-ps-profile" {
+            let mut script = std::env::current_exe().unwrap_or_default();
+            script.pop();
+            script.push("profile");
+            script.push("install-profile.ps1");
+            match Command::new("powershell")
+                .args(["-NoExit", "-ExecutionPolicy", "Bypass", "-File", &script.to_string_lossy()])
+                .spawn()
+            {
+                Ok(_) => notify("info", "Installing PowerShell profile — see the new window."),
+                Err(e) => notify("error", &format!("Couldn't start installer: {e}")),
+            }
+            return;
+        }
+
         let Some(inv) = quick::invocation(a.id) else { return };
 
         let result = if inv.elevated {

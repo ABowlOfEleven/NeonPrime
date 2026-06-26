@@ -56,6 +56,13 @@ pub fn catalog() -> Vec<QuickAction> {
             danger: false,
             elevated: true,
         },
+        QuickAction {
+            id: "install-ps-profile",
+            name: "Install PowerShell profile",
+            desc: "Set up the NeonPrime shell: Oh My Posh prompt, smart cd, icons, and handy functions (incl. live `temps`).",
+            danger: false,
+            elevated: false,
+        },
     ]
 }
 
