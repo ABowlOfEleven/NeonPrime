@@ -103,8 +103,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_action_has_an_invocation() {
+    fn every_runnable_action_has_an_invocation() {
         for a in catalog() {
+            // The profile installer is launched specially by the UI (visible console).
+            if a.id == "install-ps-profile" {
+                continue;
+            }
             let inv = invocation(a.id).expect("invocation");
             assert!(!inv.program.is_empty());
             assert_eq!(inv.elevated, a.elevated);

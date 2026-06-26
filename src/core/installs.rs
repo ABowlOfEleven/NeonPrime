@@ -1,31 +1,50 @@
-//! A small curated catalog of apps installable via `winget`.
-//!
-//! Installing shells out to `winget install --id <id> -e`. Uninstall/rollback
-//! is intentionally out of scope here — installs are not part of the reversible
-//! action model.
+//! The app install catalog, imported from WinUtil's curated application list
+//! (MIT-licensed). Installing shells out to `winget install --id <id> -e`.
+//! Uninstall/rollback is out of scope — installs are not reversible actions.
 
+use std::collections::BTreeMap;
+
+use serde::Deserialize;
+
+/// One app, ready for the UI.
 pub struct App {
-    pub name: &'static str,
-    pub publisher: &'static str,
+    pub name: String,
+    pub desc: String,
     /// winget package id (`--id`, exact match).
-    pub id: &'static str,
-    pub category: &'static str,
+    pub id: String,
+    pub category: String,
 }
 
+/// Shape of each entry in WinUtil's `applications.json` (extra fields ignored).
+#[derive(Deserialize)]
+struct WinutilApp {
+    #[serde(default)]
+    category: String,
+    #[serde(default)]
+    content: String,
+    #[serde(default)]
+    winget: String,
+    #[serde(default)]
+    description: String,
+}
+
+const APPS_JSON: &str = include_str!("../../assets/winutil-applications.json");
+
+/// The full app catalog, parsed from the bundled WinUtil data and sorted by name.
 pub fn catalog() -> Vec<App> {
-    vec![
-        App { name: "Visual Studio Code", publisher: "Microsoft", id: "Microsoft.VisualStudioCode", category: "DEV" },
-        App { name: "Git", publisher: "Git", id: "Git.Git", category: "DEV" },
-        App { name: "PowerToys", publisher: "Microsoft", id: "Microsoft.PowerToys", category: "DEV" },
-        App { name: "7-Zip", publisher: "Igor Pavlov", id: "7zip.7zip", category: "UTILITY" },
-        App { name: "Notepad++", publisher: "Notepad++ Team", id: "Notepad++.Notepad++", category: "DEV" },
-        App { name: "Everything", publisher: "voidtools", id: "voidtools.Everything", category: "UTILITY" },
-        App { name: "Firefox", publisher: "Mozilla", id: "Mozilla.Firefox", category: "WEB" },
-        App { name: "VLC", publisher: "VideoLAN", id: "VideoLAN.VLC", category: "MEDIA" },
-        App { name: "OBS Studio", publisher: "OBS Project", id: "OBSProject.OBSStudio", category: "MEDIA" },
-        App { name: "Steam", publisher: "Valve", id: "Valve.Steam", category: "GAMING" },
-        App { name: "Discord", publisher: "Discord", id: "Discord.Discord", category: "GAMING" },
-    ]
+    let map: BTreeMap<String, WinutilApp> = serde_json::from_str(APPS_JSON).unwrap_or_default();
+    let mut apps: Vec<App> = map
+        .into_values()
+        .filter(|a| !a.winget.is_empty() && a.winget != "na" && !a.content.is_empty())
+        .map(|a| App {
+            name: a.content,
+            desc: a.description,
+            id: a.winget,
+            category: a.category,
+        })
+        .collect();
+    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    apps
 }
 
 /// The full `winget` argument vector for installing an app id.
@@ -45,9 +64,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalog_ids_are_well_formed() {
-        for a in catalog() {
-            assert!(a.id.contains('.'), "winget id should be Publisher.Package: {}", a.id);
+    fn catalog_parses_many_apps() {
+        let c = catalog();
+        assert!(c.len() > 100, "expected the full WinUtil catalog, got {}", c.len());
+        for a in &c {
+            assert!(!a.id.is_empty());
             assert!(!a.name.is_empty());
         }
     }

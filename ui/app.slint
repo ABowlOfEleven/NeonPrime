@@ -73,13 +73,16 @@ export global Tweaks {
 export struct AppRow {
     id: int,
     name: string,
-    publisher: string,
+    desc: string,
     category: string,
 }
 
 export global Installer {
     in property <[AppRow]> rows;
+    in-out property <string> filter-text;
+    in property <int> count;
     callback install(int);
+    callback filter();
 }
 
 export struct ModeCard {
@@ -455,9 +458,10 @@ component AppRowView inherits Rectangle {
                 }
             }
             Text {
-                text: root.app.publisher;
+                text: root.app.desc;
                 color: Theme.text-dim;
                 font-size: 11px;
+                overflow: elide;
             }
         }
         VerticalLayout {
@@ -480,9 +484,9 @@ component AppRowView inherits Rectangle {
 }
 
 component InstallView inherits VerticalLayout {
-    padding-top: 18px;
+    padding-top: 16px;
     padding-bottom: 8px;
-    spacing: 12px;
+    spacing: 10px;
     HorizontalLayout {
         padding-left: 20px;
         padding-right: 20px;
@@ -490,13 +494,46 @@ component InstallView inherits VerticalLayout {
             text: "INSTALL";
             color: Theme.accent-soft;
             font-size: 14px;
+            vertical-alignment: center;
         }
         Rectangle { horizontal-stretch: 1; }
         Text {
-            text: "via winget";
+            text: "\{Installer.count} apps · winget";
             color: Theme.text-dim;
             font-size: 11px;
             vertical-alignment: center;
+        }
+    }
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        Rectangle {
+            height: 30px;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Theme.divider;
+            background: Theme.track;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                TextInput {
+                    text <=> Installer.filter-text;
+                    color: Theme.text-body;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    single-line: true;
+                    edited => {
+                        Installer.filter();
+                    }
+                }
+            }
+            if Installer.filter-text == "": Text {
+                x: 11px;
+                text: "search apps…";
+                color: Theme.text-dim;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
         }
     }
     ListView {

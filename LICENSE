@@ -27,3 +27,5 @@ Third-party components:
 - LibreHardwareMonitorLib (sensors/ sidecar) — Mozilla Public License 2.0,
   https://github.com/LibreHardwareMonitor/LibreHardwareMonitor
 - "Crowbar" icon (HEV theme) — CC BY 3.0, by Delapouite, https://game-icons.net
+- App install catalog — adapted from WinUtil's applications.json by Chris Titus
+  Tech, MIT License, https://github.com/ChrisTitusTech/winutil

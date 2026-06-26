@@ -353,18 +353,44 @@ fn wire_installs(app: &AppWindow, notify: &Notify) {
         .enumerate()
         .map(|(i, a)| AppRow {
             id: i as i32,
-            name: a.name.into(),
-            publisher: a.publisher.into(),
-            category: a.category.into(),
+            name: a.name.as_str().into(),
+            desc: a.desc.as_str().into(),
+            category: a.category.as_str().into(),
         })
         .collect();
-    app.global::<Installer>().set_rows(Rc::new(VecModel::from(rows)).into());
+    let source = Rc::new(VecModel::from(rows));
+
+    // Search filter over name / description / category (~300 apps).
+    let filter_text = Rc::new(RefCell::new(String::new()));
+    let filtered = Rc::new(FilterModel::new(ModelRc::from(source.clone()), {
+        let ft = filter_text.clone();
+        move |row: &AppRow| {
+            let t = ft.borrow();
+            t.is_empty()
+                || row.name.to_lowercase().contains(t.as_str())
+                || row.desc.to_lowercase().contains(t.as_str())
+                || row.category.to_lowercase().contains(t.as_str())
+        }
+    }));
+    app.global::<Installer>().set_rows(ModelRc::from(filtered.clone()));
+    app.global::<Installer>().set_count(catalog.len() as i32);
+    {
+        let weak = app.as_weak();
+        let ft = filter_text.clone();
+        let filtered = filtered.clone();
+        app.global::<Installer>().on_filter(move || {
+            if let Some(app) = weak.upgrade() {
+                *ft.borrow_mut() = app.global::<Installer>().get_filter_text().to_lowercase();
+                filtered.reset();
+            }
+        });
+    }
 
     let cat = catalog.clone();
     let notify = notify.clone();
     app.global::<Installer>().on_install(move |id| {
         if let Some(a) = cat.get(id as usize) {
-            match Command::new("winget").args(installs::install_args(a.id)).spawn() {
+            match Command::new("winget").args(installs::install_args(&a.id)).spawn() {
                 Ok(_) => notify("info", &format!("Installing {} via winget…", a.name)),
                 Err(e) => notify("error", &format!("Couldn't start winget: {e}")),
             }
