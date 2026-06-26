@@ -23,7 +23,7 @@ use neonprime::core::action::{Action, Reversal};
 use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
-use neonprime::core::{config, engine, installs, journal, modes, quick, settings, startup, tweaks};
+use neonprime::core::{config, engine, installs, journal, modes, quick, repair, settings, startup, tweaks};
 
 use telemetry::{Sample, Telemetry};
 
@@ -495,6 +495,30 @@ fn wire_config(
             );
         });
     }
+
+    // Fixes — elevated repair commands run in a visible console.
+    {
+        let notify = notify.clone();
+        app.global::<Configuration>().on_run_fix(move |idx| {
+            let Some((name, script)) = repair::fixes().get(idx as usize) else { return };
+            match launch_elevated_ps(script, true) {
+                Ok(()) => notify("info", &format!("{name} — approve UAC; progress shows in the console.")),
+                Err(e) => notify("error", &format!("{name} failed: {e}")),
+            }
+        });
+    }
+
+    // Windows Update mode — elevated registry/service changes, run hidden.
+    {
+        let notify = notify.clone();
+        app.global::<Configuration>().on_set_update_mode(move |idx| {
+            let Some((name, script)) = repair::update_modes().get(idx as usize) else { return };
+            match launch_elevated_ps(script, false) {
+                Ok(()) => notify("success", &format!("Windows Update → {name} (approve UAC)")),
+                Err(e) => notify("error", &format!("{name} failed: {e}")),
+            }
+        });
+    }
 }
 
 // ── Theme + Undo ────────────────────────────────────────────────────
@@ -546,6 +570,24 @@ fn wire_undo(
             Err(e) => notify("error", &format!("Undo failed: {e}")),
         }
     });
+}
+
+/// Launch a PowerShell script elevated via UAC (Start-Process -Verb RunAs).
+/// `visible` keeps a `-NoExit` console open so the user can watch long-running
+/// repairs (SFC/DISM); otherwise the elevated shell runs hidden and exits.
+fn launch_elevated_ps(script: &str, visible: bool) -> io::Result<()> {
+    let esc = script.replace('\'', "''");
+    let inner = if visible {
+        format!("'-NoExit','-Command','{esc}'")
+    } else {
+        format!("'-Command','{esc}'")
+    };
+    let hidden = if visible { "" } else { " -WindowStyle Hidden" };
+    let ps = format!("Start-Process -FilePath 'powershell' -ArgumentList {inner} -Verb RunAs{hidden}");
+    Command::new("powershell")
+        .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
+        .spawn()
+        .map(|_| ())
 }
 
 fn wire_quick(app: &AppWindow, notify: &Notify) {
