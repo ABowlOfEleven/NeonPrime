@@ -33,12 +33,15 @@ The heart of NeonPrime. One click changes who your PC is:
 
 - **Telemetry HUD** — live GPU load / VRAM / CPU / temps. Vendor-neutral GPU stats (NVIDIA / AMD / Intel) via DXGI + PDH; GPU temp via NVML; best-effort CPU temp via WMI. Cyan reports, ember warns.
 - **System specs** — OS / CPU / GPU / RAM / live uptime strip on the dashboard.
-- **Tweaks & debloat** — 24 reversible tweaks across Interface / Privacy / Performance, with **live search + category filter**.
+- **Tweaks & debloat** — 29 reversible tweaks across Interface / Privacy / Performance (including service-control tweaks), with **live search + category filter** and a one-click **Essential Tweaks** preset.
 - **Reversible everything** — an action journal with one-click **undo last**. Failures self-correct the toggle.
 - **System modes** — one-click AI / Game / Work, persisted across restarts.
-- **Quick Actions** — restart Explorer, flush DNS, clear temp, empty Recycle Bin, create restore point.
+- **Quick Actions** — restart Explorer, flush DNS, clear temp, empty Recycle Bin, create restore point, install the NeonPrime PowerShell profile.
 - **Startup manager** — enable/disable per-user startup apps (reversibly).
-- **App installs** — a `winget`-backed picker.
+- **App installs** — a `winget`-backed picker with **194 apps** imported from WinUtil's catalog + live search.
+- **Fixes** — elevated SFC + DISM repair, network-stack reset, Windows Update reset.
+- **Windows Update** — Default / Security-only / Disabled mode selector.
+- **Windows Features** — DISM enable/disable for .NET 3.5, Hyper-V, Sandbox, WSL, IIS, and more.
 - **Declarative config** — export your setup to TOML, replay it on a clean install.
 - **Two themes** — Holographic (cyan) and HEV (Half-Life amber), the choice persisted.
 
@@ -77,8 +80,8 @@ Rollback, modes, and config-export are all the same primitive: a **reversible, d
 ## Status
 
 Phases P0–P5 plus the Dashboard / Tweaks / Install / Modes / Config / Actions /
-Startup panels are built and tested. Elevated work runs off the UI thread (no
-freeze during UAC). 20 unit + integration tests pass.
+Startup / Features panels are built and tested. Elevated work runs off the UI
+thread (no freeze during UAC). 23 unit + integration tests pass.
 
 **Known limitations / next steps:**
 - The elevated broker (HKLM tweaks) needs an interactive UAC prompt, so the
