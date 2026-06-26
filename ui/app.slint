@@ -68,6 +68,7 @@ export global Tweaks {
     // (row-id, desired-applied)
     callback toggle(int, bool);
     callback filter();
+    callback apply-essential();
 }
 
 export struct AppRow {
@@ -809,6 +810,14 @@ component TweaksView inherits VerticalLayout {
             vertical-alignment: center;
         }
         Rectangle { horizontal-stretch: 1; }
+        PushButton {
+            w: 104px;
+            label: "ESSENTIALS";
+            clicked => {
+                Tweaks.apply-essential();
+            }
+        }
+        Rectangle { width: 8px; }
         PushButton {
             w: 96px;
             label: "UNDO LAST";

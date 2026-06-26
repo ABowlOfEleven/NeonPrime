@@ -236,6 +236,31 @@ fn wire_tweaks(
         });
     }
 
+    // One-click "Essential Tweaks" — applies the curated no-elevation set.
+    {
+        let cat = catalog.clone();
+        let model = model.clone();
+        let jrnl = jrnl.clone();
+        let path = journal_path.to_path_buf();
+        let notify = notify.clone();
+        app.global::<Tweaks>().on_apply_essential(move || {
+            let mut n = 0;
+            for id in tweaks::essential_ids() {
+                if let Some(t) = cat.iter().find(|t| t.id == *id) {
+                    if t.needs_elevation() {
+                        continue;
+                    }
+                    if run_local(&t.on, &jrnl, t, true).is_ok() {
+                        n += 1;
+                    }
+                }
+            }
+            let _ = jrnl.borrow().save(&path);
+            refresh_tweaks(&model, &cat);
+            notify("success", &format!("Applied {n} essential tweaks"));
+        });
+    }
+
     {
         let cat = catalog.clone();
         let model = model.clone();

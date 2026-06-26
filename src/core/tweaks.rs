@@ -233,6 +233,37 @@ pub fn catalog() -> Vec<Tweak> {
         dw("long-paths", "Enable long file paths",
             "Allow paths longer than 260 characters (dev-friendly).",
             Performance, Hklm, "SYSTEM\\CurrentControlSet\\Control\\FileSystem", "LongPathsEnabled", 1, 0),
+
+        // ── Services (HKLM Start value: 2=auto, 3=manual, 4=disabled) ─
+        dw("svc-diagtrack", "Disable telemetry service",
+            "Stop the Connected User Experiences and Telemetry service (DiagTrack).",
+            Privacy, Hklm, "SYSTEM\\CurrentControlSet\\Services\\DiagTrack", "Start", 4, 2),
+        dw("svc-dmwappush", "Disable WAP push service",
+            "Stop dmwappushservice (device-management WAP push message routing).",
+            Privacy, Hklm, "SYSTEM\\CurrentControlSet\\Services\\dmwappushservice", "Start", 4, 3),
+        dw("svc-sysmain", "Set SysMain (Superfetch) to manual",
+            "Cut background prefetch disk activity — helps on SSDs and low-RAM systems.",
+            Performance, Hklm, "SYSTEM\\CurrentControlSet\\Services\\SysMain", "Start", 3, 2),
+        dw("svc-wmpnetwork", "Disable WMP network sharing",
+            "Stop the Windows Media Player network sharing service.",
+            Performance, Hklm, "SYSTEM\\CurrentControlSet\\Services\\WMPNetworkSvc", "Start", 4, 3),
+        dw("svc-fax", "Disable Fax service",
+            "Stop the Fax service (rarely needed).",
+            Performance, Hklm, "SYSTEM\\CurrentControlSet\\Services\\Fax", "Start", 4, 3),
+    ]
+}
+
+/// Curated "Essential Tweaks" — a safe, no-elevation recommended set applied by
+/// the one-click button (mirrors WinUtil's flagship preset, HKCU-only).
+pub fn essential_ids() -> &'static [&'static str] {
+    &[
+        "show-file-extensions",
+        "disable-advertising-id",
+        "disable-tailored-experiences",
+        "disable-start-web-search",
+        "disable-suggestions",
+        "disable-start-tracking",
+        "fast-menu-delay",
     ]
 }
 
