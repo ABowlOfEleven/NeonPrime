@@ -141,6 +141,17 @@ export global Startup {
     callback toggle(int, bool);
 }
 
+export struct FeatureRow {
+    id: int,
+    name: string,
+    desc: string,
+}
+
+export global Features {
+    in property <[FeatureRow]> rows;
+    callback apply(int, bool); // (id, enable)
+}
+
 component NavItem inherits Rectangle {
     in property <string> label;
     in property <int> index;
@@ -1083,6 +1094,99 @@ component StartupView inherits VerticalLayout {
     }
 }
 
+component FeatureRowView inherits Rectangle {
+    in property <FeatureRow> entry;
+    height: 56px;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: root.entry.name;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                Text {
+                    text: "· DISM";
+                    color: Theme.ember-soft;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: root.entry.desc;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: 8px;
+                PushButton {
+                    w: 72px;
+                    label: "ENABLE";
+                    clicked => {
+                        Features.apply(root.entry.id, true);
+                    }
+                }
+                PushButton {
+                    w: 76px;
+                    danger: true;
+                    label: "DISABLE";
+                    clicked => {
+                        Features.apply(root.entry.id, false);
+                    }
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component FeaturesView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 12px;
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        Text {
+            text: "FEATURES";
+            color: Theme.accent-soft;
+            font-size: 14px;
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Text {
+            text: "windows optional features";
+            color: Theme.text-dim;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+    }
+    ListView {
+        vertical-stretch: 1;
+        for e in Features.rows: FeatureRowView {
+            entry: e;
+        }
+    }
+}
+
 component Toast inherits Rectangle {
     in property <string> message;
     in property <string> kind;
@@ -1206,6 +1310,7 @@ export component AppWindow inherits Window {
                     NavItem { label: "CONFIG"; index: 4; icon: @image-url("icons/config.svg"); }
                     NavItem { label: "ACTIONS"; index: 5; icon: @image-url("icons/bolt.svg"); }
                     NavItem { label: "STARTUP"; index: 6; icon: @image-url("icons/power.svg"); }
+                    NavItem { label: "FEATURES"; index: 7; icon: @image-url("icons/features.svg"); }
                     Rectangle { vertical-stretch: 1; }
                     HorizontalLayout {
                         padding-left: 18px;
@@ -1262,6 +1367,10 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 6: StartupView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 7: FeaturesView {
                     width: parent.width;
                     height: parent.height;
                 }

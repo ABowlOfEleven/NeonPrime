@@ -3,6 +3,7 @@
 pub mod action;
 pub mod config;
 pub mod engine;
+pub mod features;
 pub mod installs;
 pub mod ipc;
 pub mod journal;

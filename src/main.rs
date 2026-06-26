@@ -23,7 +23,9 @@ use neonprime::core::action::{Action, Reversal};
 use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
-use neonprime::core::{config, engine, installs, journal, modes, quick, repair, settings, startup, tweaks};
+use neonprime::core::{
+    config, engine, features, installs, journal, modes, quick, repair, settings, startup, tweaks,
+};
 
 use telemetry::{Sample, Telemetry};
 
@@ -698,6 +700,36 @@ fn wire_startup(app: &AppWindow, notify: &Notify) {
     });
 }
 
+/// Windows optional features: enable/disable via elevated DISM in a visible
+/// console. State isn't probed (DISM queries need elevation), so each row offers
+/// explicit Enable/Disable like WinUtil.
+fn wire_features(app: &AppWindow, notify: &Notify) {
+    let rows: Vec<FeatureRow> = features::catalog()
+        .iter()
+        .enumerate()
+        .map(|(i, f)| FeatureRow {
+            id: i as i32,
+            name: f.name.into(),
+            desc: f.desc.into(),
+        })
+        .collect();
+    app.global::<Features>().set_rows(Rc::new(VecModel::from(rows)).into());
+
+    let notify = notify.clone();
+    app.global::<Features>().on_apply(move |id, enable| {
+        let Some(f) = features::catalog().get(id as usize) else { return };
+        let script = features::dism_script(f, enable);
+        let verb = if enable { "Enabling" } else { "Disabling" };
+        match launch_elevated_ps(&script, true) {
+            Ok(()) => notify(
+                "info",
+                &format!("{verb} {} — approve UAC; DISM progress shows in the console.", f.name),
+            ),
+            Err(e) => notify("error", &format!("{}: {e}", f.name)),
+        }
+    });
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     // Single-instance guard — a second launch exits rather than racing the journal.
     let instance = single_instance::SingleInstance::new("neonprime-singleton").ok();
@@ -742,6 +774,7 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_installs(&app, &notify);
     wire_quick(&app, &notify);
     wire_startup(&app, &notify);
+    wire_features(&app, &notify);
     wire_config(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
     wire_undo(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
     apply_specs(&app);
