@@ -66,7 +66,11 @@ mod tests {
     #[test]
     fn catalog_parses_many_apps() {
         let c = catalog();
-        assert!(c.len() > 100, "expected the full WinUtil catalog, got {}", c.len());
+        assert!(
+            c.len() > 100,
+            "expected the full WinUtil catalog, got {}",
+            c.len()
+        );
         for a in &c {
             assert!(!a.id.is_empty());
             assert!(!a.name.is_empty());

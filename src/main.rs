@@ -39,8 +39,17 @@ type Notify = Rc<dyn Fn(&str, &str)>;
 /// Result of an off-thread elevated tweak, marshalled back to the UI thread.
 /// Only `Send` data crosses the boundary (no `Rc`).
 enum ElevatedMsg {
-    Done { row_id: i32, name: String, want: bool, results: Vec<(Action, Reversal)> },
-    Failed { row_id: i32, name: String, error: String },
+    Done {
+        row_id: i32,
+        name: String,
+        want: bool,
+        results: Vec<(Action, Reversal)>,
+    },
+    Failed {
+        row_id: i32,
+        name: String,
+        error: String,
+    },
 }
 
 /// Result of an elevated *revert* (History panel) coming back from the broker.
@@ -52,7 +61,12 @@ enum RevertMsg {
 /// Background results for the Debloat panel.
 enum DebloatMsg {
     Probed(std::collections::HashSet<String>),
-    Removed { idx: i32, ok: bool, name: String, err: String },
+    Removed {
+        idx: i32,
+        ok: bool,
+        name: String,
+        err: String,
+    },
 }
 
 /// Background results for the Cleanup panel.
@@ -136,7 +150,10 @@ fn apply_specs(app: &AppWindow) {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "Unknown CPU".into());
     let os = sysinfo::System::long_os_version().unwrap_or_else(|| "Windows".into());
-    let ram = format!("{:.0} GiB", sp.total_memory() as f64 / (1024.0 * 1024.0 * 1024.0));
+    let ram = format!(
+        "{:.0} GiB",
+        sp.total_memory() as f64 / (1024.0 * 1024.0 * 1024.0)
+    );
 
     let sys = app.global::<Sys>();
     sys.set_spec_os(os.as_str().into());
@@ -182,7 +199,12 @@ fn refresh_modes(app: &AppWindow, catalog: &[modes::Mode]) {
     app.global::<Modes>().set_active(idx);
 }
 
-fn run_local(actions: &[Action], jrnl: &SharedJournal, t: &tweaks::Tweak, want: bool) -> io::Result<()> {
+fn run_local(
+    actions: &[Action],
+    jrnl: &SharedJournal,
+    t: &tweaks::Tweak,
+    want: bool,
+) -> io::Result<()> {
     for a in actions {
         let reversal = engine::apply(a)?;
         jrnl.borrow_mut().record(
@@ -210,7 +232,11 @@ fn elevated_worker(
         match BrokerSession::spawn(true) {
             Ok(s) => *guard = Some(s),
             Err(e) => {
-                let _ = tx.send(ElevatedMsg::Failed { row_id, name, error: format!("elevation failed: {e}") });
+                let _ = tx.send(ElevatedMsg::Failed {
+                    row_id,
+                    name,
+                    error: format!("elevation failed: {e}"),
+                });
                 return;
             }
         }
@@ -218,21 +244,37 @@ fn elevated_worker(
     let session = guard.as_mut().unwrap();
     let mut results = Vec::new();
     for a in &actions {
-        match session.client.call(&Request::Apply { label: name.clone(), action: a.clone() }) {
+        match session.client.call(&Request::Apply {
+            label: name.clone(),
+            action: a.clone(),
+        }) {
             Ok(Response::Applied { reversal }) => results.push((a.clone(), reversal)),
             Ok(Response::Error(e)) => {
-                let _ = tx.send(ElevatedMsg::Failed { row_id, name, error: e });
+                let _ = tx.send(ElevatedMsg::Failed {
+                    row_id,
+                    name,
+                    error: e,
+                });
                 return;
             }
             Ok(_) => {}
             Err(e) => {
                 *guard = None; // drop a dead broker so the next attempt respawns it
-                let _ = tx.send(ElevatedMsg::Failed { row_id, name, error: format!("broker link lost: {e}") });
+                let _ = tx.send(ElevatedMsg::Failed {
+                    row_id,
+                    name,
+                    error: format!("broker link lost: {e}"),
+                });
                 return;
             }
         }
     }
-    let _ = tx.send(ElevatedMsg::Done { row_id, name, want, results });
+    let _ = tx.send(ElevatedMsg::Done {
+        row_id,
+        name,
+        want,
+        results,
+    });
 }
 
 /// Wire the Tweaks panel. Returns the result-pump `Timer`, which the caller must
@@ -258,7 +300,8 @@ fn wire_tweaks(
             tweak_matches(row, &f.0, &f.1)
         }
     }));
-    app.global::<Tweaks>().set_rows(ModelRc::from(filtered.clone()));
+    app.global::<Tweaks>()
+        .set_rows(ModelRc::from(filtered.clone()));
     {
         let weak = app.as_weak();
         let fs = filter_state.clone();
@@ -266,7 +309,10 @@ fn wire_tweaks(
         app.global::<Tweaks>().on_filter(move || {
             if let Some(app) = weak.upgrade() {
                 let t = app.global::<Tweaks>();
-                *fs.borrow_mut() = (t.get_filter_text().to_lowercase(), t.get_filter_cat().to_string());
+                *fs.borrow_mut() = (
+                    t.get_filter_text().to_lowercase(),
+                    t.get_filter_cat().to_string(),
+                );
                 filtered.reset();
             }
         });
@@ -307,7 +353,9 @@ fn wire_tweaks(
         let tx = tx.clone();
 
         app.global::<Tweaks>().on_toggle(move |id, want| {
-            let Some(t) = cat.get(id as usize) else { return };
+            let Some(t) = cat.get(id as usize) else {
+                return;
+            };
 
             if t.needs_elevation() {
                 // Optimistic UI now; the privileged work happens off-thread so a
@@ -327,7 +375,10 @@ fn wire_tweaks(
             } else {
                 let actions = if want { &t.on } else { &t.off };
                 match run_local(actions, &jrnl, t, want) {
-                    Ok(()) => notify("success", &format!("{} {}", t.name, if want { "applied" } else { "reverted" })),
+                    Ok(()) => notify(
+                        "success",
+                        &format!("{} {}", t.name, if want { "applied" } else { "reverted" }),
+                    ),
                     Err(e) => notify("error", &format!("{}: {}", t.name, e)),
                 }
                 let _ = jrnl.borrow().save(&path);
@@ -347,20 +398,36 @@ fn wire_tweaks(
     timer.start(TimerMode::Repeated, Duration::from_millis(150), move || {
         while let Ok(msg) = rx.try_recv() {
             match msg {
-                ElevatedMsg::Done { row_id, name, want, results } => {
+                ElevatedMsg::Done {
+                    row_id,
+                    name,
+                    want,
+                    results,
+                } => {
                     {
                         let mut j = jrnl.borrow_mut();
                         for (a, rev) in results {
-                            j.record(format!("{}: {}", name, if want { "on" } else { "off" }), a, rev);
+                            j.record(
+                                format!("{}: {}", name, if want { "on" } else { "off" }),
+                                a,
+                                rev,
+                            );
                         }
                     }
                     let _ = jrnl.borrow().save(&path);
                     if let Some(t) = cat.get(row_id as usize) {
                         model.set_row_data(row_id as usize, make_row(row_id as usize, t));
                     }
-                    notify("success", &format!("{} {}", name, if want { "applied" } else { "reverted" }));
+                    notify(
+                        "success",
+                        &format!("{} {}", name, if want { "applied" } else { "reverted" }),
+                    );
                 }
-                ElevatedMsg::Failed { row_id, name, error } => {
+                ElevatedMsg::Failed {
+                    row_id,
+                    name,
+                    error,
+                } => {
                     if let Some(t) = cat.get(row_id as usize) {
                         model.set_row_data(row_id as usize, make_row(row_id as usize, t));
                     }
@@ -396,7 +463,13 @@ fn deactivate_mode(jrnl: &SharedJournal, path: &Path) {
     let _ = jrnl.borrow().save(path);
 }
 
-fn wire_modes(app: &AppWindow, jrnl: &SharedJournal, journal_path: &Path, notify: &Notify, catalog: &Rc<Vec<modes::Mode>>) {
+fn wire_modes(
+    app: &AppWindow,
+    jrnl: &SharedJournal,
+    journal_path: &Path,
+    notify: &Notify,
+    catalog: &Rc<Vec<modes::Mode>>,
+) {
     let weak = app.as_weak();
     let cat = catalog.clone();
     let jrnl = jrnl.clone();
@@ -404,7 +477,9 @@ fn wire_modes(app: &AppWindow, jrnl: &SharedJournal, journal_path: &Path, notify
     let notify = notify.clone();
 
     app.global::<Modes>().on_activate(move |idx| {
-        let Some(m) = cat.get(idx as usize) else { return };
+        let Some(m) = cat.get(idx as usize) else {
+            return;
+        };
 
         // Clicking the active mode again turns it off (restores defaults).
         let already = modes::active();
@@ -422,7 +497,8 @@ fn wire_modes(app: &AppWindow, jrnl: &SharedJournal, journal_path: &Path, notify
         for a in &m.actions {
             match engine::apply(a) {
                 Ok(reversal) => {
-                    jrnl.borrow_mut().record(format!("mode: {}", m.name), a.clone(), reversal);
+                    jrnl.borrow_mut()
+                        .record(format!("mode: {}", m.name), a.clone(), reversal);
                 }
                 Err(e) => {
                     ok = false;
@@ -476,7 +552,8 @@ fn wire_installs(app: &AppWindow, notify: &Notify) {
                 || row.category.to_lowercase().contains(t.as_str())
         }
     }));
-    app.global::<Installer>().set_rows(ModelRc::from(filtered.clone()));
+    app.global::<Installer>()
+        .set_rows(ModelRc::from(filtered.clone()));
     app.global::<Installer>().set_count(catalog.len() as i32);
     {
         let weak = app.as_weak();
@@ -495,7 +572,10 @@ fn wire_installs(app: &AppWindow, notify: &Notify) {
     let notify2 = notify.clone();
     app.global::<Installer>().on_install(move |id| {
         if let Some(a) = cat.get(id as usize) {
-            match Command::new("winget").args(installs::install_args(&a.id)).spawn() {
+            match Command::new("winget")
+                .args(installs::install_args(&a.id))
+                .spawn()
+            {
                 Ok(_) => notify("info", &format!("Installing {} via winget…", a.name)),
                 Err(e) => notify("error", &format!("Couldn't start winget: {e}")),
             }
@@ -575,13 +655,18 @@ fn wire_config(
             };
             let applied = config::apply(&cfg, &mut jrnl.borrow_mut(), &jpath);
             if let Some(app) = weak.upgrade() {
-                app.global::<Configuration>().set_preview(toml.as_str().into());
+                app.global::<Configuration>()
+                    .set_preview(toml.as_str().into());
                 refresh_tweaks(&tmodel, &tcat);
                 refresh_modes(&app, &mcat);
             }
             notify(
                 "success",
-                &format!("Applied {} tweak action(s), mode {}", applied, cfg.mode.as_deref().unwrap_or("none")),
+                &format!(
+                    "Applied {} tweak action(s), mode {}",
+                    applied,
+                    cfg.mode.as_deref().unwrap_or("none")
+                ),
             );
         });
     }
@@ -590,9 +675,14 @@ fn wire_config(
     {
         let notify = notify.clone();
         app.global::<Configuration>().on_run_fix(move |idx| {
-            let Some((name, script)) = repair::fixes().get(idx as usize) else { return };
+            let Some((name, script)) = repair::fixes().get(idx as usize) else {
+                return;
+            };
             match launch_elevated_ps(script, true) {
-                Ok(()) => notify("info", &format!("{name} — approve UAC; progress shows in the console.")),
+                Ok(()) => notify(
+                    "info",
+                    &format!("{name} — approve UAC; progress shows in the console."),
+                ),
                 Err(e) => notify("error", &format!("{name} failed: {e}")),
             }
         });
@@ -601,36 +691,42 @@ fn wire_config(
     // Windows Update mode — elevated registry/service changes, run hidden.
     {
         let notify = notify.clone();
-        app.global::<Configuration>().on_set_update_mode(move |idx| {
-            let Some((name, script)) = repair::update_modes().get(idx as usize) else { return };
-            match launch_elevated_ps(script, false) {
-                Ok(()) => notify("success", &format!("Windows Update → {name} (approve UAC)")),
-                Err(e) => notify("error", &format!("{name} failed: {e}")),
-            }
-        });
+        app.global::<Configuration>()
+            .on_set_update_mode(move |idx| {
+                let Some((name, script)) = repair::update_modes().get(idx as usize) else {
+                    return;
+                };
+                match launch_elevated_ps(script, false) {
+                    Ok(()) => notify("success", &format!("Windows Update → {name} (approve UAC)")),
+                    Err(e) => notify("error", &format!("{name} failed: {e}")),
+                }
+            });
     }
 
     // Restore points — create one (elevated) or open the Windows wizard.
     {
         let notify = notify.clone();
-        app.global::<Configuration>().on_create_restore_point(move || {
-            let script = "Enable-ComputerRestore -Drive 'C:\\'; \
+        app.global::<Configuration>()
+            .on_create_restore_point(move || {
+                let script = "Enable-ComputerRestore -Drive 'C:\\'; \
                 Checkpoint-Computer -Description 'NeonPrime' -RestorePointType 'MODIFY_SETTINGS'; \
                 Write-Host 'Restore point created.'";
-            match launch_elevated_ps(script, true) {
-                Ok(()) => notify("info", "Creating restore point — approve UAC; see the console."),
-                Err(e) => notify("error", &format!("Restore point: {e}")),
-            }
-        });
+                match launch_elevated_ps(script, true) {
+                    Ok(()) => notify(
+                        "info",
+                        "Creating restore point — approve UAC; see the console.",
+                    ),
+                    Err(e) => notify("error", &format!("Restore point: {e}")),
+                }
+            });
     }
     {
         let notify = notify.clone();
-        app.global::<Configuration>().on_open_system_restore(move || {
-            match Command::new("rstrui.exe").spawn() {
+        app.global::<Configuration>()
+            .on_open_system_restore(move || match Command::new("rstrui.exe").spawn() {
                 Ok(_) => notify("info", "Opening System Restore…"),
                 Err(e) => notify("error", &format!("Couldn't open System Restore: {e}")),
-            }
-        });
+            });
     }
 }
 
@@ -665,7 +761,13 @@ fn wire_undo(
     let mcat = modes_catalog.clone();
 
     app.global::<Ui>().on_undo_last(move || {
-        let entry = jrnl.borrow().entries.iter().rev().find(|e| e.active).cloned();
+        let entry = jrnl
+            .borrow()
+            .entries
+            .iter()
+            .rev()
+            .find(|e| e.active)
+            .cloned();
         let Some(entry) = entry else {
             notify("info", "Nothing to undo");
             return;
@@ -696,7 +798,8 @@ fn launch_elevated_ps(script: &str, visible: bool) -> io::Result<()> {
         format!("'-Command','{esc}'")
     };
     let hidden = if visible { "" } else { " -WindowStyle Hidden" };
-    let ps = format!("Start-Process -FilePath 'powershell' -ArgumentList {inner} -Verb RunAs{hidden}");
+    let ps =
+        format!("Start-Process -FilePath 'powershell' -ArgumentList {inner} -Verb RunAs{hidden}");
     Command::new("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
         .spawn()
@@ -736,7 +839,8 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
             elevated: a.elevated,
         })
         .collect();
-    app.global::<Quick>().set_rows(Rc::new(VecModel::from(rows)).into());
+    app.global::<Quick>()
+        .set_rows(Rc::new(VecModel::from(rows)).into());
 
     let cat = catalog.clone();
     let notify = notify.clone();
@@ -823,7 +927,10 @@ fn wire_startup(app: &AppWindow, notify: &Notify) {
                 startup::disable(&name, &cmd)
             };
             match res {
-                Ok(()) => notify("success", &format!("{} {}", name, if want { "enabled" } else { "disabled" })),
+                Ok(()) => notify(
+                    "success",
+                    &format!("{} {}", name, if want { "enabled" } else { "disabled" }),
+                ),
                 Err(e) => notify("error", &format!("{name}: {e}")),
             }
         }
@@ -844,17 +951,23 @@ fn wire_features(app: &AppWindow, notify: &Notify) {
             desc: f.desc.into(),
         })
         .collect();
-    app.global::<Features>().set_rows(Rc::new(VecModel::from(rows)).into());
+    app.global::<Features>()
+        .set_rows(Rc::new(VecModel::from(rows)).into());
 
     let notify = notify.clone();
     app.global::<Features>().on_apply(move |id, enable| {
-        let Some(f) = features::catalog().get(id as usize) else { return };
+        let Some(f) = features::catalog().get(id as usize) else {
+            return;
+        };
         let script = features::dism_script(f, enable);
         let verb = if enable { "Enabling" } else { "Disabling" };
         match launch_elevated_ps(&script, true) {
             Ok(()) => notify(
                 "info",
-                &format!("{verb} {} — approve UAC; DISM progress shows in the console.", f.name),
+                &format!(
+                    "{verb} {} — approve UAC; DISM progress shows in the console.",
+                    f.name
+                ),
             ),
             Err(e) => notify("error", &format!("{}: {e}", f.name)),
         }
@@ -895,7 +1008,9 @@ fn wire_debloat(app: &AppWindow, notify: &Notify) -> Timer {
         let notify = notify.clone();
         let tx = tx.clone();
         app.global::<Debloat>().on_remove(move |id| {
-            let Some(b) = debloat::catalog().get(id as usize) else { return };
+            let Some(b) = debloat::catalog().get(id as usize) else {
+                return;
+            };
             notify("info", &format!("Removing {}…", b.name));
             let (tx, name) = (tx.clone(), b.name.to_string());
             std::thread::spawn(move || {
@@ -904,7 +1019,12 @@ fn wire_debloat(app: &AppWindow, notify: &Notify) -> Timer {
                     Ok(o) => (o, String::new()),
                     Err(e) => (false, e.to_string()),
                 };
-                let _ = tx.send(DebloatMsg::Removed { idx: id, ok, name, err });
+                let _ = tx.send(DebloatMsg::Removed {
+                    idx: id,
+                    ok,
+                    name,
+                    err,
+                });
             });
         });
     }
@@ -914,7 +1034,10 @@ fn wire_debloat(app: &AppWindow, notify: &Notify) -> Timer {
         let notify = notify.clone();
         app.global::<Debloat>().on_disable_telemetry_tasks(move || {
             match launch_elevated_ps(&debloat::disable_tasks_script(), false) {
-                Ok(()) => notify("info", "Disabling telemetry tasks — approve the UAC prompt…"),
+                Ok(()) => notify(
+                    "info",
+                    "Disabling telemetry tasks — approve the UAC prompt…",
+                ),
                 Err(e) => notify("error", &format!("Failed: {e}")),
             }
         });
@@ -948,7 +1071,10 @@ fn wire_debloat(app: &AppWindow, notify: &Notify) -> Timer {
                         }
                         notify2("success", &format!("Removed: {name}"));
                     } else if err.is_empty() {
-                        notify2("error", &format!("{name}: removal blocked (system/provisioned app)"));
+                        notify2(
+                            "error",
+                            &format!("{name}: removal blocked (system/provisioned app)"),
+                        );
                     } else {
                         notify2("error", &format!("{name}: {err}"));
                     }
@@ -974,10 +1100,18 @@ fn wire_power(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
 
     let notify = notify.clone();
     app.global::<Power>().on_set_plan(move |idx| {
-        let Some(script) = power::set_script(idx as usize) else { return };
-        let name = power::plans().get(idx as usize).map(|p| p.name).unwrap_or("plan");
+        let Some(script) = power::set_script(idx as usize) else {
+            return;
+        };
+        let name = power::plans()
+            .get(idx as usize)
+            .map(|p| p.name)
+            .unwrap_or("plan");
         match launch_elevated_ps(&script, false) {
-            Ok(()) => notify("info", &format!("Switching to {name} — approve the UAC prompt…")),
+            Ok(()) => notify(
+                "info",
+                &format!("Switching to {name} — approve the UAC prompt…"),
+            ),
             Err(e) => notify("error", &format!("Power plan failed: {e}")),
         }
     });
@@ -1011,7 +1145,10 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
         move || {
             let tx = tx.clone();
             std::thread::spawn(move || {
-                let v: Vec<u64> = cleanup::catalog().iter().map(|t| cleanup::size_of(t.id)).collect();
+                let v: Vec<u64> = cleanup::catalog()
+                    .iter()
+                    .map(|t| cleanup::size_of(t.id))
+                    .collect();
                 let _ = tx.send(CleanMsg::Scanned(v));
             });
         }
@@ -1035,11 +1172,16 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
         let notify = notify.clone();
         let tx = tx.clone();
         app.global::<Cleanup>().on_clean(move |idx| {
-            let Some(t) = cleanup::catalog().get(idx as usize) else { return };
+            let Some(t) = cleanup::catalog().get(idx as usize) else {
+                return;
+            };
             if t.elevated {
                 if let Some(script) = cleanup::clean_script(t.id) {
                     match launch_elevated_ps(&script, false) {
-                        Ok(()) => notify("info", &format!("Clearing {} — approve UAC, then RESCAN.", t.name)),
+                        Ok(()) => notify(
+                            "info",
+                            &format!("Clearing {} — approve UAC, then RESCAN.", t.name),
+                        ),
                         Err(e) => notify("error", &format!("{}: {e}", t.name)),
                     }
                 }
@@ -1095,7 +1237,8 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
         if dirty {
             if let Some(app) = weak.upgrade() {
                 let total: u64 = sizes2.borrow().iter().sum();
-                app.global::<Cleanup>().set_total(cleanup::human(total).into());
+                app.global::<Cleanup>()
+                    .set_total(cleanup::human(total).into());
             }
         }
     });
@@ -1118,8 +1261,16 @@ fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
             let rows: Vec<ProcRow> = procs
                 .iter()
                 .map(|p| {
-                    let gpu = if p.gpu >= 0.5 { format!("{:.0}%", p.gpu) } else { "—".into() };
-                    let vram = if p.vram > 0 { cleanup::human(p.vram) } else { "—".into() };
+                    let gpu = if p.gpu >= 0.5 {
+                        format!("{:.0}%", p.gpu)
+                    } else {
+                        "—".into()
+                    };
+                    let vram = if p.vram > 0 {
+                        cleanup::human(p.vram)
+                    } else {
+                        "—".into()
+                    };
                     ProcRow {
                         pid: p.pid as i32,
                         name: p.name.as_str().into(),
@@ -1171,7 +1322,8 @@ fn wire_services(app: &AppWindow, notify: &Notify) -> Timer {
                 || row.name.to_lowercase().contains(q.as_str())
         }
     }));
-    app.global::<Services>().set_rows(ModelRc::from(filtered.clone()));
+    app.global::<Services>()
+        .set_rows(ModelRc::from(filtered.clone()));
     app.global::<Services>().set_scanning(true);
 
     {
@@ -1212,23 +1364,36 @@ fn wire_services(app: &AppWindow, notify: &Notify) -> Timer {
     // Elevated start / stop / start-type.
     {
         let notify = notify.clone();
-        app.global::<Services>().on_start(move |name| match launch_elevated_ps(&services::start_script(&name), false) {
-            Ok(()) => notify("info", &format!("Starting {name} (approve UAC) — then REFRESH")),
-            Err(e) => notify("error", &format!("{name}: {e}")),
+        app.global::<Services>().on_start(move |name| {
+            match launch_elevated_ps(&services::start_script(&name), false) {
+                Ok(()) => notify(
+                    "info",
+                    &format!("Starting {name} (approve UAC) — then REFRESH"),
+                ),
+                Err(e) => notify("error", &format!("{name}: {e}")),
+            }
         });
     }
     {
         let notify = notify.clone();
-        app.global::<Services>().on_stop(move |name| match launch_elevated_ps(&services::stop_script(&name), false) {
-            Ok(()) => notify("info", &format!("Stopping {name} (approve UAC) — then REFRESH")),
-            Err(e) => notify("error", &format!("{name}: {e}")),
+        app.global::<Services>().on_stop(move |name| {
+            match launch_elevated_ps(&services::stop_script(&name), false) {
+                Ok(()) => notify(
+                    "info",
+                    &format!("Stopping {name} (approve UAC) — then REFRESH"),
+                ),
+                Err(e) => notify("error", &format!("{name}: {e}")),
+            }
         });
     }
     {
         let notify = notify.clone();
         app.global::<Services>().on_set_startup(move |name, code| {
             match launch_elevated_ps(&services::startup_script(&name, code), false) {
-                Ok(()) => notify("info", &format!("{name}: start-type change (approve UAC) — then REFRESH")),
+                Ok(()) => notify(
+                    "info",
+                    &format!("{name}: start-type change (approve UAC) — then REFRESH"),
+                ),
                 Err(e) => notify("error", &format!("{name}: {e}")),
             }
         });
@@ -1269,7 +1434,9 @@ fn wire_microwin(app: &AppWindow, notify: &Notify) {
         m.set_oscdimg_ok(osc.is_some());
         m.set_oscdimg_hint(match &osc {
             Some(p) => format!("oscdimg ready — {p}").as_str().into(),
-            None => "oscdimg NOT found — install the Windows ADK 'Deployment Tools' to build.".into(),
+            None => {
+                "oscdimg NOT found — install the Windows ADK 'Deployment Tools' to build.".into()
+            }
         });
     }
 
@@ -1299,12 +1466,19 @@ fn wire_microwin(app: &AppWindow, notify: &Notify) {
                 return;
             }
             let Some(oscdimg) = microwin::oscdimg_path() else {
-                notify("error", "oscdimg not found — install the Windows ADK Deployment Tools.");
+                notify(
+                    "error",
+                    "oscdimg not found — install the Windows ADK Deployment Tools.",
+                );
                 return;
             };
             let output = {
                 let o = m.get_output().to_string();
-                if o.trim().is_empty() { microwin::default_output(&iso) } else { o }
+                if o.trim().is_empty() {
+                    microwin::default_output(&iso)
+                } else {
+                    o
+                }
             };
             let index = m.get_index().to_string().trim().parse::<u32>().unwrap_or(1);
             let opts = microwin::Options {
@@ -1328,7 +1502,10 @@ fn wire_microwin(app: &AppWindow, notify: &Notify) {
                 return;
             }
             match launch_elevated_file(&ps1) {
-                Ok(()) => notify("info", "MicroWin started — approve UAC; the build runs in the console (10+ min)."),
+                Ok(()) => notify(
+                    "info",
+                    "MicroWin started — approve UAC; the build runs in the console (10+ min).",
+                ),
                 Err(e) => notify("error", &format!("MicroWin: {e}")),
             }
         });
@@ -1341,7 +1518,8 @@ fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     let model: Rc<VecModel<NetRow>> = Rc::new(VecModel::default());
     app.global::<Network>().set_rows(model.clone().into());
     let fw_model: Rc<VecModel<slint::SharedString>> = Rc::new(VecModel::default());
-    app.global::<Network>().set_fw_rules(fw_model.clone().into());
+    app.global::<Network>()
+        .set_fw_rules(fw_model.clone().into());
 
     let refresh: Rc<dyn Fn()> = {
         let weak = app.as_weak();
@@ -1370,8 +1548,10 @@ fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     let refresh_fw: Rc<dyn Fn()> = {
         let fw_model = fw_model.clone();
         Rc::new(move || {
-            let names: Vec<slint::SharedString> =
-                firewall::list_names().iter().map(|n| n.as_str().into()).collect();
+            let names: Vec<slint::SharedString> = firewall::list_names()
+                .iter()
+                .map(|n| n.as_str().into())
+                .collect();
             fw_model.set_vec(names);
         })
     };
@@ -1382,13 +1562,19 @@ fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     }
     {
         let refresh_fw = refresh_fw.clone();
-        app.global::<Network>().on_refresh_firewall(move || refresh_fw());
+        app.global::<Network>()
+            .on_refresh_firewall(move || refresh_fw());
     }
     {
         let notify = notify.clone();
         app.global::<Network>().on_set_dns(move |idx| {
-            let Some(script) = dns::set_script(idx as usize) else { return };
-            let name = dns::providers().get(idx as usize).map(|p| p.name).unwrap_or("DNS");
+            let Some(script) = dns::set_script(idx as usize) else {
+                return;
+            };
+            let name = dns::providers()
+                .get(idx as usize)
+                .map(|p| p.name)
+                .unwrap_or("DNS");
             match launch_elevated_ps(&script, false) {
                 Ok(()) => notify("info", &format!("Setting DNS → {name} (approve UAC)")),
                 Err(e) => notify("error", &format!("DNS: {e}")),
@@ -1399,7 +1585,10 @@ fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
         let notify = notify.clone();
         app.global::<Network>().on_block_app(move |name, path| {
             let Some(script) = firewall::block_script(&name, &path) else {
-                notify("error", "No executable path for that process — can't block.");
+                notify(
+                    "error",
+                    "No executable path for that process — can't block.",
+                );
                 return;
             };
             match launch_elevated_ps(&script, false) {
@@ -1468,7 +1657,11 @@ fn wire_palette(app: &AppWindow) {
                 .iter()
                 .filter(|(l, _, _)| q.is_empty() || l.to_lowercase().contains(&q))
                 .take(50)
-                .map(|(l, h, id)| PaletteItem { label: l.as_str().into(), hint: (*h).into(), id: *id })
+                .map(|(l, h, id)| PaletteItem {
+                    label: l.as_str().into(),
+                    hint: (*h).into(),
+                    id: *id,
+                })
                 .collect();
             model.set_vec(items);
         });
@@ -1562,10 +1755,13 @@ fn wire_privacy(
         let tx = tx.clone();
         let refresh = refresh.clone();
         app.global::<Privacy>().on_harden(move |id| {
-            let Some(t) = cat.get(id as usize) else { return };
+            let Some(t) = cat.get(id as usize) else {
+                return;
+            };
             if t.needs_elevation() {
                 notify("info", "Requesting elevation — approve the UAC prompt…");
-                let (broker, tx, name, on) = (broker.clone(), tx.clone(), t.name.to_string(), t.on.clone());
+                let (broker, tx, name, on) =
+                    (broker.clone(), tx.clone(), t.name.to_string(), t.on.clone());
                 std::thread::spawn(move || elevated_worker(broker, tx, on, id, name, true));
             } else {
                 let _ = run_local(&t.on, &jrnl, t, true);
@@ -1595,8 +1791,11 @@ fn wire_privacy(
                 }
                 if t.needs_elevation() {
                     elevated += 1;
-                    let (broker, tx, name, on) = (broker.clone(), tx.clone(), t.name.to_string(), t.on.clone());
-                    std::thread::spawn(move || elevated_worker(broker, tx, on, i as i32, name, true));
+                    let (broker, tx, name, on) =
+                        (broker.clone(), tx.clone(), t.name.to_string(), t.on.clone());
+                    std::thread::spawn(move || {
+                        elevated_worker(broker, tx, on, i as i32, name, true)
+                    });
                 } else if run_local(&t.on, &jrnl, t, true).is_ok() {
                     local += 1;
                 }
@@ -1604,7 +1803,10 @@ fn wire_privacy(
             let _ = jrnl.borrow().save(&path);
             refresh();
             if elevated > 0 {
-                notify("info", &format!("Hardened {local} now; approve UAC for {elevated} more…"));
+                notify(
+                    "info",
+                    &format!("Hardened {local} now; approve UAC for {elevated} more…"),
+                );
             } else {
                 notify("success", &format!("Hardened {local} checks"));
             }
@@ -1622,11 +1824,20 @@ fn wire_privacy(
     timer.start(TimerMode::Repeated, Duration::from_millis(150), move || {
         while let Ok(msg) = rx.try_recv() {
             match msg {
-                ElevatedMsg::Done { name, want, results, .. } => {
+                ElevatedMsg::Done {
+                    name,
+                    want,
+                    results,
+                    ..
+                } => {
                     {
                         let mut j = jrnl.borrow_mut();
                         for (a, rev) in results {
-                            j.record(format!("{}: {}", name, if want { "on" } else { "off" }), a, rev);
+                            j.record(
+                                format!("{}: {}", name, if want { "on" } else { "off" }),
+                                a,
+                                rev,
+                            );
                         }
                     }
                     let _ = jrnl.borrow().save(&path);
@@ -1675,7 +1886,10 @@ fn revert_elevated_worker(
         match BrokerSession::spawn(true) {
             Ok(s) => *guard = Some(s),
             Err(e) => {
-                let _ = tx.send(RevertMsg::Failed { label, error: format!("elevation failed: {e}") });
+                let _ = tx.send(RevertMsg::Failed {
+                    label,
+                    error: format!("elevation failed: {e}"),
+                });
                 return;
             }
         }
@@ -1689,11 +1903,17 @@ fn revert_elevated_worker(
             let _ = tx.send(RevertMsg::Failed { label, error: e });
         }
         Ok(_) => {
-            let _ = tx.send(RevertMsg::Failed { label, error: "unexpected broker reply".into() });
+            let _ = tx.send(RevertMsg::Failed {
+                label,
+                error: "unexpected broker reply".into(),
+            });
         }
         Err(e) => {
             *guard = None;
-            let _ = tx.send(RevertMsg::Failed { label, error: format!("broker link lost: {e}") });
+            let _ = tx.send(RevertMsg::Failed {
+                label,
+                error: format!("broker link lost: {e}"),
+            });
         }
     }
 }
@@ -1756,8 +1976,12 @@ fn wire_history(
             let Some(entry) = entry else { return };
             if entry.reversal.needs_elevation() {
                 notify("info", "Requesting elevation — approve the UAC prompt…");
-                let (broker, tx, rev, label) =
-                    (broker.clone(), tx.clone(), entry.reversal.clone(), entry.label.clone());
+                let (broker, tx, rev, label) = (
+                    broker.clone(),
+                    tx.clone(),
+                    entry.reversal.clone(),
+                    entry.label.clone(),
+                );
                 std::thread::spawn(move || revert_elevated_worker(broker, tx, rev, id, label));
             } else {
                 match engine::revert(&entry.reversal) {
@@ -1775,7 +1999,8 @@ fn wire_history(
 
     {
         let do_revert = do_revert.clone();
-        app.global::<History>().on_revert(move |id| do_revert(id as u64));
+        app.global::<History>()
+            .on_revert(move |id| do_revert(id as u64));
     }
 
     // Revert every active entry, newest first.
@@ -1783,7 +2008,14 @@ fn wire_history(
         let jrnl = jrnl.clone();
         let do_revert = do_revert.clone();
         app.global::<History>().on_revert_all(move || {
-            let ids: Vec<u64> = jrnl.borrow().entries.iter().rev().filter(|e| e.active).map(|e| e.id).collect();
+            let ids: Vec<u64> = jrnl
+                .borrow()
+                .entries
+                .iter()
+                .rev()
+                .filter(|e| e.active)
+                .map(|e| e.id)
+                .collect();
             for id in ids {
                 do_revert(id);
             }
@@ -1829,14 +2061,19 @@ fn main() -> Result<(), slint::PlatformError> {
     let app = AppWindow::new()?;
     let notify = make_notifier(&app);
 
-    app.global::<Theme>().set_hev(settings::Settings::load().theme_hev);
+    app.global::<Theme>()
+        .set_hev(settings::Settings::load().theme_hev);
 
     let journal_path: PathBuf = journal::default_path();
     let jrnl: SharedJournal = Rc::new(RefCell::new(Journal::load(&journal_path)));
 
     // Tweaks model.
     let tweaks_catalog = Rc::new(tweaks::catalog());
-    let rows: Vec<TweakRow> = tweaks_catalog.iter().enumerate().map(|(i, t)| make_row(i, t)).collect();
+    let rows: Vec<TweakRow> = tweaks_catalog
+        .iter()
+        .enumerate()
+        .map(|(i, t)| make_row(i, t))
+        .collect();
     let tweaks_model = Rc::new(VecModel::from(rows));
     // Tweaks.rows is set inside wire_tweaks (wrapped in a FilterModel).
 
@@ -1852,11 +2089,19 @@ fn main() -> Result<(), slint::PlatformError> {
             desc: m.desc.into(),
         })
         .collect();
-    app.global::<Modes>().set_cards(Rc::new(VecModel::from(cards)).into());
+    app.global::<Modes>()
+        .set_cards(Rc::new(VecModel::from(cards)).into());
     refresh_modes(&app, &modes_catalog);
 
     wire_theme(&app);
-    let _tweak_pump = wire_tweaks(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model);
+    let _tweak_pump = wire_tweaks(
+        &app,
+        &jrnl,
+        &journal_path,
+        &notify,
+        &tweaks_catalog,
+        &tweaks_model,
+    );
     wire_modes(&app, &jrnl, &journal_path, &notify, &modes_catalog);
     wire_installs(&app, &notify);
     wire_quick(&app, &notify);
@@ -1870,12 +2115,40 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_microwin(&app, &notify);
     wire_palette(&app);
     let power_refresh = wire_power(&app, &notify);
-    let (_privacy_pump, privacy_refresh) =
-        wire_privacy(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model);
-    let (_history_pump, history_refresh) =
-        wire_history(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model);
-    wire_config(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
-    wire_undo(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
+    let (_privacy_pump, privacy_refresh) = wire_privacy(
+        &app,
+        &jrnl,
+        &journal_path,
+        &notify,
+        &tweaks_catalog,
+        &tweaks_model,
+    );
+    let (_history_pump, history_refresh) = wire_history(
+        &app,
+        &jrnl,
+        &journal_path,
+        &notify,
+        &tweaks_catalog,
+        &tweaks_model,
+    );
+    wire_config(
+        &app,
+        &jrnl,
+        &journal_path,
+        &notify,
+        &tweaks_catalog,
+        &tweaks_model,
+        &modes_catalog,
+    );
+    wire_undo(
+        &app,
+        &jrnl,
+        &journal_path,
+        &notify,
+        &tweaks_catalog,
+        &tweaks_model,
+        &modes_catalog,
+    );
     apply_specs(&app);
 
     // Re-probe a panel's live state whenever the user navigates to it, so values
@@ -1898,10 +2171,11 @@ fn main() -> Result<(), slint::PlatformError> {
 
     {
         let notify = notify.clone();
-        app.global::<Ui>().on_enable_sensors(move || match sensors::spawn_elevated() {
-            Ok(()) => notify("info", "Requesting elevation for hardware sensors…"),
-            Err(e) => notify("error", &format!("Sensors failed: {e}")),
-        });
+        app.global::<Ui>()
+            .on_enable_sensors(move || match sensors::spawn_elevated() {
+                Ok(()) => notify("info", "Requesting elevation for hardware sensors…"),
+                Err(e) => notify("error", &format!("Sensors failed: {e}")),
+            });
     }
 
     let mut tele = Telemetry::new();

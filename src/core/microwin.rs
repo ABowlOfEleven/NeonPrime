@@ -55,8 +55,14 @@ pub fn default_scratch() -> String {
 /// Default output ISO path: alongside the source, suffixed `-NeonPrime`.
 pub fn default_output(iso: &str) -> String {
     let p = Path::new(iso);
-    let dir = p.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default();
-    let stem = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "windows".into());
+    let dir = p
+        .parent()
+        .map(|d| d.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let stem = p
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "windows".into());
     if dir.is_empty() {
         format!("{stem}-NeonPrime.iso")
     } else {
@@ -168,14 +174,20 @@ pub fn build_script(o: &Options, oscdimg: &str, unattend: &str) -> String {
 
     if o.debloat {
         s.push_str("Write-Host 'Removing bundled apps...' -ForegroundColor Cyan\n");
-        let patterns = BLOAT.iter().map(|b| format!("'{b}'")).collect::<Vec<_>>().join(",");
+        let patterns = BLOAT
+            .iter()
+            .map(|b| format!("'{b}'"))
+            .collect::<Vec<_>>()
+            .join(",");
         s.push_str(&format!("$bloat = @({patterns})\n"));
         s.push_str("Get-AppxProvisionedPackage -Path $mnt | ForEach-Object { $p=$_; if ($bloat | Where-Object { $p.DisplayName -like \"*$_*\" }) { dism /Image:$mnt /Remove-ProvisionedAppxPackage /PackageName:$($p.PackageName) } }\n");
     }
 
     if o.privacy {
         s.push_str("Write-Host 'Applying offline privacy tweaks...' -ForegroundColor Cyan\n");
-        s.push_str("reg load HKLM\\zSOFTWARE \"$mnt\\Windows\\System32\\config\\SOFTWARE\" | Out-Null\n");
+        s.push_str(
+            "reg load HKLM\\zSOFTWARE \"$mnt\\Windows\\System32\\config\\SOFTWARE\" | Out-Null\n",
+        );
         s.push_str("reg add \"HKLM\\zSOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection\" /v AllowTelemetry /t REG_DWORD /d 0 /f\n");
         s.push_str("reg add \"HKLM\\zSOFTWARE\\Policies\\Microsoft\\Windows\\WindowsCopilot\" /v TurnOffWindowsCopilot /t REG_DWORD /d 1 /f\n");
         s.push_str("reg add \"HKLM\\zSOFTWARE\\Policies\\Microsoft\\Windows\\CloudContent\" /v DisableWindowsConsumerFeatures /t REG_DWORD /d 1 /f\n");
@@ -188,7 +200,10 @@ pub fn build_script(o: &Options, oscdimg: &str, unattend: &str) -> String {
 
     if o.bypass {
         s.push_str("Write-Host 'Injecting autounattend.xml...'\n");
-        s.push_str(&format!("Copy-Item '{}' (Join-Path $src 'autounattend.xml') -Force\n", unattend.replace('\'', "''")));
+        s.push_str(&format!(
+            "Copy-Item '{}' (Join-Path $src 'autounattend.xml') -Force\n",
+            unattend.replace('\'', "''")
+        ));
     }
 
     // Repack with oscdimg (BIOS + UEFI dual boot).
@@ -221,7 +236,10 @@ mod tests {
 
     #[test]
     fn default_output_suffixes() {
-        assert_eq!(default_output("D:\\iso\\win11.iso"), "D:\\iso\\win11-NeonPrime.iso");
+        assert_eq!(
+            default_output("D:\\iso\\win11.iso"),
+            "D:\\iso\\win11-NeonPrime.iso"
+        );
     }
 
     #[test]

@@ -31,7 +31,10 @@ fn broker_apply_then_revert_roundtrip() {
         .expect("port");
 
     let mut client = Client::connect(port, token).expect("connect");
-    assert!(matches!(client.call(&Request::Ping).unwrap(), Response::Pong));
+    assert!(matches!(
+        client.call(&Request::Ping).unwrap(),
+        Response::Pong
+    ));
 
     let path = "Software\\NeonPrime\\Test";
     let name = "BrokerRoundtrip";
@@ -44,7 +47,10 @@ fn broker_apply_then_revert_roundtrip() {
         value: RegValue::Dword(7),
     };
     let reversal = match client
-        .call(&Request::Apply { label: "test".into(), action })
+        .call(&Request::Apply {
+            label: "test".into(),
+            action,
+        })
         .unwrap()
     {
         Response::Applied { reversal } => reversal,

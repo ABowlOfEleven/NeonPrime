@@ -3,8 +3,8 @@
 pub mod action;
 pub mod cleanup;
 pub mod config;
-pub mod dns;
 pub mod debloat;
+pub mod dns;
 pub mod engine;
 pub mod features;
 pub mod firewall;

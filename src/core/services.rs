@@ -47,7 +47,12 @@ pub fn list() -> Vec<Svc> {
             if name.is_empty() {
                 return None;
             }
-            Some(Svc { name, display, running: status == "Running", startup })
+            Some(Svc {
+                name,
+                display,
+                running: status == "Running",
+                startup,
+            })
         })
         .collect()
 }
@@ -62,10 +67,16 @@ fn ps_startup(code: i32) -> &'static str {
 
 /// Elevated PowerShell to start / stop a service.
 pub fn start_script(name: &str) -> String {
-    format!("Start-Service -Name '{}'; Write-Host 'Started.'", name.replace('\'', "''"))
+    format!(
+        "Start-Service -Name '{}'; Write-Host 'Started.'",
+        name.replace('\'', "''")
+    )
 }
 pub fn stop_script(name: &str) -> String {
-    format!("Stop-Service -Name '{}' -Force; Write-Host 'Stopped.'", name.replace('\'', "''"))
+    format!(
+        "Stop-Service -Name '{}' -Force; Write-Host 'Stopped.'",
+        name.replace('\'', "''")
+    )
 }
 
 /// Elevated PowerShell to change a service's start-type (code 0/1/2).

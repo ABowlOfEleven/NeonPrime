@@ -37,7 +37,12 @@ const BG_APPS: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundA
 const PUSH: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications";
 
 fn dw(path: &str, name: &str, v: u32) -> Action {
-    Action::SetReg { hive: Hive::Hkcu, path: path.into(), name: name.into(), value: RegValue::Dword(v) }
+    Action::SetReg {
+        hive: Hive::Hkcu,
+        path: path.into(),
+        name: name.into(),
+        value: RegValue::Dword(v),
+    }
 }
 
 pub fn catalog() -> Vec<Mode> {
@@ -95,7 +100,12 @@ pub fn clear_marker() {
 
 /// Remember the pre-mode power scheme so switching away can restore it.
 pub fn save_prev_power(guid: &str) {
-    let _ = registry::write(Hive::Hkcu, STATE_PATH, PREV_POWER, &RegValue::Sz(guid.into()));
+    let _ = registry::write(
+        Hive::Hkcu,
+        STATE_PATH,
+        PREV_POWER,
+        &RegValue::Sz(guid.into()),
+    );
 }
 
 /// Take (read + clear) the saved pre-mode power scheme.

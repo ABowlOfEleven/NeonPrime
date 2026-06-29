@@ -43,7 +43,14 @@ fn state_name(s: u32) -> &'static str {
 pub fn connections() -> Vec<Conn> {
     let mut size: u32 = 0;
     unsafe {
-        GetExtendedTcpTable(None, &mut size, BOOL(0), AF_INET.0 as u32, TCP_TABLE_OWNER_PID_ALL, 0);
+        GetExtendedTcpTable(
+            None,
+            &mut size,
+            BOOL(0),
+            AF_INET.0 as u32,
+            TCP_TABLE_OWNER_PID_ALL,
+            0,
+        );
     }
     if size == 0 {
         return Vec::new();
@@ -75,11 +82,18 @@ pub fn connections() -> Vec<Conn> {
         let remote_ip = Ipv4Addr::from(row.dwRemoteAddr.to_ne_bytes());
         let remote_port = (row.dwRemotePort as u16).swap_bytes();
         // Skip listeners / unconnected / loopback.
-        if row.dwState == 2 || remote_port == 0 || remote_ip.is_unspecified() || remote_ip.is_loopback() {
+        if row.dwState == 2
+            || remote_port == 0
+            || remote_ip.is_unspecified()
+            || remote_ip.is_loopback()
+        {
             continue;
         }
         let pid = row.dwOwningPid;
-        let (name, path) = names.get(&pid).cloned().unwrap_or_else(|| ("—".into(), String::new()));
+        let (name, path) = names
+            .get(&pid)
+            .cloned()
+            .unwrap_or_else(|| ("—".into(), String::new()));
         out.push(Conn {
             proc_name: name,
             pid,
@@ -88,7 +102,12 @@ pub fn connections() -> Vec<Conn> {
             path,
         });
     }
-    out.sort_by(|a, b| a.proc_name.to_lowercase().cmp(&b.proc_name.to_lowercase()).then(a.remote.cmp(&b.remote)));
+    out.sort_by(|a, b| {
+        a.proc_name
+            .to_lowercase()
+            .cmp(&b.proc_name.to_lowercase())
+            .then(a.remote.cmp(&b.remote))
+    });
     out
 }
 
@@ -101,7 +120,10 @@ fn process_names() -> HashMap<u32, (String, String)> {
         .iter()
         .map(|(pid, p)| {
             let name = p.name().to_string_lossy().to_string();
-            let path = p.exe().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+            let path = p
+                .exe()
+                .map(|e| e.to_string_lossy().to_string())
+                .unwrap_or_default();
             (pid.as_u32(), (name, path))
         })
         .collect()

@@ -5,8 +5,12 @@
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let input = args.get(1).expect("usage: render_icon <in.svg> <out.png> [size]");
-    let output = args.get(2).expect("usage: render_icon <in.svg> <out.png> [size]");
+    let input = args
+        .get(1)
+        .expect("usage: render_icon <in.svg> <out.png> [size]");
+    let output = args
+        .get(2)
+        .expect("usage: render_icon <in.svg> <out.png> [size]");
     let size: u32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(256);
 
     use resvg::{tiny_skia, usvg};

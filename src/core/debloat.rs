@@ -19,20 +19,90 @@ pub struct Bloat {
 
 pub fn catalog() -> &'static [Bloat] {
     &[
-        Bloat { id: "copilot", name: "Copilot", desc: "The Windows Copilot app.", pkg: "Microsoft.Copilot" },
-        Bloat { id: "teams", name: "Teams (consumer)", desc: "The personal Microsoft Teams / Chat app.", pkg: "MicrosoftTeams" },
-        Bloat { id: "xboxbar", name: "Xbox Game Bar", desc: "The Game Bar overlay (Win+G).", pkg: "Microsoft.XboxGamingOverlay" },
-        Bloat { id: "bingnews", name: "Bing News", desc: "The Microsoft News app.", pkg: "Microsoft.BingNews" },
-        Bloat { id: "bingweather", name: "Weather", desc: "The MSN Weather app.", pkg: "Microsoft.BingWeather" },
-        Bloat { id: "solitaire", name: "Solitaire Collection", desc: "Microsoft Solitaire (ad-supported).", pkg: "Microsoft.MicrosoftSolitaireCollection" },
-        Bloat { id: "gethelp", name: "Get Help", desc: "The Windows support / Get Help app.", pkg: "Microsoft.GetHelp" },
-        Bloat { id: "tips", name: "Tips", desc: "The Windows Tips / Get Started app.", pkg: "Microsoft.Getstarted" },
-        Bloat { id: "maps", name: "Maps", desc: "The Windows Maps app.", pkg: "Microsoft.WindowsMaps" },
-        Bloat { id: "feedback", name: "Feedback Hub", desc: "The Windows Feedback Hub.", pkg: "Microsoft.WindowsFeedbackHub" },
-        Bloat { id: "mrportal", name: "Mixed Reality Portal", desc: "The Windows Mixed Reality portal.", pkg: "Microsoft.MixedReality.Portal" },
-        Bloat { id: "clipchamp", name: "Clipchamp", desc: "The Clipchamp video editor.", pkg: "Clipchamp.Clipchamp" },
-        Bloat { id: "quickassist", name: "Quick Assist", desc: "Remote-assistance tool (scam-abuse vector).", pkg: "MicrosoftCorporationII.QuickAssist" },
-        Bloat { id: "people", name: "People", desc: "The People contacts app.", pkg: "Microsoft.People" },
+        Bloat {
+            id: "copilot",
+            name: "Copilot",
+            desc: "The Windows Copilot app.",
+            pkg: "Microsoft.Copilot",
+        },
+        Bloat {
+            id: "teams",
+            name: "Teams (consumer)",
+            desc: "The personal Microsoft Teams / Chat app.",
+            pkg: "MicrosoftTeams",
+        },
+        Bloat {
+            id: "xboxbar",
+            name: "Xbox Game Bar",
+            desc: "The Game Bar overlay (Win+G).",
+            pkg: "Microsoft.XboxGamingOverlay",
+        },
+        Bloat {
+            id: "bingnews",
+            name: "Bing News",
+            desc: "The Microsoft News app.",
+            pkg: "Microsoft.BingNews",
+        },
+        Bloat {
+            id: "bingweather",
+            name: "Weather",
+            desc: "The MSN Weather app.",
+            pkg: "Microsoft.BingWeather",
+        },
+        Bloat {
+            id: "solitaire",
+            name: "Solitaire Collection",
+            desc: "Microsoft Solitaire (ad-supported).",
+            pkg: "Microsoft.MicrosoftSolitaireCollection",
+        },
+        Bloat {
+            id: "gethelp",
+            name: "Get Help",
+            desc: "The Windows support / Get Help app.",
+            pkg: "Microsoft.GetHelp",
+        },
+        Bloat {
+            id: "tips",
+            name: "Tips",
+            desc: "The Windows Tips / Get Started app.",
+            pkg: "Microsoft.Getstarted",
+        },
+        Bloat {
+            id: "maps",
+            name: "Maps",
+            desc: "The Windows Maps app.",
+            pkg: "Microsoft.WindowsMaps",
+        },
+        Bloat {
+            id: "feedback",
+            name: "Feedback Hub",
+            desc: "The Windows Feedback Hub.",
+            pkg: "Microsoft.WindowsFeedbackHub",
+        },
+        Bloat {
+            id: "mrportal",
+            name: "Mixed Reality Portal",
+            desc: "The Windows Mixed Reality portal.",
+            pkg: "Microsoft.MixedReality.Portal",
+        },
+        Bloat {
+            id: "clipchamp",
+            name: "Clipchamp",
+            desc: "The Clipchamp video editor.",
+            pkg: "Clipchamp.Clipchamp",
+        },
+        Bloat {
+            id: "quickassist",
+            name: "Quick Assist",
+            desc: "Remote-assistance tool (scam-abuse vector).",
+            pkg: "MicrosoftCorporationII.QuickAssist",
+        },
+        Bloat {
+            id: "people",
+            name: "People",
+            desc: "The People contacts app.",
+            pkg: "Microsoft.People",
+        },
     ]
 }
 

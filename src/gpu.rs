@@ -50,7 +50,10 @@ pub fn query() -> Option<GpuInfo> {
             .trim_end_matches('\0')
             .trim()
             .to_string();
-        Some(GpuInfo { name, vram_total: desc.DedicatedVideoMemory as u64 })
+        Some(GpuInfo {
+            name,
+            vram_total: desc.DedicatedVideoMemory as u64,
+        })
     }
 }
 
@@ -76,7 +79,10 @@ unsafe fn read_sum(counter: isize) -> Option<f64> {
     if res != 0 {
         return None;
     }
-    let items = std::slice::from_raw_parts(buf.as_ptr() as *const PDH_FMT_COUNTERVALUE_ITEM_W, count as usize);
+    let items = std::slice::from_raw_parts(
+        buf.as_ptr() as *const PDH_FMT_COUNTERVALUE_ITEM_W,
+        count as usize,
+    );
     let mut sum = 0.0f64;
     for it in items {
         let v = it.FmtValue.Anonymous.doubleValue;
@@ -111,14 +117,21 @@ impl GpuCounters {
                 let mem_path: Vec<u16> = "\\GPU Adapter Memory(*)\\Dedicated Usage\0"
                     .encode_utf16()
                     .collect();
-                let u_ok = PdhAddEnglishCounterW(query, PCWSTR(util_path.as_ptr()), 0, &mut util) == 0;
-                let m_ok = PdhAddEnglishCounterW(query, PCWSTR(mem_path.as_ptr()), 0, &mut mem) == 0;
+                let u_ok =
+                    PdhAddEnglishCounterW(query, PCWSTR(util_path.as_ptr()), 0, &mut util) == 0;
+                let m_ok =
+                    PdhAddEnglishCounterW(query, PCWSTR(mem_path.as_ptr()), 0, &mut mem) == 0;
                 if u_ok || m_ok {
                     PdhCollectQueryData(query); // prime
                     ready = true;
                 }
             }
-            GpuCounters { query, util, mem, ready }
+            GpuCounters {
+                query,
+                util,
+                mem,
+                ready,
+            }
         }
     }
 

@@ -82,7 +82,11 @@ pub fn invocation(id: &str) -> Option<Invocation> {
         "clear-temp" => inv("cmd", &["/c", "del /q /f /s \"%TEMP%\\*\""], false),
         "empty-recycle-bin" => inv(
             "powershell",
-            &["-NoProfile", "-Command", "Clear-RecycleBin -Force -ErrorAction SilentlyContinue"],
+            &[
+                "-NoProfile",
+                "-Command",
+                "Clear-RecycleBin -Force -ErrorAction SilentlyContinue",
+            ],
             false,
         ),
         "create-restore-point" => inv(

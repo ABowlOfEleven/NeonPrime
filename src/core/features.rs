@@ -82,7 +82,11 @@ pub fn catalog() -> &'static [Feature] {
 
 /// PowerShell that enables (or disables) every DISM component of a feature.
 pub fn dism_script(f: &Feature, enable: bool) -> String {
-    let verb = if enable { "Enable-Feature" } else { "Disable-Feature" };
+    let verb = if enable {
+        "Enable-Feature"
+    } else {
+        "Disable-Feature"
+    };
     let all = if enable { " /All" } else { "" };
     f.dism
         .split(',')

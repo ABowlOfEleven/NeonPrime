@@ -10,10 +10,26 @@ pub struct Provider {
 
 pub fn providers() -> &'static [Provider] {
     &[
-        Provider { id: "auto", name: "AUTOMATIC", servers: &[] },
-        Provider { id: "cloudflare", name: "CLOUDFLARE", servers: &["1.1.1.1", "1.0.0.1"] },
-        Provider { id: "google", name: "GOOGLE", servers: &["8.8.8.8", "8.8.4.4"] },
-        Provider { id: "quad9", name: "QUAD9", servers: &["9.9.9.9", "149.112.112.112"] },
+        Provider {
+            id: "auto",
+            name: "AUTOMATIC",
+            servers: &[],
+        },
+        Provider {
+            id: "cloudflare",
+            name: "CLOUDFLARE",
+            servers: &["1.1.1.1", "1.0.0.1"],
+        },
+        Provider {
+            id: "google",
+            name: "GOOGLE",
+            servers: &["8.8.8.8", "8.8.4.4"],
+        },
+        Provider {
+            id: "quad9",
+            name: "QUAD9",
+            servers: &["9.9.9.9", "149.112.112.112"],
+        },
     ]
 }
 
@@ -24,7 +40,12 @@ pub fn set_script(idx: usize) -> Option<String> {
     let per_if = if p.servers.is_empty() {
         "Set-DnsClientServerAddress -InterfaceIndex $i -ResetServerAddresses".to_string()
     } else {
-        let list = p.servers.iter().map(|s| format!("'{s}'")).collect::<Vec<_>>().join(",");
+        let list = p
+            .servers
+            .iter()
+            .map(|s| format!("'{s}'"))
+            .collect::<Vec<_>>()
+            .join(",");
         format!("Set-DnsClientServerAddress -InterfaceIndex $i -ServerAddresses ({list})")
     };
     Some(format!(

@@ -12,15 +12,30 @@ pub struct Plan {
 
 pub fn plans() -> &'static [Plan] {
     &[
-        Plan { id: "balanced", name: "BALANCED", guid: "381b4222-f694-41f0-9685-ff5bb260df2e" },
-        Plan { id: "high", name: "HIGH PERF", guid: "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" },
-        Plan { id: "ultimate", name: "ULTIMATE", guid: "e9a42b02-d5df-448d-aa00-03f14749eb61" },
+        Plan {
+            id: "balanced",
+            name: "BALANCED",
+            guid: "381b4222-f694-41f0-9685-ff5bb260df2e",
+        },
+        Plan {
+            id: "high",
+            name: "HIGH PERF",
+            guid: "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+        },
+        Plan {
+            id: "ultimate",
+            name: "ULTIMATE",
+            guid: "e9a42b02-d5df-448d-aa00-03f14749eb61",
+        },
     ]
 }
 
 /// GUID of the currently-active power scheme (unelevated), lowercased.
 pub fn active_guid() -> Option<String> {
-    let out = Command::new("powercfg").arg("/getactivescheme").output().ok()?;
+    let out = Command::new("powercfg")
+        .arg("/getactivescheme")
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
@@ -57,7 +72,10 @@ pub fn set_script(idx: usize) -> Option<String> {
     let p = plans().get(idx)?;
     Some(if p.id == "ultimate" {
         // -duplicatescheme is a no-op (non-zero exit) if it already exists.
-        format!("powercfg -duplicatescheme {0} 2>$null; powercfg /setactive {0}", p.guid)
+        format!(
+            "powercfg -duplicatescheme {0} 2>$null; powercfg /setactive {0}",
+            p.guid
+        )
     } else {
         format!("powercfg /setactive {}", p.guid)
     })

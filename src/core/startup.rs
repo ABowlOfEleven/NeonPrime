@@ -25,10 +25,18 @@ pub struct StartupEntry {
 pub fn list() -> Vec<StartupEntry> {
     let mut out: Vec<StartupEntry> = Vec::new();
     for (name, command) in registry::list_string_values(Hive::Hkcu, RUN) {
-        out.push(StartupEntry { name, command, enabled: true });
+        out.push(StartupEntry {
+            name,
+            command,
+            enabled: true,
+        });
     }
     for (name, command) in registry::list_string_values(Hive::Hkcu, BACKUP) {
-        out.push(StartupEntry { name, command, enabled: false });
+        out.push(StartupEntry {
+            name,
+            command,
+            enabled: false,
+        });
     }
     out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     out

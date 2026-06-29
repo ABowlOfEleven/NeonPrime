@@ -14,18 +14,43 @@ pub struct Target {
 
 pub fn catalog() -> &'static [Target] {
     &[
-        Target { id: "temp", name: "Temporary files", desc: "Your user %TEMP% folder.", elevated: false },
-        Target { id: "recycle", name: "Recycle Bin", desc: "Deleted files across all drives.", elevated: false },
-        Target { id: "thumbs", name: "Thumbnail cache", desc: "Explorer thumbnail & icon caches.", elevated: false },
-        Target { id: "syscache", name: "System & update cache", desc: "C:\\Windows\\Temp and the Windows Update download cache.", elevated: true },
+        Target {
+            id: "temp",
+            name: "Temporary files",
+            desc: "Your user %TEMP% folder.",
+            elevated: false,
+        },
+        Target {
+            id: "recycle",
+            name: "Recycle Bin",
+            desc: "Deleted files across all drives.",
+            elevated: false,
+        },
+        Target {
+            id: "thumbs",
+            name: "Thumbnail cache",
+            desc: "Explorer thumbnail & icon caches.",
+            elevated: false,
+        },
+        Target {
+            id: "syscache",
+            name: "System & update cache",
+            desc: "C:\\Windows\\Temp and the Windows Update download cache.",
+            elevated: true,
+        },
     ]
 }
 
 /// Directories backing a target id (empty for the Recycle Bin special-case).
 fn paths(id: &str) -> Vec<PathBuf> {
-    let win = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("C:\\Windows"));
+    let win = std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("C:\\Windows"));
     match id {
-        "temp" => std::env::var_os("TEMP").map(PathBuf::from).into_iter().collect(),
+        "temp" => std::env::var_os("TEMP")
+            .map(PathBuf::from)
+            .into_iter()
+            .collect(),
         "thumbs" => std::env::var_os("LOCALAPPDATA")
             .map(|p| PathBuf::from(p).join("Microsoft\\Windows\\Explorer"))
             .into_iter()
@@ -38,7 +63,9 @@ fn paths(id: &str) -> Vec<PathBuf> {
 /// Recursively sum file sizes under `dir`, ignoring entries we can't read.
 fn dir_size(dir: &std::path::Path) -> u64 {
     let mut total = 0u64;
-    let Ok(rd) = std::fs::read_dir(dir) else { return 0 };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return 0;
+    };
     for entry in rd.flatten() {
         let Ok(ft) = entry.file_type() else { continue };
         if ft.is_symlink() {
@@ -68,7 +95,9 @@ pub fn clean(id: &str) -> std::io::Result<()> {
         return Ok(());
     }
     for dir in paths(id) {
-        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
         for entry in rd.flatten() {
             let p = entry.path();
             let _ = if p.is_dir() {
@@ -89,7 +118,12 @@ pub fn clean_script(id: &str) -> Option<String> {
     }
     let mut parts: Vec<String> = dirs
         .iter()
-        .map(|d| format!("Remove-Item \"{}\\*\" -Recurse -Force -ErrorAction SilentlyContinue", d.display()))
+        .map(|d| {
+            format!(
+                "Remove-Item \"{}\\*\" -Recurse -Force -ErrorAction SilentlyContinue",
+                d.display()
+            )
+        })
         .collect();
     parts.push("Write-Host 'System caches cleared.'".into());
     Some(parts.join("; "))
@@ -112,7 +146,11 @@ pub fn human(bytes: u64) -> String {
 
 fn recycle_bin_size() -> u64 {
     use windows::Win32::UI::Shell::{SHQueryRecycleBinW, SHQUERYRBINFO};
-    let mut info = SHQUERYRBINFO { cbSize: std::mem::size_of::<SHQUERYRBINFO>() as u32, i64Size: 0, i64NumItems: 0 };
+    let mut info = SHQUERYRBINFO {
+        cbSize: std::mem::size_of::<SHQUERYRBINFO>() as u32,
+        i64Size: 0,
+        i64NumItems: 0,
+    };
     let ok = unsafe { SHQueryRecycleBinW(windows::core::PCWSTR::null(), &mut info) };
     if ok.is_ok() && info.i64Size > 0 {
         info.i64Size as u64
@@ -122,7 +160,9 @@ fn recycle_bin_size() -> u64 {
 }
 
 fn empty_recycle_bin() {
-    use windows::Win32::UI::Shell::{SHEmptyRecycleBinW, SHERB_NOCONFIRMATION, SHERB_NOPROGRESSUI, SHERB_NOSOUND};
+    use windows::Win32::UI::Shell::{
+        SHEmptyRecycleBinW, SHERB_NOCONFIRMATION, SHERB_NOPROGRESSUI, SHERB_NOSOUND,
+    };
     unsafe {
         let _ = SHEmptyRecycleBinW(
             None,

@@ -10,7 +10,12 @@ use crate::core::registry;
 /// Apply an action and return the [`Reversal`] that undoes it.
 pub fn apply(action: &Action) -> io::Result<Reversal> {
     match action {
-        Action::SetReg { hive, path, name, value } => {
+        Action::SetReg {
+            hive,
+            path,
+            name,
+            value,
+        } => {
             let previous = registry::read(*hive, path, name)?;
             registry::write(*hive, path, name, value)?;
             Ok(Reversal::RestoreReg {
@@ -36,7 +41,12 @@ pub fn apply(action: &Action) -> io::Result<Reversal> {
 /// Undo a previously-applied action.
 pub fn revert(reversal: &Reversal) -> io::Result<()> {
     match reversal {
-        Reversal::RestoreReg { hive, path, name, previous } => match previous {
+        Reversal::RestoreReg {
+            hive,
+            path,
+            name,
+            previous,
+        } => match previous {
             Some(v) => registry::write(*hive, path, name, v),
             None => registry::delete(*hive, path, name),
         },

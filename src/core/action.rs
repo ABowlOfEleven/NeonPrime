@@ -88,8 +88,14 @@ impl Reversal {
     /// Short `HIVE\…\leaf : name` summary for display.
     pub fn target_summary(&self) -> String {
         match self {
-            Reversal::RestoreReg { hive, path, name, .. } => {
-                let root = if hive.needs_elevation() { "HKLM" } else { "HKCU" };
+            Reversal::RestoreReg {
+                hive, path, name, ..
+            } => {
+                let root = if hive.needs_elevation() {
+                    "HKLM"
+                } else {
+                    "HKCU"
+                };
                 let leaf = path.rsplit('\\').next().unwrap_or(path);
                 let key = if name.is_empty() { "(default)" } else { name };
                 format!("{root}\\…\\{leaf} : {key}")

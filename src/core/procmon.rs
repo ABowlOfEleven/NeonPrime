@@ -12,9 +12,9 @@ use windows::Win32::System::Performance::*;
 pub struct Proc {
     pub name: String,
     pub pid: u32,
-    pub cpu: f32, // percent of total CPU (0..100)
-    pub mem: u64, // bytes
-    pub gpu: f32, // percent (0..100, summed 3D engines)
+    pub cpu: f32,  // percent of total CPU (0..100)
+    pub mem: u64,  // bytes
+    pub gpu: f32,  // percent (0..100, summed 3D engines)
     pub vram: u64, // dedicated bytes
 }
 
@@ -31,7 +31,9 @@ unsafe fn read_by_pid(counter: isize) -> HashMap<u32, f64> {
     let mut map = HashMap::new();
     let mut size = 0u32;
     let mut count = 0u32;
-    if PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &mut size, &mut count, None) != PDH_MORE_DATA_U32 {
+    if PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &mut size, &mut count, None)
+        != PDH_MORE_DATA_U32
+    {
         return map;
     }
     let mut buf = vec![0u8; size as usize];
@@ -45,7 +47,10 @@ unsafe fn read_by_pid(counter: isize) -> HashMap<u32, f64> {
     {
         return map;
     }
-    let items = std::slice::from_raw_parts(buf.as_ptr() as *const PDH_FMT_COUNTERVALUE_ITEM_W, count as usize);
+    let items = std::slice::from_raw_parts(
+        buf.as_ptr() as *const PDH_FMT_COUNTERVALUE_ITEM_W,
+        count as usize,
+    );
     for it in items {
         let name = it.szName.to_string().unwrap_or_default();
         if let Some(pid) = pid_from_instance(&name) {
@@ -74,8 +79,12 @@ impl GpuByPid {
             let mut mem = 0isize;
             let mut ready = false;
             if PdhOpenQueryW(PCWSTR::null(), 0, &mut query) == 0 {
-                let up: Vec<u16> = "\\GPU Engine(*engtype_3D)\\Utilization Percentage\0".encode_utf16().collect();
-                let mp: Vec<u16> = "\\GPU Process Memory(*)\\Dedicated Usage\0".encode_utf16().collect();
+                let up: Vec<u16> = "\\GPU Engine(*engtype_3D)\\Utilization Percentage\0"
+                    .encode_utf16()
+                    .collect();
+                let mp: Vec<u16> = "\\GPU Process Memory(*)\\Dedicated Usage\0"
+                    .encode_utf16()
+                    .collect();
                 let u = PdhAddEnglishCounterW(query, PCWSTR(up.as_ptr()), 0, &mut util) == 0;
                 let m = PdhAddEnglishCounterW(query, PCWSTR(mp.as_ptr()), 0, &mut mem) == 0;
                 if u || m {
@@ -83,7 +92,12 @@ impl GpuByPid {
                     ready = true;
                 }
             }
-            GpuByPid { query, util, mem, ready }
+            GpuByPid {
+                query,
+                util,
+                mem,
+                ready,
+            }
         }
     }
 
@@ -116,7 +130,10 @@ impl ProcMonitor {
     pub fn new() -> Self {
         let mut sys = System::new();
         sys.refresh_processes(ProcessesToUpdate::All, true);
-        ProcMonitor { sys, gpu: GpuByPid::new() }
+        ProcMonitor {
+            sys,
+            gpu: GpuByPid::new(),
+        }
     }
 
     /// Refresh and return the top `limit` processes sorted by CPU.
@@ -141,7 +158,11 @@ impl ProcMonitor {
                 }
             })
             .collect();
-        procs.sort_by(|a, b| b.cpu.partial_cmp(&a.cpu).unwrap_or(std::cmp::Ordering::Equal));
+        procs.sort_by(|a, b| {
+            b.cpu
+                .partial_cmp(&a.cpu)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         procs.truncate(limit);
         procs
     }
@@ -162,7 +183,10 @@ mod tests {
 
     #[test]
     fn parses_pid_from_instance() {
-        assert_eq!(pid_from_instance("pid_1234_luid_0x0_0x1_phys_0_eng_0_engtype_3D"), Some(1234));
+        assert_eq!(
+            pid_from_instance("pid_1234_luid_0x0_0x1_phys_0_eng_0_engtype_3D"),
+            Some(1234)
+        );
         assert_eq!(pid_from_instance("nope"), None);
     }
 

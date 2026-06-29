@@ -63,8 +63,8 @@ impl Tweak {
 
     /// Read live state and report whether the tweak is currently applied.
     pub fn is_applied(&self) -> bool {
-        let current = registry::read(self.probe.hive, &self.probe.path, &self.probe.name)
-            .unwrap_or(None);
+        let current =
+            registry::read(self.probe.hive, &self.probe.path, &self.probe.name).unwrap_or(None);
         current == self.probe.applied
     }
 }
@@ -82,10 +82,19 @@ const CLSID_CTX: &str =
     "Software\\Classes\\CLSID\\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\\InprocServer32";
 
 fn set(hive: Hive, path: &str, name: &str, v: RegValue) -> Action {
-    Action::SetReg { hive, path: path.into(), name: name.into(), value: v }
+    Action::SetReg {
+        hive,
+        path: path.into(),
+        name: name.into(),
+        value: v,
+    }
 }
 fn del(hive: Hive, path: &str, name: &str) -> Action {
-    Action::DeleteReg { hive, path: path.into(), name: name.into() }
+    Action::DeleteReg {
+        hive,
+        path: path.into(),
+        name: name.into(),
+    }
 }
 
 /// A DWORD tweak whose `off` restores an explicit default value.
@@ -108,7 +117,12 @@ fn dw(
         category,
         on: vec![set(hive, path, key, RegValue::Dword(on_val))],
         off: vec![set(hive, path, key, RegValue::Dword(off_val))],
-        probe: Probe { hive, path: path.into(), name: key.into(), applied: Some(RegValue::Dword(on_val)) },
+        probe: Probe {
+            hive,
+            path: path.into(),
+            name: key.into(),
+            applied: Some(RegValue::Dword(on_val)),
+        },
     }
 }
 
@@ -130,7 +144,12 @@ fn dw_del(
         category,
         on: vec![set(hive, path, key, RegValue::Dword(on_val))],
         off: vec![del(hive, path, key)],
-        probe: Probe { hive, path: path.into(), name: key.into(), applied: Some(RegValue::Dword(on_val)) },
+        probe: Probe {
+            hive,
+            path: path.into(),
+            name: key.into(),
+            applied: Some(RegValue::Dword(on_val)),
+        },
     }
 }
 

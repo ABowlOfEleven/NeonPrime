@@ -65,7 +65,9 @@ pub fn apply(cfg: &Config, jrnl: &mut Journal, journal_path: &Path) -> usize {
     let mut applied = 0;
 
     for id in &cfg.tweaks {
-        let Some(t) = tweak_catalog.iter().find(|t| t.id == *id) else { continue };
+        let Some(t) = tweak_catalog.iter().find(|t| t.id == *id) else {
+            continue;
+        };
         if t.needs_elevation() {
             continue; // requires the broker; out of scope for declarative replay
         }
