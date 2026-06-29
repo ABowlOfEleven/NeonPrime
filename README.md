@@ -36,7 +36,9 @@ The heart of NeonPrime. One click changes who your PC is:
 - **Privacy Shield** — a live **hardening score** gauge that reads your real registry/service state across 11 privacy checks and hardens any exposed item with one click (all reversible).
 - **Tweaks & debloat** — 29 reversible tweaks across Interface / Privacy / Performance (including service-control tweaks), with **live search + category filter** and a one-click **Essential Tweaks** preset.
 - **Reversible everything** — an action journal with a full **History timeline**: revert any past change (or all of them), not just the last. Failures self-correct the toggle.
-- **System modes & power plans** — one-click AI / Game / Work (persisted) plus a Balanced / High Performance / Ultimate power-plan switcher.
+- **System modes & power plans** — one-click AI / Game / Work that actually *do* things: each applies a reversible bundle (Game DVR, background apps, notifications) and switches the power plan, all undoable; click an active mode to turn it off. Plus a Balanced / High Performance / Ultimate switcher.
+- **Network monitor** — live outbound TCP connections per process (remote IP:port + state), refreshing while open — see what's phoning home.
+- **Disk cleanup** — scan reclaimable space (temp, Recycle Bin, thumbnails, system/update caches) and clear it per-target.
 - **Quick Actions** — restart Explorer, flush DNS, clear temp, empty Recycle Bin, create restore point, install the NeonPrime PowerShell profile.
 - **Startup manager** — enable/disable per-user startup apps (reversibly).
 - **App installs** — a `winget`-backed picker with **194 apps** imported from WinUtil's catalog + live search.
@@ -81,10 +83,10 @@ Rollback, modes, and config-export are all the same primitive: a **reversible, d
 
 ## Status
 
-Phases P0–P5 plus the Dashboard / Tweaks / Install / Modes / Config / Actions /
-Startup / Features / Privacy / History / Debloat panels are built and tested.
-Elevated work runs off the UI thread (no freeze during UAC). 28 unit +
-integration tests pass.
+13 panels — Dashboard / Network / Tweaks / Privacy / Debloat / Cleanup / Startup
+/ Install / Features / Modes / Actions / Config / History — grouped into
+Monitor / Optimize / Software / System. Elevated work runs off the UI thread (no
+freeze during UAC). 34 unit + integration tests pass.
 
 **Known limitations / next steps:**
 - The elevated broker (HKLM tweaks) needs an interactive UAC prompt, so the
