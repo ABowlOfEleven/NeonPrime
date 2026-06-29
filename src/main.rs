@@ -24,8 +24,8 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    cleanup, config, debloat, dns, engine, features, installs, journal, modes, netmon, power,
-    privacy, procmon, quick, repair, settings, startup, tweaks,
+    cleanup, config, debloat, dns, engine, features, firewall, installs, journal, modes, netmon,
+    power, privacy, procmon, quick, repair, settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -1150,6 +1150,8 @@ fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
 fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     let model: Rc<VecModel<NetRow>> = Rc::new(VecModel::default());
     app.global::<Network>().set_rows(model.clone().into());
+    let fw_model: Rc<VecModel<slint::SharedString>> = Rc::new(VecModel::default());
+    app.global::<Network>().set_fw_rules(fw_model.clone().into());
 
     let refresh: Rc<dyn Fn()> = {
         let weak = app.as_weak();
@@ -1162,6 +1164,7 @@ fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
                     pid: c.pid as i32,
                     remote: c.remote.as_str().into(),
                     state: c.state.as_str().into(),
+                    path: c.path.as_str().into(),
                 })
                 .collect();
             let n = rows.len() as i32;
@@ -1172,9 +1175,24 @@ fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
         })
     };
     refresh();
+
+    // Reload NeonPrime's firewall block rules (unelevated read).
+    let refresh_fw: Rc<dyn Fn()> = {
+        let fw_model = fw_model.clone();
+        Rc::new(move || {
+            let names: Vec<slint::SharedString> =
+                firewall::list_names().iter().map(|n| n.as_str().into()).collect();
+            fw_model.set_vec(names);
+        })
+    };
+
     {
         let refresh = refresh.clone();
         app.global::<Network>().on_refresh(move || refresh());
+    }
+    {
+        let refresh_fw = refresh_fw.clone();
+        app.global::<Network>().on_refresh_firewall(move || refresh_fw());
     }
     {
         let notify = notify.clone();
@@ -1185,6 +1203,30 @@ fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
                 Ok(()) => notify("info", &format!("Setting DNS → {name} (approve UAC)")),
                 Err(e) => notify("error", &format!("DNS: {e}")),
             }
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Network>().on_block_app(move |name, path| {
+            let Some(script) = firewall::block_script(&name, &path) else {
+                notify("error", "No executable path for that process — can't block.");
+                return;
+            };
+            match launch_elevated_ps(&script, false) {
+                Ok(()) => notify("info", &format!("Blocking {name} outbound (approve UAC)")),
+                Err(e) => notify("error", &format!("Firewall: {e}")),
+            }
+        });
+    }
+    {
+        let notify = notify.clone();
+        let refresh_fw = refresh_fw.clone();
+        app.global::<Network>().on_unblock(move |name| {
+            match launch_elevated_ps(&firewall::unblock_script(&name), false) {
+                Ok(()) => notify("info", &format!("Removing rule: {name} (approve UAC)")),
+                Err(e) => notify("error", &format!("Firewall: {e}")),
+            }
+            refresh_fw();
         });
     }
     refresh

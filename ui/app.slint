@@ -218,13 +218,18 @@ export struct NetRow {
     pid: int,
     remote: string,
     state: string,
+    path: string,
 }
 
 export global Network {
     in property <[NetRow]> rows;
     in property <int> count;
+    in property <[string]> fw-rules;
     callback refresh();
     callback set-dns(int); // 0 auto, 1 cloudflare, 2 google, 3 quad9
+    callback block-app(string, string); // (exe-name, exe-path)
+    callback unblock(string);           // rule display name
+    callback refresh-firewall();
 }
 
 export struct ProcRow {
@@ -1934,7 +1939,7 @@ component NetRowView inherits Rectangle {
         VerticalLayout {
             alignment: center;
             Rectangle {
-                width: 96px;
+                width: 90px;
                 height: 18px;
                 border-radius: 5px;
                 border-width: 1px;
@@ -1949,6 +1954,55 @@ component NetRowView inherits Rectangle {
                 }
             }
         }
+        VerticalLayout {
+            alignment: center;
+            width: 58px;
+            if root.conn.path != "": PushButton {
+                w: 56px;
+                danger: true;
+                label: "BLOCK";
+                clicked => {
+                    Network.block-app(root.conn.proc-name, root.conn.path);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component FwRuleView inherits Rectangle {
+    in property <string> name;
+    height: 44px;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.name;
+                color: Theme.text-body;
+                font-size: 12px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            PushButton {
+                w: 78px;
+                label: "UNBLOCK";
+                clicked => {
+                    Network.unblock(root.name);
+                }
+            }
+        }
     }
     Rectangle {
         x: 0;
@@ -1960,45 +2014,80 @@ component NetRowView inherits Rectangle {
 }
 
 component NetworkView inherits VerticalLayout {
+    property <int> tab: 0;
     padding-top: 18px;
     padding-bottom: 8px;
     spacing: 12px;
     PanelHeader {
         title: "NETWORK";
-        hint: Network.count + " outbound connection(s)";
+        hint: root.tab == 0 ? Network.count + " outbound connection(s)" : Network.fw-rules.length + " block rule(s)";
         PushButton {
             w: 90px;
             label: "REFRESH";
             clicked => {
-                Network.refresh();
+                if (root.tab == 0) {
+                    Network.refresh();
+                } else {
+                    Network.refresh-firewall();
+                }
             }
         }
     }
-    // DNS provider switcher (applies to all adapters; admin).
     HorizontalLayout {
         padding-left: 20px;
         padding-right: 20px;
-        spacing: 8px;
+        spacing: 7px;
         alignment: start;
-        VerticalLayout {
-            alignment: center;
-            Text { text: "DNS"; color: Theme.text-dim; font-size: 11px; }
-        }
-        Rectangle { width: 4px; }
-        ModePill { label: "AUTO"; clicked => { Network.set-dns(0); } }
-        ModePill { label: "CLOUDFLARE"; clicked => { Network.set-dns(1); } }
-        ModePill { label: "GOOGLE"; clicked => { Network.set-dns(2); } }
-        ModePill { label: "QUAD9"; clicked => { Network.set-dns(3); } }
+        FilterChip { label: "CONNECTIONS"; active: root.tab == 0; clicked => { root.tab = 0; } }
+        FilterChip { label: "FIREWALL"; active: root.tab == 1; clicked => { root.tab = 1; Network.refresh-firewall(); } }
         Rectangle { horizontal-stretch: 1; }
     }
-    if Network.rows.length == 0: EmptyState {
+
+    // ── CONNECTIONS ─────────────────────────────────────────────
+    if root.tab == 0: VerticalLayout {
         vertical-stretch: 1;
-        text: "No active outbound connections.";
+        spacing: 12px;
+        // DNS provider switcher (applies to all adapters; admin).
+        HorizontalLayout {
+            padding-left: 20px;
+            padding-right: 20px;
+            spacing: 8px;
+            alignment: start;
+            VerticalLayout {
+                alignment: center;
+                Text { text: "DNS"; color: Theme.text-dim; font-size: 11px; }
+            }
+            Rectangle { width: 4px; }
+            ModePill { label: "AUTO"; clicked => { Network.set-dns(0); } }
+            ModePill { label: "CLOUDFLARE"; clicked => { Network.set-dns(1); } }
+            ModePill { label: "GOOGLE"; clicked => { Network.set-dns(2); } }
+            ModePill { label: "QUAD9"; clicked => { Network.set-dns(3); } }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        if Network.rows.length == 0: EmptyState {
+            vertical-stretch: 1;
+            text: "No active outbound connections.";
+        }
+        if Network.rows.length > 0: ListView {
+            vertical-stretch: 1;
+            for c in Network.rows: NetRowView {
+                conn: c;
+            }
+        }
     }
-    if Network.rows.length > 0: ListView {
+
+    // ── FIREWALL ────────────────────────────────────────────────
+    if root.tab == 1: VerticalLayout {
         vertical-stretch: 1;
-        for c in Network.rows: NetRowView {
-            conn: c;
+        if Network.fw-rules.length == 0: EmptyState {
+            vertical-stretch: 1;
+            text: "No NeonPrime block rules.\nUse BLOCK on a connection to add one.";
+        }
+        if Network.fw-rules.length > 0: ListView {
+            vertical-stretch: 1;
+            for r in Network.fw-rules: FwRuleView {
+                name: r;
+            }
         }
     }
 }

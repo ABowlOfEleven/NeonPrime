@@ -16,6 +16,8 @@ pub struct Conn {
     pub pid: u32,
     pub remote: String,
     pub state: String,
+    /// Full executable path (for firewall rules); empty if inaccessible.
+    pub path: String,
 }
 
 fn state_name(s: u32) -> &'static str {
@@ -77,25 +79,31 @@ pub fn connections() -> Vec<Conn> {
             continue;
         }
         let pid = row.dwOwningPid;
+        let (name, path) = names.get(&pid).cloned().unwrap_or_else(|| ("—".into(), String::new()));
         out.push(Conn {
-            proc_name: names.get(&pid).cloned().unwrap_or_else(|| "—".into()),
+            proc_name: name,
             pid,
             remote: format!("{remote_ip}:{remote_port}"),
             state: state_name(row.dwState).into(),
+            path,
         });
     }
     out.sort_by(|a, b| a.proc_name.to_lowercase().cmp(&b.proc_name.to_lowercase()).then(a.remote.cmp(&b.remote)));
     out
 }
 
-/// Map every running PID to its process name (best-effort).
-fn process_names() -> HashMap<u32, String> {
+/// Map every running PID to its process `(name, exe-path)` (best-effort).
+fn process_names() -> HashMap<u32, (String, String)> {
     use sysinfo::{ProcessesToUpdate, System};
     let mut sys = System::new();
     sys.refresh_processes(ProcessesToUpdate::All, true);
     sys.processes()
         .iter()
-        .map(|(pid, p)| (pid.as_u32(), p.name().to_string_lossy().to_string()))
+        .map(|(pid, p)| {
+            let name = p.name().to_string_lossy().to_string();
+            let path = p.exe().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+            (pid.as_u32(), (name, path))
+        })
         .collect()
 }
 

@@ -7,6 +7,7 @@ pub mod dns;
 pub mod debloat;
 pub mod engine;
 pub mod features;
+pub mod firewall;
 pub mod installs;
 pub mod ipc;
 pub mod journal;
