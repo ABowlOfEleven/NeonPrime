@@ -76,3 +76,24 @@ pub enum Reversal {
         previous: Option<RegValue>,
     },
 }
+
+impl Reversal {
+    /// True if executing this reversal needs the elevated broker (HKLM).
+    pub fn needs_elevation(&self) -> bool {
+        match self {
+            Reversal::RestoreReg { hive, .. } => hive.needs_elevation(),
+        }
+    }
+
+    /// Short `HIVE\…\leaf : name` summary for display.
+    pub fn target_summary(&self) -> String {
+        match self {
+            Reversal::RestoreReg { hive, path, name, .. } => {
+                let root = if hive.needs_elevation() { "HKLM" } else { "HKCU" };
+                let leaf = path.rsplit('\\').next().unwrap_or(path);
+                let key = if name.is_empty() { "(default)" } else { name };
+                format!("{root}\\…\\{leaf} : {key}")
+            }
+        }
+    }
+}

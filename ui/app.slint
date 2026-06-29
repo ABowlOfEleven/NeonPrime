@@ -48,8 +48,9 @@ export global Sys {
 }
 
 // Which page the sidebar has selected.
-global Nav {
+export global Nav {
     in-out property <int> page: 0;
+    callback changed(int); // fired on navigation, so Rust can refresh that panel
 }
 
 export struct TweakRow {
@@ -169,6 +170,22 @@ export global Privacy {
     callback harden-all();
 }
 
+export struct HistoryRow {
+    id: int, // journal entry id
+    label: string,
+    when: string, // pre-formatted relative time
+    detail: string, // registry target summary
+    active: bool,
+    elevated: bool,
+}
+
+export global History {
+    in property <[HistoryRow]> rows;
+    in property <int> active-count;
+    callback revert(int);
+    callback revert-all();
+}
+
 component NavItem inherits Rectangle {
     in property <string> label;
     in property <int> index;
@@ -207,6 +224,7 @@ component NavItem inherits Rectangle {
     TouchArea {
         clicked => {
             Nav.page = root.index;
+            Nav.changed(root.index);
         }
     }
 }
@@ -1330,6 +1348,113 @@ component PrivacyView inherits VerticalLayout {
     }
 }
 
+component HistoryRowView inherits Rectangle {
+    in property <HistoryRow> entry;
+    height: 56px;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: root.entry.label;
+                    color: root.entry.active ? Theme.text-body : Theme.text-dim;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.entry.elevated ? "· ADMIN" : "";
+                    color: Theme.ember-soft;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: root.entry.when + "  ·  " + root.entry.detail;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 88px;
+            if root.entry.active: PushButton {
+                w: 74px;
+                danger: true;
+                label: "REVERT";
+                clicked => {
+                    History.revert(root.entry.id);
+                }
+            }
+            if !root.entry.active: Text {
+                text: "REVERTED";
+                color: Theme.text-dim;
+                font-size: 10px;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component HistoryView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 12px;
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 12px;
+        Text {
+            text: "HISTORY";
+            color: Theme.accent-soft;
+            font-size: 14px;
+            vertical-alignment: center;
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Text {
+            text: History.active-count + " active change(s)";
+            color: Theme.text-dim;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+        PushButton {
+            w: 110px;
+            danger: true;
+            label: "REVERT ALL";
+            clicked => {
+                History.revert-all();
+            }
+        }
+    }
+    if History.rows.length == 0: Text {
+        text: "No changes recorded yet. Apply a tweak or harden something to see it here.";
+        color: Theme.text-dim;
+        font-size: 12px;
+        horizontal-alignment: center;
+    }
+    ListView {
+        vertical-stretch: 1;
+        for e in History.rows: HistoryRowView {
+            entry: e;
+        }
+    }
+}
+
 component Toast inherits Rectangle {
     in property <string> message;
     in property <string> kind;
@@ -1455,6 +1580,7 @@ export component AppWindow inherits Window {
                     NavItem { label: "STARTUP"; index: 6; icon: @image-url("icons/power.svg"); }
                     NavItem { label: "FEATURES"; index: 7; icon: @image-url("icons/features.svg"); }
                     NavItem { label: "PRIVACY"; index: 8; icon: @image-url("icons/shield.svg"); }
+                    NavItem { label: "HISTORY"; index: 9; icon: @image-url("icons/history.svg"); }
                     Rectangle { vertical-stretch: 1; }
                     HorizontalLayout {
                         padding-left: 18px;
@@ -1519,6 +1645,10 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 8: PrivacyView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 9: HistoryView {
                     width: parent.width;
                     height: parent.height;
                 }

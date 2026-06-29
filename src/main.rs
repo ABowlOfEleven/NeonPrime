@@ -43,6 +43,12 @@ enum ElevatedMsg {
     Failed { row_id: i32, name: String, error: String },
 }
 
+/// Result of an elevated *revert* (History panel) coming back from the broker.
+enum RevertMsg {
+    Done { id: u64, label: String },
+    Failed { label: String, error: String },
+}
+
 // ── Toast notifier ──────────────────────────────────────────────────
 
 fn make_notifier(app: &AppWindow) -> Notify {
@@ -741,7 +747,7 @@ fn wire_privacy(
     notify: &Notify,
     tweaks_catalog: &Rc<Vec<tweaks::Tweak>>,
     tweaks_model: &Rc<VecModel<TweakRow>>,
-) -> Timer {
+) -> (Timer, Rc<dyn Fn()>) {
     // Resolve each privacy check id to its catalog index, once.
     let indices: Rc<Vec<usize>> = Rc::new(
         privacy::check_ids()
@@ -857,6 +863,7 @@ fn wire_privacy(
     let path = journal_path.to_path_buf();
     let notify = notify.clone();
     let tmodel = tweaks_model.clone();
+    let refresh_pump = refresh.clone();
     let timer = Timer::default();
     timer.start(TimerMode::Repeated, Duration::from_millis(150), move || {
         while let Ok(msg) = rx.try_recv() {
@@ -869,18 +876,191 @@ fn wire_privacy(
                         }
                     }
                     let _ = jrnl.borrow().save(&path);
-                    refresh();
+                    refresh_pump();
                     refresh_tweaks(&tmodel, &cat);
                     notify("success", &format!("Hardened: {name}"));
                 }
                 ElevatedMsg::Failed { name, error, .. } => {
-                    refresh();
+                    refresh_pump();
                     notify("error", &format!("{name}: {error}"));
                 }
             }
         }
     });
-    timer
+    (timer, refresh)
+}
+
+/// Relative-time label for the history panel (e.g. "5m ago").
+fn rel_time(ts: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let d = now.saturating_sub(ts);
+    if d < 60 {
+        "just now".into()
+    } else if d < 3600 {
+        format!("{}m ago", d / 60)
+    } else if d < 86_400 {
+        format!("{}h ago", d / 3600)
+    } else {
+        format!("{}d ago", d / 86_400)
+    }
+}
+
+/// Worker-thread body for an elevated *revert* via the broker.
+fn revert_elevated_worker(
+    broker: Arc<Mutex<Option<BrokerSession>>>,
+    tx: mpsc::Sender<RevertMsg>,
+    reversal: Reversal,
+    id: u64,
+    label: String,
+) {
+    let mut guard = broker.lock().unwrap();
+    if guard.is_none() {
+        match BrokerSession::spawn(true) {
+            Ok(s) => *guard = Some(s),
+            Err(e) => {
+                let _ = tx.send(RevertMsg::Failed { label, error: format!("elevation failed: {e}") });
+                return;
+            }
+        }
+    }
+    let session = guard.as_mut().unwrap();
+    match session.client.call(&Request::Revert { reversal }) {
+        Ok(Response::Reverted) => {
+            let _ = tx.send(RevertMsg::Done { id, label });
+        }
+        Ok(Response::Error(e)) => {
+            let _ = tx.send(RevertMsg::Failed { label, error: e });
+        }
+        Ok(_) => {
+            let _ = tx.send(RevertMsg::Failed { label, error: "unexpected broker reply".into() });
+        }
+        Err(e) => {
+            *guard = None;
+            let _ = tx.send(RevertMsg::Failed { label, error: format!("broker link lost: {e}") });
+        }
+    }
+}
+
+/// History timeline + selective rollback over the journal. Reverts HKCU entries
+/// locally and HKLM entries through the broker. Returns (pump timer, refresh fn).
+fn wire_history(
+    app: &AppWindow,
+    jrnl: &SharedJournal,
+    journal_path: &Path,
+    notify: &Notify,
+    tweaks_catalog: &Rc<Vec<tweaks::Tweak>>,
+    tweaks_model: &Rc<VecModel<TweakRow>>,
+) -> (Timer, Rc<dyn Fn()>) {
+    let model: Rc<VecModel<HistoryRow>> = Rc::new(VecModel::default());
+    let broker: Arc<Mutex<Option<BrokerSession>>> = Arc::new(Mutex::new(None));
+    let (tx, rx) = mpsc::channel::<RevertMsg>();
+
+    // Rebuild the timeline (newest first) from the journal.
+    let refresh: Rc<dyn Fn()> = {
+        let weak = app.as_weak();
+        let model = model.clone();
+        let jrnl = jrnl.clone();
+        Rc::new(move || {
+            let j = jrnl.borrow();
+            let rows: Vec<HistoryRow> = j
+                .entries
+                .iter()
+                .rev()
+                .map(|e| HistoryRow {
+                    id: e.id as i32,
+                    label: e.label.as_str().into(),
+                    when: rel_time(e.ts).into(),
+                    detail: e.reversal.target_summary().into(),
+                    active: e.active,
+                    elevated: e.reversal.needs_elevation(),
+                })
+                .collect();
+            let active = j.entries.iter().filter(|e| e.active).count() as i32;
+            drop(j);
+            model.set_vec(rows);
+            if let Some(app) = weak.upgrade() {
+                app.global::<History>().set_active_count(active);
+            }
+        })
+    };
+    refresh();
+    app.global::<History>().set_rows(model.clone().into());
+
+    // Revert one entry by id.
+    let do_revert = {
+        let jrnl = jrnl.clone();
+        let path = journal_path.to_path_buf();
+        let notify = notify.clone();
+        let broker = broker.clone();
+        let tx = tx.clone();
+        let refresh = refresh.clone();
+        Rc::new(move |id: u64| {
+            let entry = jrnl.borrow().get(id).filter(|e| e.active).cloned();
+            let Some(entry) = entry else { return };
+            if entry.reversal.needs_elevation() {
+                notify("info", "Requesting elevation — approve the UAC prompt…");
+                let (broker, tx, rev, label) =
+                    (broker.clone(), tx.clone(), entry.reversal.clone(), entry.label.clone());
+                std::thread::spawn(move || revert_elevated_worker(broker, tx, rev, id, label));
+            } else {
+                match engine::revert(&entry.reversal) {
+                    Ok(()) => {
+                        jrnl.borrow_mut().mark_reverted(id);
+                        let _ = jrnl.borrow().save(&path);
+                        refresh();
+                        notify("success", &format!("Reverted: {}", entry.label));
+                    }
+                    Err(e) => notify("error", &format!("Revert failed: {e}")),
+                }
+            }
+        })
+    };
+
+    {
+        let do_revert = do_revert.clone();
+        app.global::<History>().on_revert(move |id| do_revert(id as u64));
+    }
+
+    // Revert every active entry, newest first.
+    {
+        let jrnl = jrnl.clone();
+        let do_revert = do_revert.clone();
+        app.global::<History>().on_revert_all(move || {
+            let ids: Vec<u64> = jrnl.borrow().entries.iter().rev().filter(|e| e.active).map(|e| e.id).collect();
+            for id in ids {
+                do_revert(id);
+            }
+        });
+    }
+
+    // Pump elevated-revert results.
+    let jrnl = jrnl.clone();
+    let path = journal_path.to_path_buf();
+    let notify = notify.clone();
+    let tcat = tweaks_catalog.clone();
+    let tmodel = tweaks_model.clone();
+    let refresh2 = refresh.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(150), move || {
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                RevertMsg::Done { id, label } => {
+                    jrnl.borrow_mut().mark_reverted(id);
+                    let _ = jrnl.borrow().save(&path);
+                    refresh2();
+                    refresh_tweaks(&tmodel, &tcat);
+                    notify("success", &format!("Reverted: {label}"));
+                }
+                RevertMsg::Failed { label, error } => {
+                    notify("error", &format!("{label}: {error}"));
+                }
+            }
+        }
+    });
+    (timer, refresh)
 }
 
 fn main() -> Result<(), slint::PlatformError> {
@@ -928,10 +1108,26 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_quick(&app, &notify);
     wire_startup(&app, &notify);
     wire_features(&app, &notify);
-    let _privacy_pump = wire_privacy(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model);
+    let (_privacy_pump, privacy_refresh) =
+        wire_privacy(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model);
+    let (_history_pump, history_refresh) =
+        wire_history(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model);
     wire_config(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
     wire_undo(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
     apply_specs(&app);
+
+    // Re-probe a panel's live state whenever the user navigates to it, so values
+    // stay fresh across cross-panel changes (e.g. harden in Privacy → Tweaks).
+    {
+        let tcat = tweaks_catalog.clone();
+        let tmodel = tweaks_model.clone();
+        app.global::<Nav>().on_changed(move |page| match page {
+            1 => refresh_tweaks(&tmodel, &tcat),
+            8 => privacy_refresh(),
+            9 => history_refresh(),
+            _ => {}
+        });
+    }
 
     {
         let notify = notify.clone();
