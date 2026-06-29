@@ -1,13 +1,11 @@
-//! System modes — named bundles of [`Action`]s applied as a set.
+//! System modes — named bundles of reversible [`Action`]s plus a power plan.
 //!
-//! A mode flips the machine's whole personality with one click. Each mode's
-//! `actions` are applied through the same reversible engine, and the active mode
-//! is recorded in a registry marker so it survives restarts.
-//!
-//! For now the auto-applied actions are deliberately benign (just the marker),
-//! so switching modes is safe and observable. Real power-plan, service, GPU, and
-//! network actions plug into `actions` as new [`Action`] variants are added —
-//! the apply/revert plumbing is already mode-agnostic.
+//! Activating a mode flips the machine's personality in one click: it reverts
+//! whatever mode was active, applies its own HKCU registry actions (through the
+//! same journaled engine as tweaks, so every change is undoable), and switches
+//! the power scheme (best-effort, unelevated). The previous power scheme is
+//! saved so switching away restores it. The active mode id lives in a marker so
+//! it survives restarts.
 
 use crate::core::action::{Action, Hive, RegValue};
 use crate::core::registry;
@@ -18,19 +16,28 @@ pub struct Mode {
     pub name: &'static str,
     pub tagline: &'static str,
     pub desc: &'static str,
+    /// Reversible HKCU registry actions applied while the mode is active.
     pub actions: Vec<Action>,
+    /// Power scheme GUID to activate (best-effort, unelevated), or None.
+    pub power_guid: Option<&'static str>,
 }
 
 const STATE_PATH: &str = "Software\\NeonPrime\\State";
 const MARKER: &str = "ActiveMode";
+const PREV_POWER: &str = "PrevPowerGuid";
 
-fn marker(id: &str) -> Action {
-    Action::SetReg {
-        hive: Hive::Hkcu,
-        path: STATE_PATH.into(),
-        name: MARKER.into(),
-        value: RegValue::Sz(id.into()),
-    }
+// Standard, always-present power schemes.
+pub const BALANCED: &str = "381b4222-f694-41f0-9685-ff5bb260df2e";
+pub const HIGH_PERF: &str = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
+
+// HKCU roots the mode bundles touch.
+const GAME_CFG: &str = "System\\GameConfigStore";
+const GAME_BAR: &str = "Software\\Microsoft\\GameBar";
+const BG_APPS: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications";
+const PUSH: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications";
+
+fn dw(path: &str, name: &str, v: u32) -> Action {
+    Action::SetReg { hive: Hive::Hkcu, path: path.into(), name: name.into(), value: RegValue::Dword(v) }
 }
 
 pub fn catalog() -> Vec<Mode> {
@@ -39,22 +46,32 @@ pub fn catalog() -> Vec<Mode> {
             id: "ai",
             name: "AI / Inference",
             tagline: "GPU unleashed",
-            desc: "Free the GPU for models, clear VRAM pressure, suspend background bloat.",
-            actions: vec![marker("ai")],
+            desc: "High-performance power, GPU freed (Game DVR off), background apps suspended.",
+            actions: vec![
+                dw(GAME_CFG, "GameDVR_Enabled", 0),
+                dw(BG_APPS, "GlobalUserDisabled", 1),
+            ],
+            power_guid: Some(HIGH_PERF),
         },
         Mode {
             id: "game",
             name: "Game",
             tagline: "Frames first",
-            desc: "Game-process priority, latency-tuned networking, inference paused.",
-            actions: vec![marker("game")],
+            desc: "High-performance power, Game Mode on, Game DVR and background recording off.",
+            actions: vec![
+                dw(GAME_CFG, "GameDVR_Enabled", 0),
+                dw(GAME_BAR, "AutoGameModeEnabled", 1),
+                dw(GAME_BAR, "ShowStartupPanel", 0),
+            ],
+            power_guid: Some(HIGH_PERF),
         },
         Mode {
             id: "work",
             name: "Work",
             tagline: "Calm & balanced",
-            desc: "Balanced power, notifications tamed — the quiet profile.",
-            actions: vec![marker("work")],
+            desc: "Balanced power and toast notifications silenced — the quiet profile.",
+            actions: vec![dw(PUSH, "ToastEnabled", 0)],
+            power_guid: Some(BALANCED),
         },
     ]
 }
@@ -65,6 +82,30 @@ pub fn active() -> Option<String> {
         Ok(Some(RegValue::Sz(s))) => Some(s),
         _ => None,
     }
+}
+
+/// Record which mode is active (state, not a journaled tweak).
+pub fn set_marker(id: &str) {
+    let _ = registry::write(Hive::Hkcu, STATE_PATH, MARKER, &RegValue::Sz(id.into()));
+}
+
+pub fn clear_marker() {
+    let _ = registry::delete(Hive::Hkcu, STATE_PATH, MARKER);
+}
+
+/// Remember the pre-mode power scheme so switching away can restore it.
+pub fn save_prev_power(guid: &str) {
+    let _ = registry::write(Hive::Hkcu, STATE_PATH, PREV_POWER, &RegValue::Sz(guid.into()));
+}
+
+/// Take (read + clear) the saved pre-mode power scheme.
+pub fn take_prev_power() -> Option<String> {
+    let v = match registry::read(Hive::Hkcu, STATE_PATH, PREV_POWER) {
+        Ok(Some(RegValue::Sz(s))) => Some(s),
+        _ => None,
+    };
+    let _ = registry::delete(Hive::Hkcu, STATE_PATH, PREV_POWER);
+    v
 }
 
 #[cfg(test)]
@@ -80,18 +121,20 @@ mod tests {
     }
 
     #[test]
-    fn activating_sets_marker() {
-        use crate::core::engine;
-        let c = catalog();
-        for a in &c[1].actions {
-            engine::apply(a).unwrap();
+    fn every_mode_has_actions_and_a_power_plan() {
+        for m in catalog() {
+            assert!(!m.actions.is_empty(), "{} has no actions", m.id);
+            assert!(m.power_guid.is_some(), "{} has no power plan", m.id);
+            // Mode actions are HKCU — no elevation, so activation never prompts UAC.
+            assert!(m.actions.iter().all(|a| !a.needs_elevation()));
         }
+    }
+
+    #[test]
+    fn marker_roundtrips() {
+        set_marker("game");
         assert_eq!(active().as_deref(), Some("game"));
-        for a in &c[0].actions {
-            engine::apply(a).unwrap();
-        }
-        assert_eq!(active().as_deref(), Some("ai"));
-        // cleanup
-        let _ = registry::delete(Hive::Hkcu, STATE_PATH, MARKER);
+        clear_marker();
+        assert_eq!(active(), None);
     }
 }

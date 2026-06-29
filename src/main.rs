@@ -368,6 +368,28 @@ fn wire_tweaks(
 
 // ── Modes ───────────────────────────────────────────────────────────
 
+/// Revert the currently-active mode: restore its power scheme and undo every
+/// journaled "mode:" action (all HKCU, so reverted locally). Leaves no mode set.
+fn deactivate_mode(jrnl: &SharedJournal, path: &Path) {
+    if let Some(prev) = modes::take_prev_power() {
+        power::set_active(&prev);
+    }
+    let entries: Vec<journal::Entry> = jrnl
+        .borrow()
+        .entries
+        .iter()
+        .filter(|e| e.active && e.label.starts_with("mode:"))
+        .cloned()
+        .collect();
+    for e in entries {
+        if engine::revert(&e.reversal).is_ok() {
+            jrnl.borrow_mut().mark_reverted(e.id);
+        }
+    }
+    modes::clear_marker();
+    let _ = jrnl.borrow().save(path);
+}
+
 fn wire_modes(app: &AppWindow, jrnl: &SharedJournal, journal_path: &Path, notify: &Notify, catalog: &Rc<Vec<modes::Mode>>) {
     let weak = app.as_weak();
     let cat = catalog.clone();
@@ -377,6 +399,19 @@ fn wire_modes(app: &AppWindow, jrnl: &SharedJournal, journal_path: &Path, notify
 
     app.global::<Modes>().on_activate(move |idx| {
         let Some(m) = cat.get(idx as usize) else { return };
+
+        // Clicking the active mode again turns it off (restores defaults).
+        let already = modes::active();
+        deactivate_mode(&jrnl, &path);
+        if already.as_deref() == Some(m.id) {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Modes>().set_active(-1);
+            }
+            notify("info", &format!("{} mode off", m.name));
+            return;
+        }
+
+        // Apply the new mode's reversible registry actions.
         let mut ok = true;
         for a in &m.actions {
             match engine::apply(a) {
@@ -389,6 +424,14 @@ fn wire_modes(app: &AppWindow, jrnl: &SharedJournal, journal_path: &Path, notify
                 }
             }
         }
+        // Switch power plan, remembering the current one to restore on exit.
+        if let Some(guid) = m.power_guid {
+            if let Some(prev) = power::active_guid() {
+                modes::save_prev_power(&prev);
+            }
+            power::set_active(guid);
+        }
+        modes::set_marker(m.id);
         let _ = jrnl.borrow().save(&path);
         if let Some(app) = weak.upgrade() {
             app.global::<Modes>().set_active(idx);

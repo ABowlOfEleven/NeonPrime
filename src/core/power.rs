@@ -42,6 +42,16 @@ pub fn active_index() -> i32 {
     }
 }
 
+/// Activate an existing power scheme by GUID (unelevated, best-effort). Used by
+/// System Modes — standard schemes switch without a UAC prompt.
+pub fn set_active(guid: &str) -> bool {
+    Command::new("powercfg")
+        .args(["/setactive", guid])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 /// Elevated PowerShell that activates plan `idx` (creating Ultimate if needed).
 pub fn set_script(idx: usize) -> Option<String> {
     let p = plans().get(idx)?;
