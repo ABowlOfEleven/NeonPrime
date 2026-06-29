@@ -1,5 +1,7 @@
 # NeonPrime
 
+[![CI](https://github.com/ABowlOfEleven/NeonPrime/actions/workflows/ci.yml/badge.svg)](https://github.com/ABowlOfEleven/NeonPrime/actions/workflows/ci.yml)
+
 > One machine. Three modes. It counts all the way to three.
 
 A holographic system control deck for Windows — like [WinUtil](https://github.com/ChrisTitusTech/winutil), but more powerful and actually beautiful. Debloat it, tune it, watch it, and reshape it from a single cyan-and-ember HUD.
