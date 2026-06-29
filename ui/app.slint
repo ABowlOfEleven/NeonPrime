@@ -266,6 +266,19 @@ export global Services {
     callback refresh();
 }
 
+export global MicroWin {
+    in-out property <string> iso;
+    in-out property <string> output;
+    in-out property <string> index: "1";
+    in-out property <bool> debloat: true;
+    in-out property <bool> privacy: true;
+    in-out property <bool> bypass: true;
+    in property <bool> oscdimg-ok;
+    in property <string> oscdimg-hint;
+    callback iso-edited();
+    callback build();
+}
+
 export struct DebloatRow {
     id: int,
     name: string,
@@ -727,6 +740,39 @@ component PanelHeader inherits HorizontalLayout {
         }
     }
     @children
+}
+
+// Boxed single-line text input with placeholder.
+component TextField inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    callback edited;
+    height: 30px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Theme.divider;
+    background: Theme.track;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        TextInput {
+            text <=> root.text;
+            color: Theme.text-body;
+            font-size: 12px;
+            vertical-alignment: center;
+            single-line: true;
+            edited => {
+                root.edited();
+            }
+        }
+    }
+    if root.text == "": Text {
+        x: 11px;
+        text: root.placeholder;
+        color: Theme.text-dim;
+        font-size: 12px;
+        vertical-alignment: center;
+    }
 }
 
 // Centered placeholder for empty / loading lists.
@@ -2353,6 +2399,92 @@ component ServicesView inherits VerticalLayout {
     }
 }
 
+component MicroWinOption inherits HorizontalLayout {
+    in property <string> label;
+    in-out property <bool> on;
+    spacing: 12px;
+    VerticalLayout {
+        alignment: center;
+        Toggle {
+            on <=> root.on;
+            a11y-label: root.label;
+            toggled(v) => {
+                root.on = v;
+            }
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        horizontal-stretch: 1;
+        Text {
+            text: root.label;
+            color: Theme.text-body;
+            font-size: 12px;
+            wrap: word-wrap;
+        }
+    }
+}
+
+component MicroWinView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 12px;
+    PanelHeader {
+        title: "MICROWIN";
+        hint: "debloated ISO builder · experimental";
+        PushButton {
+            w: 110px;
+            label: "BUILD ISO";
+            clicked => {
+                MicroWin.build();
+            }
+        }
+    }
+    VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 10px;
+        Text {
+            text: "Builds a slimmed Windows ISO from a stock one. Needs admin, ~20 GB free, and several minutes — watch the elevated console.";
+            color: Theme.text-dim;
+            font-size: 12px;
+            wrap: word-wrap;
+        }
+        Text {
+            text: MicroWin.oscdimg-hint;
+            color: MicroWin.oscdimg-ok ? Theme.accent-soft : Theme.ember-soft;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
+        Text { text: "SOURCE ISO"; color: Theme.text-dim; font-size: 10px; }
+        TextField {
+            text <=> MicroWin.iso;
+            placeholder: "C:\\path\\to\\Windows.iso";
+            edited => { MicroWin.iso-edited(); }
+        }
+        Text { text: "OUTPUT ISO"; color: Theme.text-dim; font-size: 10px; }
+        TextField {
+            text <=> MicroWin.output;
+            placeholder: "auto — set when you choose a source";
+        }
+        HorizontalLayout {
+            spacing: 12px;
+            VerticalLayout {
+                spacing: 4px;
+                width: 120px;
+                Text { text: "EDITION INDEX"; color: Theme.text-dim; font-size: 10px; }
+                TextField { text <=> MicroWin.index; placeholder: "1"; }
+            }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        Rectangle { height: 1px; background: Theme.divider; }
+        MicroWinOption { label: "Remove bundled apps (News, Xbox, Teams, Copilot…)"; on <=> MicroWin.debloat; }
+        MicroWinOption { label: "Disable telemetry, Copilot & consumer features"; on <=> MicroWin.privacy; }
+        MicroWinOption { label: "Bypass TPM / SecureBoot / RAM checks + skip OOBE (local account)"; on <=> MicroWin.bypass; }
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
 component Toast inherits Rectangle {
     in property <string> message;
     in property <string> kind;
@@ -2544,6 +2676,7 @@ export component AppWindow inherits Window {
                             NavSection { label: "SOFTWARE"; }
                             NavItem { label: "INSTALL"; index: 2; icon: @image-url("icons/install.svg"); }
                             NavItem { label: "FEATURES"; index: 7; icon: @image-url("icons/features.svg"); }
+                            NavItem { label: "MICROWIN"; index: 15; icon: @image-url("icons/microwin.svg"); }
 
                             NavSection { label: "SYSTEM"; }
                             NavItem { label: "MODES"; index: 3; icon: @image-url("icons/modes.svg"); }
@@ -2641,6 +2774,10 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 14: ServicesView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 15: MicroWinView {
                     width: parent.width;
                     height: parent.height;
                 }

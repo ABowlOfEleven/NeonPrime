@@ -24,8 +24,8 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    cleanup, config, debloat, dns, engine, features, firewall, installs, journal, modes, netmon,
-    power, privacy, procmon, quick, repair, services, settings, startup, tweaks,
+    cleanup, config, debloat, dns, engine, features, firewall, installs, journal, microwin, modes,
+    netmon, power, privacy, procmon, quick, repair, services, settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -703,6 +703,18 @@ fn launch_elevated_ps(script: &str, visible: bool) -> io::Result<()> {
         .map(|_| ())
 }
 
+/// Launch a `.ps1` file elevated in a visible console (`-NoExit`, RunAs). Used
+/// for long scripts where nested -Command quoting would be fragile (MicroWin).
+fn launch_elevated_file(ps1: &Path) -> io::Result<()> {
+    let path = ps1.to_string_lossy().replace('\'', "''");
+    let inner = format!("'-NoExit','-ExecutionPolicy','Bypass','-File','{path}'");
+    let ps = format!("Start-Process -FilePath 'powershell' -ArgumentList {inner} -Verb RunAs");
+    Command::new("powershell")
+        .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
+        .spawn()
+        .map(|_| ())
+}
+
 /// Launch a script in a visible, non-elevated PowerShell console (stays open).
 fn launch_console(script: &str) -> io::Result<()> {
     Command::new("powershell")
@@ -1248,6 +1260,81 @@ fn wire_services(app: &AppWindow, notify: &Notify) -> Timer {
     timer
 }
 
+/// MicroWin — debloated-ISO builder. Generates an elevated build script + an
+/// autounattend, then runs them in a visible console. (Heavy, admin, ~20 GB.)
+fn wire_microwin(app: &AppWindow, notify: &Notify) {
+    let osc = microwin::oscdimg_path();
+    {
+        let m = app.global::<MicroWin>();
+        m.set_oscdimg_ok(osc.is_some());
+        m.set_oscdimg_hint(match &osc {
+            Some(p) => format!("oscdimg ready — {p}").as_str().into(),
+            None => "oscdimg NOT found — install the Windows ADK 'Deployment Tools' to build.".into(),
+        });
+    }
+
+    // Default the output path once the source ISO is set.
+    {
+        let weak = app.as_weak();
+        app.global::<MicroWin>().on_iso_edited(move || {
+            if let Some(app) = weak.upgrade() {
+                let m = app.global::<MicroWin>();
+                let iso = m.get_iso().to_string();
+                if m.get_output().is_empty() && !iso.trim().is_empty() {
+                    m.set_output(microwin::default_output(&iso).as_str().into());
+                }
+            }
+        });
+    }
+
+    {
+        let weak = app.as_weak();
+        let notify = notify.clone();
+        app.global::<MicroWin>().on_build(move || {
+            let Some(app) = weak.upgrade() else { return };
+            let m = app.global::<MicroWin>();
+            let iso = m.get_iso().to_string();
+            if iso.trim().is_empty() || !Path::new(&iso).exists() {
+                notify("error", "Source ISO not found — check the path.");
+                return;
+            }
+            let Some(oscdimg) = microwin::oscdimg_path() else {
+                notify("error", "oscdimg not found — install the Windows ADK Deployment Tools.");
+                return;
+            };
+            let output = {
+                let o = m.get_output().to_string();
+                if o.trim().is_empty() { microwin::default_output(&iso) } else { o }
+            };
+            let index = m.get_index().to_string().trim().parse::<u32>().unwrap_or(1);
+            let opts = microwin::Options {
+                iso,
+                output,
+                scratch: microwin::default_scratch(),
+                index,
+                debloat: m.get_debloat(),
+                privacy: m.get_privacy(),
+                bypass: m.get_bypass(),
+            };
+            let tmp = std::env::temp_dir();
+            let unattend = tmp.join("neonprime-unattend.xml");
+            if opts.bypass {
+                let _ = std::fs::write(&unattend, microwin::AUTOUNATTEND);
+            }
+            let script = microwin::build_script(&opts, &oscdimg, &unattend.to_string_lossy());
+            let ps1 = tmp.join("neonprime-microwin.ps1");
+            if std::fs::write(&ps1, script).is_err() {
+                notify("error", "Couldn't write the build script.");
+                return;
+            }
+            match launch_elevated_file(&ps1) {
+                Ok(()) => notify("info", "MicroWin started — approve UAC; the build runs in the console (10+ min)."),
+                Err(e) => notify("error", &format!("MicroWin: {e}")),
+            }
+        });
+    }
+}
+
 /// Network monitor — snapshot active outbound TCP connections per process.
 /// Returns a refresh closure (driven by nav + the telemetry tick while visible).
 fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
@@ -1780,6 +1867,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let net_refresh = wire_network(&app, &notify);
     let proc_refresh = wire_proc(&app, &notify);
     let _services_pump = wire_services(&app, &notify);
+    wire_microwin(&app, &notify);
     wire_palette(&app);
     let power_refresh = wire_power(&app, &notify);
     let (_privacy_pump, privacy_refresh) =

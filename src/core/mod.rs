@@ -11,6 +11,7 @@ pub mod firewall;
 pub mod installs;
 pub mod ipc;
 pub mod journal;
+pub mod microwin;
 pub mod modes;
 pub mod netmon;
 pub mod power;
