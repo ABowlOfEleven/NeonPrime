@@ -24,8 +24,8 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    config, debloat, engine, features, installs, journal, modes, power, privacy, quick, repair,
-    settings, startup, tweaks,
+    config, debloat, engine, features, installs, journal, modes, netmon, power, privacy, quick,
+    repair, settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -924,6 +924,40 @@ fn wire_power(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     refresh
 }
 
+/// Network monitor — snapshot active outbound TCP connections per process.
+/// Returns a refresh closure (driven by nav + the telemetry tick while visible).
+fn wire_network(app: &AppWindow) -> Rc<dyn Fn()> {
+    let model: Rc<VecModel<NetRow>> = Rc::new(VecModel::default());
+    app.global::<Network>().set_rows(model.clone().into());
+
+    let refresh: Rc<dyn Fn()> = {
+        let weak = app.as_weak();
+        let model = model.clone();
+        Rc::new(move || {
+            let rows: Vec<NetRow> = netmon::connections()
+                .iter()
+                .map(|c| NetRow {
+                    proc_name: c.proc_name.as_str().into(),
+                    pid: c.pid as i32,
+                    remote: c.remote.as_str().into(),
+                    state: c.state.as_str().into(),
+                })
+                .collect();
+            let n = rows.len() as i32;
+            model.set_vec(rows);
+            if let Some(app) = weak.upgrade() {
+                app.global::<Network>().set_count(n);
+            }
+        })
+    };
+    refresh();
+    {
+        let refresh = refresh.clone();
+        app.global::<Network>().on_refresh(move || refresh());
+    }
+    refresh
+}
+
 /// Privacy/Hardening score — a view over the tweak catalog. Reads live state to
 /// score exposure (no elevation needed just to view), and hardens via the same
 /// reversible apply path as the Tweaks panel. Returns the elevated-result pump.
@@ -1296,6 +1330,7 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_startup(&app, &notify);
     wire_features(&app, &notify);
     let _debloat_pump = wire_debloat(&app, &notify);
+    let net_refresh = wire_network(&app);
     let power_refresh = wire_power(&app, &notify);
     let (_privacy_pump, privacy_refresh) =
         wire_privacy(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model);
@@ -1310,11 +1345,13 @@ fn main() -> Result<(), slint::PlatformError> {
     {
         let tcat = tweaks_catalog.clone();
         let tmodel = tweaks_model.clone();
+        let net = net_refresh.clone();
         app.global::<Nav>().on_changed(move |page| match page {
             1 => refresh_tweaks(&tmodel, &tcat),
             3 => power_refresh(),
             8 => privacy_refresh(),
             9 => history_refresh(),
+            11 => net(),
             _ => {}
         });
     }
@@ -1336,6 +1373,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let weak = app.as_weak();
     let timer = Timer::default();
+    let mut tick = 0u64;
     timer.start(TimerMode::Repeated, Duration::from_secs(1), move || {
         if let Some(app) = weak.upgrade() {
             let s = tele.sample();
@@ -1345,6 +1383,11 @@ fn main() -> Result<(), slint::PlatformError> {
             let sys = app.global::<Sys>();
             sys.set_cpu_history(spark_model(&cpu_hist));
             sys.set_gpu_history(spark_model(&gpu_hist));
+            // Live-refresh the network panel (every 2s) only while it's visible.
+            tick += 1;
+            if tick % 2 == 0 && app.global::<Nav>().get_page() == 11 {
+                net_refresh();
+            }
         }
     });
 
