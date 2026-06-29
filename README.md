@@ -37,8 +37,10 @@ The heart of NeonPrime. One click changes who your PC is:
 - **Tweaks & debloat** — 29 reversible tweaks across Interface / Privacy / Performance (including service-control tweaks), with **live search + category filter** and a one-click **Essential Tweaks** preset.
 - **Reversible everything** — an action journal with a full **History timeline**: revert any past change (or all of them), not just the last. Failures self-correct the toggle.
 - **System modes & power plans** — one-click AI / Game / Work that actually *do* things: each applies a reversible bundle (Game DVR, background apps, notifications) and switches the power plan, all undoable; click an active mode to turn it off. Plus a Balanced / High Performance / Ultimate switcher.
-- **Network monitor** — live outbound TCP connections per process (remote IP:port + state), refreshing while open — see what's phoning home.
+- **Network monitor** — live outbound TCP connections per process (remote IP:port + state), refreshing while open — see what's phoning home. Plus a DNS switcher (Cloudflare / Google / Quad9 / automatic).
 - **Disk cleanup** — scan reclaimable space (temp, Recycle Bin, thumbnails, system/update caches) and clear it per-target.
+- **Command palette** — Ctrl+K to fuzzy-jump to any panel or run any action.
+- **Accessible** — WCAG-AA contrast, screen-reader roles/labels (UIA), and full keyboard navigation (Tab / Enter / Space with focus rings).
 - **Quick Actions** — restart Explorer, flush DNS, clear temp, empty Recycle Bin, create restore point, install the NeonPrime PowerShell profile.
 - **Startup manager** — enable/disable per-user startup apps (reversibly).
 - **App installs** — a `winget`-backed picker with **194 apps** imported from WinUtil's catalog + live search.
