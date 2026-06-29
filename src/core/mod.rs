@@ -2,6 +2,7 @@
 
 pub mod action;
 pub mod config;
+pub mod debloat;
 pub mod engine;
 pub mod features;
 pub mod installs;

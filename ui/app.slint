@@ -170,6 +170,21 @@ export global Privacy {
     callback harden-all();
 }
 
+export struct DebloatRow {
+    id: int,
+    name: string,
+    desc: string,
+    present: bool, // installed
+    known: bool, // false until probed
+}
+
+export global Debloat {
+    in property <[DebloatRow]> rows;
+    in property <bool> probing: true;
+    callback remove(int);
+    callback disable-telemetry-tasks();
+}
+
 export struct HistoryRow {
     id: int, // journal entry id
     label: string,
@@ -1455,6 +1470,109 @@ component HistoryView inherits VerticalLayout {
     }
 }
 
+component DebloatRowView inherits Rectangle {
+    in property <DebloatRow> entry;
+    height: 56px;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.entry.name;
+                color: Theme.text-body;
+                font-size: 13px;
+                overflow: elide;
+            }
+            Text {
+                text: root.entry.desc;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+        // Status badge (only once probed).
+        VerticalLayout {
+            alignment: center;
+            if root.entry.known: Rectangle {
+                width: 86px;
+                height: 20px;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: root.entry.present ? Theme.ember : Theme.divider;
+                background: root.entry.present ? Theme.ember.with-alpha(0.12) : transparent;
+                Text {
+                    text: root.entry.present ? "INSTALLED" : "REMOVED";
+                    color: root.entry.present ? Theme.ember-soft : Theme.text-dim;
+                    font-size: 10px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 80px;
+            if root.entry.known && root.entry.present: PushButton {
+                w: 74px;
+                danger: true;
+                label: "REMOVE";
+                clicked => {
+                    Debloat.remove(root.entry.id);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component DebloatView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 12px;
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 12px;
+        Text {
+            text: "DEBLOAT";
+            color: Theme.accent-soft;
+            font-size: 14px;
+            vertical-alignment: center;
+        }
+        Rectangle { horizontal-stretch: 1; }
+        Text {
+            text: Debloat.probing ? "scanning packages…" : "removals are per-user · reinstall from Store";
+            color: Theme.text-dim;
+            font-size: 11px;
+            vertical-alignment: center;
+        }
+        PushButton {
+            w: 188px;
+            danger: true;
+            label: "DISABLE TELEMETRY TASKS";
+            clicked => {
+                Debloat.disable-telemetry-tasks();
+            }
+        }
+    }
+    ListView {
+        vertical-stretch: 1;
+        for e in Debloat.rows: DebloatRowView {
+            entry: e;
+        }
+    }
+}
+
 component Toast inherits Rectangle {
     in property <string> message;
     in property <string> kind;
@@ -1581,6 +1699,7 @@ export component AppWindow inherits Window {
                     NavItem { label: "FEATURES"; index: 7; icon: @image-url("icons/features.svg"); }
                     NavItem { label: "PRIVACY"; index: 8; icon: @image-url("icons/shield.svg"); }
                     NavItem { label: "HISTORY"; index: 9; icon: @image-url("icons/history.svg"); }
+                    NavItem { label: "DEBLOAT"; index: 10; icon: @image-url("icons/debloat.svg"); }
                     Rectangle { vertical-stretch: 1; }
                     HorizontalLayout {
                         padding-left: 18px;
@@ -1649,6 +1768,10 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 9: HistoryView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 10: DebloatView {
                     width: parent.width;
                     height: parent.height;
                 }

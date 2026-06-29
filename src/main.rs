@@ -24,8 +24,8 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    config, engine, features, installs, journal, modes, privacy, quick, repair, settings, startup,
-    tweaks,
+    config, debloat, engine, features, installs, journal, modes, privacy, quick, repair, settings,
+    startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -47,6 +47,12 @@ enum ElevatedMsg {
 enum RevertMsg {
     Done { id: u64, label: String },
     Failed { label: String, error: String },
+}
+
+/// Background results for the Debloat panel.
+enum DebloatMsg {
+    Probed(std::collections::HashSet<String>),
+    Removed { idx: i32, ok: bool, name: String, err: String },
 }
 
 // ── Toast notifier ──────────────────────────────────────────────────
@@ -737,6 +743,104 @@ fn wire_features(app: &AppWindow, notify: &Notify) {
     });
 }
 
+/// UWP debloat: probe installed packages off-thread (unelevated), remove per-user,
+/// and disable telemetry scheduled tasks (elevated). Returns the result pump.
+fn wire_debloat(app: &AppWindow, notify: &Notify) -> Timer {
+    let model: Rc<VecModel<DebloatRow>> = Rc::new(VecModel::default());
+    let rows: Vec<DebloatRow> = debloat::catalog()
+        .iter()
+        .enumerate()
+        .map(|(i, b)| DebloatRow {
+            id: i as i32,
+            name: b.name.into(),
+            desc: b.desc.into(),
+            present: false,
+            known: false,
+        })
+        .collect();
+    model.set_vec(rows);
+    app.global::<Debloat>().set_rows(model.clone().into());
+    app.global::<Debloat>().set_probing(true);
+
+    let (tx, rx) = mpsc::channel::<DebloatMsg>();
+
+    // Probe installed packages off-thread (Get-AppxPackage is slow).
+    {
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(DebloatMsg::Probed(debloat::installed_names()));
+        });
+    }
+
+    // Remove one package (per-user, unelevated) on a worker thread.
+    {
+        let notify = notify.clone();
+        let tx = tx.clone();
+        app.global::<Debloat>().on_remove(move |id| {
+            let Some(b) = debloat::catalog().get(id as usize) else { return };
+            notify("info", &format!("Removing {}…", b.name));
+            let (tx, name) = (tx.clone(), b.name.to_string());
+            std::thread::spawn(move || {
+                let b = &debloat::catalog()[id as usize];
+                let (ok, err) = match debloat::remove(b) {
+                    Ok(o) => (o, String::new()),
+                    Err(e) => (false, e.to_string()),
+                };
+                let _ = tx.send(DebloatMsg::Removed { idx: id, ok, name, err });
+            });
+        });
+    }
+
+    // Disable telemetry scheduled tasks (elevated, hidden console).
+    {
+        let notify = notify.clone();
+        app.global::<Debloat>().on_disable_telemetry_tasks(move || {
+            match launch_elevated_ps(&debloat::disable_tasks_script(), false) {
+                Ok(()) => notify("info", "Disabling telemetry tasks — approve the UAC prompt…"),
+                Err(e) => notify("error", &format!("Failed: {e}")),
+            }
+        });
+    }
+
+    // Pump: apply probe + removal results.
+    let weak = app.as_weak();
+    let model2 = model.clone();
+    let notify2 = notify.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                DebloatMsg::Probed(set) => {
+                    for (i, b) in debloat::catalog().iter().enumerate() {
+                        if let Some(mut row) = model2.row_data(i) {
+                            row.present = debloat::is_present(b, &set);
+                            row.known = true;
+                            model2.set_row_data(i, row);
+                        }
+                    }
+                    if let Some(app) = weak.upgrade() {
+                        app.global::<Debloat>().set_probing(false);
+                    }
+                }
+                DebloatMsg::Removed { idx, ok, name, err } => {
+                    if ok {
+                        if let Some(mut row) = model2.row_data(idx as usize) {
+                            row.present = false;
+                            model2.set_row_data(idx as usize, row);
+                        }
+                        notify2("success", &format!("Removed: {name}"));
+                    } else if err.is_empty() {
+                        notify2("error", &format!("{name}: removal blocked (system/provisioned app)"));
+                    } else {
+                        notify2("error", &format!("{name}: {err}"));
+                    }
+                }
+            }
+        }
+    });
+    timer
+}
+
 /// Privacy/Hardening score — a view over the tweak catalog. Reads live state to
 /// score exposure (no elevation needed just to view), and hardens via the same
 /// reversible apply path as the Tweaks panel. Returns the elevated-result pump.
@@ -1108,6 +1212,7 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_quick(&app, &notify);
     wire_startup(&app, &notify);
     wire_features(&app, &notify);
+    let _debloat_pump = wire_debloat(&app, &notify);
     let (_privacy_pump, privacy_refresh) =
         wire_privacy(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model);
     let (_history_pump, history_refresh) =
