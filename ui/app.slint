@@ -45,6 +45,14 @@ export global Sys {
     in-out property <string> spec-cpu: "—";
     in-out property <string> spec-ram: "—";
     in-out property <string> spec-uptime: "—";
+    // Rolling-history polyline commands (100×100 viewbox), built in Rust.
+    in-out property <string> cpu-spark;
+    in-out property <string> gpu-spark;
+}
+
+export global Power {
+    in property <int> active-plan: -1; // index into the plan list, -1 = custom
+    callback set-plan(int);
 }
 
 // Which page the sidebar has selected.
@@ -355,6 +363,54 @@ component Gauge inherits Rectangle {
             color: Theme.text-dim;
             horizontal-alignment: center;
             font-size: 11px;
+        }
+    }
+}
+
+component Sparkline inherits Rectangle {
+    in property <string> commands;
+    in property <color> tint;
+    in property <string> label;
+    in property <string> value;
+    height: 46px;
+    HorizontalLayout {
+        spacing: 12px;
+        VerticalLayout {
+            width: 76px;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.label;
+                color: Theme.text-dim;
+                font-size: 10px;
+            }
+            Text {
+                text: root.value;
+                color: root.tint;
+                font-size: 14px;
+            }
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            // Baseline.
+            Rectangle {
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.divider;
+            }
+            Path {
+                width: parent.width;
+                height: parent.height;
+                viewbox-x: 0;
+                viewbox-y: 0;
+                viewbox-width: 100;
+                viewbox-height: 100;
+                commands: root.commands;
+                stroke: root.tint;
+                stroke-width: 1.5px;
+                fill: transparent;
+            }
         }
     }
 }
@@ -679,6 +735,23 @@ component ModesView inherits VerticalLayout {
             Modes.activate(i);
         }
     }
+    Rectangle { height: 1px; background: Theme.divider; }
+    HorizontalLayout {
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "POWER PLAN";
+                color: Theme.accent-soft;
+                font-size: 13px;
+            }
+        }
+        Rectangle { width: 8px; }
+        ModePill { label: "BALANCED"; active: Power.active-plan == 0; clicked => { Power.set-plan(0); } }
+        ModePill { label: "HIGH PERF"; active: Power.active-plan == 1; clicked => { Power.set-plan(1); } }
+        ModePill { label: "ULTIMATE"; active: Power.active-plan == 2; clicked => { Power.set-plan(2); } }
+        Rectangle { horizontal-stretch: 1; }
+    }
     Rectangle { vertical-stretch: 1; }
 }
 
@@ -802,6 +875,29 @@ component DashboardView inherits VerticalLayout {
             Meter { label: "CPU"; value: Sys.cpu-text; ratio: Sys.cpu-ratio; }
             Meter { label: "CPU TEMP"; value: Sys.cpu-temp-text; ratio: Sys.cpu-temp-ratio; warn: Sys.cpu-temp-warn; }
             Meter { label: "GPU TEMP"; value: Sys.temp-text; ratio: Sys.temp-ratio; warn: Sys.temp-warn; }
+        }
+    }
+    // Live history sparklines
+    Rectangle {
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: Theme.divider;
+        background: Theme.track;
+        VerticalLayout {
+            padding: 12px;
+            spacing: 8px;
+            Sparkline {
+                label: "CPU";
+                value: Sys.cpu-text;
+                tint: Theme.accent;
+                commands: Sys.cpu-spark;
+            }
+            Sparkline {
+                label: "GPU";
+                value: Sys.gpu-text;
+                tint: Theme.ember;
+                commands: Sys.gpu-spark;
+            }
         }
     }
     // System specs strip

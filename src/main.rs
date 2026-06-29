@@ -24,8 +24,8 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    config, debloat, engine, features, installs, journal, modes, privacy, quick, repair, settings,
-    startup, tweaks,
+    config, debloat, engine, features, installs, journal, modes, power, privacy, quick, repair,
+    settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -103,6 +103,32 @@ fn apply_telemetry(app: &AppWindow, s: &Sample) {
     sys.set_temp_text(s.temp_text.as_str().into());
     sys.set_temp_warn(s.temp_warn);
     sys.set_spec_uptime(s.uptime_text.as_str().into());
+}
+
+const SPARK_LEN: usize = 60;
+
+/// Push a sample into a capped ring buffer (oldest dropped past `SPARK_LEN`).
+fn spark_push(buf: &mut std::collections::VecDeque<f32>, v: f32) {
+    if buf.len() >= SPARK_LEN {
+        buf.pop_front();
+    }
+    buf.push_back(v.clamp(0.0, 1.0));
+}
+
+/// Build polyline path commands for a 100×100 viewbox from a history buffer.
+fn spark_path(buf: &std::collections::VecDeque<f32>) -> String {
+    if buf.len() < 2 {
+        return String::new();
+    }
+    let n = buf.len() as f32;
+    let mut s = String::with_capacity(buf.len() * 12);
+    for (i, v) in buf.iter().enumerate() {
+        let x = i as f32 / (n - 1.0) * 100.0;
+        let y = 100.0 - v * 100.0;
+        s.push_str(if i == 0 { "M " } else { "L " });
+        s.push_str(&format!("{x:.1} {y:.1} "));
+    }
+    s
 }
 
 /// One-time static system specs (OS / CPU / RAM) for the Dashboard strip.
@@ -841,6 +867,31 @@ fn wire_debloat(app: &AppWindow, notify: &Notify) -> Timer {
     timer
 }
 
+/// Power-plan switcher (Modes panel). Reads the active scheme unelevated and
+/// switches it via elevated `powercfg`. Returns a refresh closure for nav.
+fn wire_power(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
+    let refresh: Rc<dyn Fn()> = {
+        let weak = app.as_weak();
+        Rc::new(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Power>().set_active_plan(power::active_index());
+            }
+        })
+    };
+    refresh();
+
+    let notify = notify.clone();
+    app.global::<Power>().on_set_plan(move |idx| {
+        let Some(script) = power::set_script(idx as usize) else { return };
+        let name = power::plans().get(idx as usize).map(|p| p.name).unwrap_or("plan");
+        match launch_elevated_ps(&script, false) {
+            Ok(()) => notify("info", &format!("Switching to {name} — approve the UAC prompt…")),
+            Err(e) => notify("error", &format!("Power plan failed: {e}")),
+        }
+    });
+    refresh
+}
+
 /// Privacy/Hardening score — a view over the tweak catalog. Reads live state to
 /// score exposure (no elevation needed just to view), and hardens via the same
 /// reversible apply path as the Tweaks panel. Returns the elevated-result pump.
@@ -1213,6 +1264,7 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_startup(&app, &notify);
     wire_features(&app, &notify);
     let _debloat_pump = wire_debloat(&app, &notify);
+    let power_refresh = wire_power(&app, &notify);
     let (_privacy_pump, privacy_refresh) =
         wire_privacy(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model);
     let (_history_pump, history_refresh) =
@@ -1228,6 +1280,7 @@ fn main() -> Result<(), slint::PlatformError> {
         let tmodel = tweaks_model.clone();
         app.global::<Nav>().on_changed(move |page| match page {
             1 => refresh_tweaks(&tmodel, &tcat),
+            3 => power_refresh(),
             8 => privacy_refresh(),
             9 => history_refresh(),
             _ => {}
@@ -1245,11 +1298,21 @@ fn main() -> Result<(), slint::PlatformError> {
     let mut tele = Telemetry::new();
     apply_telemetry(&app, &tele.sample());
 
+    // Rolling sparkline history for CPU + GPU load.
+    let mut cpu_hist: std::collections::VecDeque<f32> = std::collections::VecDeque::new();
+    let mut gpu_hist: std::collections::VecDeque<f32> = std::collections::VecDeque::new();
+
     let weak = app.as_weak();
     let timer = Timer::default();
     timer.start(TimerMode::Repeated, Duration::from_secs(1), move || {
         if let Some(app) = weak.upgrade() {
-            apply_telemetry(&app, &tele.sample());
+            let s = tele.sample();
+            apply_telemetry(&app, &s);
+            spark_push(&mut cpu_hist, s.cpu_ratio);
+            spark_push(&mut gpu_hist, s.gpu_ratio);
+            let sys = app.global::<Sys>();
+            sys.set_cpu_spark(spark_path(&cpu_hist).into());
+            sys.set_gpu_spark(spark_path(&gpu_hist).into());
         }
     });
 
