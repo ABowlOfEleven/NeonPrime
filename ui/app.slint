@@ -72,6 +72,7 @@ export global Palette {
     in-out property <bool> open: false;
     in-out property <string> query;
     in property <[PaletteItem]> items;
+    in-out property <int> selected: 0;
     callback filter();
     callback run(int);
 }
@@ -2036,6 +2037,7 @@ export component AppWindow inherits Window {
                 Palette.open = !Palette.open;
                 if (Palette.open) {
                     Palette.query = "";
+                    Palette.selected = 0;
                     Palette.filter();
                 } else {
                     fs.focus();
@@ -2045,6 +2047,14 @@ export component AppWindow inherits Window {
             if (Palette.open && e.text == Key.Escape) {
                 Palette.open = false;
                 fs.focus();
+                return EventResult.accept;
+            }
+            if (Palette.open && e.text == Key.DownArrow) {
+                Palette.selected = min(Palette.selected + 1, Palette.items.length - 1);
+                return EventResult.accept;
+            }
+            if (Palette.open && e.text == Key.UpArrow) {
+                Palette.selected = max(Palette.selected - 1, 0);
                 return EventResult.accept;
             }
             return EventResult.reject;
@@ -2103,6 +2113,7 @@ export component AppWindow inherits Window {
                             Palette.open = !Palette.open;
                             if (Palette.open) {
                                 Palette.query = "";
+                                Palette.selected = 0;
                                 Palette.filter();
                             } else {
                                 fs.focus();
@@ -2344,12 +2355,25 @@ export component AppWindow inherits Window {
                             font-size: 14px;
                             vertical-alignment: center;
                             single-line: true;
+                            // Intercept arrows before the input consumes them.
+                            key-pressed(e) => {
+                                if (e.text == Key.DownArrow) {
+                                    Palette.selected = min(Palette.selected + 1, Palette.items.length - 1);
+                                    return EventResult.accept;
+                                }
+                                if (e.text == Key.UpArrow) {
+                                    Palette.selected = max(Palette.selected - 1, 0);
+                                    return EventResult.accept;
+                                }
+                                return EventResult.reject;
+                            }
                             edited => {
+                                Palette.selected = 0;
                                 Palette.filter();
                             }
                             accepted => {
                                 if (Palette.items.length > 0) {
-                                    Palette.run(Palette.items[0].id);
+                                    Palette.run(Palette.items[min(Palette.selected, Palette.items.length - 1)].id);
                                 }
                                 Palette.open = false;
                                 fs.focus();
@@ -2366,9 +2390,9 @@ export component AppWindow inherits Window {
                 }
                 ListView {
                     vertical-stretch: 1;
-                    for it in Palette.items: Rectangle {
+                    for it[idx] in Palette.items: Rectangle {
                         height: 38px;
-                        background: ptouch.has-hover ? Theme.accent.with-alpha(0.1) : transparent;
+                        background: idx == Palette.selected ? Theme.accent.with-alpha(0.18) : (ptouch.has-hover ? Theme.accent.with-alpha(0.1) : transparent);
                         HorizontalLayout {
                             padding-left: 12px;
                             padding-right: 12px;
