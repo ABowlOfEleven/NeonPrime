@@ -383,7 +383,7 @@ component Meter inherits VerticalLayout {
     in property <string> value;
     in property <float> ratio;
     in property <bool> warn;
-    spacing: 6px;
+    spacing: 4px;
 
     HorizontalLayout {
         Text {
@@ -474,7 +474,7 @@ component Sparkline inherits Rectangle {
     in property <color> tint;
     in property <string> label;
     in property <string> value;
-    height: 46px;
+    height: 38px;
     HorizontalLayout {
         spacing: 12px;
         VerticalLayout {
@@ -1002,8 +1002,8 @@ component SpecRow inherits HorizontalLayout {
 }
 
 component DashboardView inherits VerticalLayout {
-    padding: 20px;
-    spacing: 20px;
+    padding: 14px;
+    spacing: 12px;
     HorizontalLayout {
         spacing: 8px;
         alignment: stretch;
@@ -1034,7 +1034,7 @@ component DashboardView inherits VerticalLayout {
         VerticalLayout {
             horizontal-stretch: 1;
             alignment: center;
-            spacing: 14px;
+            spacing: 8px;
             Meter { label: "VRAM"; value: Sys.vram-text; ratio: Sys.vram-ratio; }
             Meter { label: "RAM"; value: Sys.ram-text; ratio: Sys.ram-ratio; }
             Meter { label: "CPU"; value: Sys.cpu-text; ratio: Sys.cpu-ratio; }
@@ -2025,9 +2025,9 @@ export component AppWindow inherits Window {
     title: "NeonPrime";
     default-font-size: 13px;
     preferred-width: 760px;
-    preferred-height: 640px;
+    preferred-height: 660px;
     min-width: 640px;
-    min-height: 600px;
+    min-height: 624px;
     background: Theme.bg;
     forward-focus: fs;
 
