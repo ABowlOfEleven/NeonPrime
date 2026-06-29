@@ -61,6 +61,20 @@ export global Nav {
     callback changed(int); // fired on navigation, so Rust can refresh that panel
 }
 
+export struct PaletteItem {
+    label: string,
+    hint: string,
+    id: int,
+}
+
+export global Palette {
+    in-out property <bool> open: false;
+    in-out property <string> query;
+    in property <[PaletteItem]> items;
+    callback filter();
+    callback run(int);
+}
+
 export struct TweakRow {
     id: int,
     name: string,
@@ -93,6 +107,7 @@ export global Installer {
     in property <int> count;
     callback install(int);
     callback filter();
+    callback update-all();
 }
 
 export struct ModeCard {
@@ -115,6 +130,8 @@ export global Configuration {
     callback import-config();
     callback run-fix(int);          // 0 repair, 1 network, 2 windows-update
     callback set-update-mode(int);  // 0 default, 1 security-only, 2 disabled
+    callback create-restore-point();
+    callback open-system-restore();
 }
 
 export global Ui {
@@ -205,6 +222,7 @@ export global Network {
     in property <[NetRow]> rows;
     in property <int> count;
     callback refresh();
+    callback set-dns(int); // 0 auto, 1 cloudflare, 2 google, 3 quad9
 }
 
 export struct DebloatRow {
@@ -678,7 +696,17 @@ component InstallView inherits VerticalLayout {
     padding-top: 18px;
     padding-bottom: 8px;
     spacing: 10px;
-    PanelHeader { title: "INSTALL"; hint: "\{Installer.count} apps · winget"; }
+    PanelHeader {
+        title: "INSTALL";
+        hint: "\{Installer.count} apps · winget";
+        PushButton {
+            w: 110px;
+            label: "UPDATE ALL";
+            clicked => {
+                Installer.update-all();
+            }
+        }
+    }
     HorizontalLayout {
         padding-left: 20px;
         padding-right: 20px;
@@ -1108,6 +1136,7 @@ component ConfigView inherits VerticalLayout {
         FilterChip { label: "BACKUP"; active: root.tab == 0; clicked => { root.tab = 0; } }
         FilterChip { label: "FIXES"; active: root.tab == 1; clicked => { root.tab = 1; } }
         FilterChip { label: "UPDATES"; active: root.tab == 2; clicked => { root.tab = 2; } }
+        FilterChip { label: "RESTORE"; active: root.tab == 3; clicked => { root.tab = 3; } }
         Rectangle { horizontal-stretch: 1; }
     }
 
@@ -1201,6 +1230,27 @@ component ConfigView inherits VerticalLayout {
             PushButton { w: 96px; label: "DEFAULT"; clicked => { Configuration.set-update-mode(0); } }
             PushButton { w: 124px; label: "SECURITY ONLY"; clicked => { Configuration.set-update-mode(1); } }
             PushButton { w: 100px; danger: true; label: "DISABLED"; clicked => { Configuration.set-update-mode(2); } }
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+
+    // ── RESTORE ─────────────────────────────────────────────────
+    if root.tab == 3: VerticalLayout {
+        vertical-stretch: 1;
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 12px;
+        Text {
+            text: "Create a system restore point now, or open the Windows wizard to browse and roll back to an earlier point.";
+            color: Theme.text-dim;
+            font-size: 12px;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: start;
+            PushButton { w: 168px; label: "CREATE RESTORE POINT"; clicked => { Configuration.create-restore-point(); } }
+            PushButton { w: 160px; label: "OPEN SYSTEM RESTORE"; clicked => { Configuration.open-system-restore(); } }
         }
         Rectangle { vertical-stretch: 1; }
     }
@@ -1812,6 +1862,23 @@ component NetworkView inherits VerticalLayout {
             }
         }
     }
+    // DNS provider switcher (applies to all adapters; admin).
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 8px;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Text { text: "DNS"; color: Theme.text-dim; font-size: 11px; }
+        }
+        Rectangle { width: 4px; }
+        ModePill { label: "AUTO"; clicked => { Network.set-dns(0); } }
+        ModePill { label: "CLOUDFLARE"; clicked => { Network.set-dns(1); } }
+        ModePill { label: "GOOGLE"; clicked => { Network.set-dns(2); } }
+        ModePill { label: "QUAD9"; clicked => { Network.set-dns(3); } }
+        Rectangle { horizontal-stretch: 1; }
+    }
     if Network.rows.length == 0: EmptyState {
         vertical-stretch: 1;
         text: "No active outbound connections.";
@@ -1866,7 +1933,27 @@ export component AppWindow inherits Window {
     min-width: 640px;
     min-height: 600px;
     background: Theme.bg;
+    forward-focus: fs;
 
+    fs := FocusScope {
+        key-pressed(e) => {
+            if (e.text == "k" && e.modifiers.control) {
+                Palette.open = !Palette.open;
+                if (Palette.open) {
+                    Palette.query = "";
+                    Palette.filter();
+                } else {
+                    fs.focus();
+                }
+                return EventResult.accept;
+            }
+            if (Palette.open && e.text == Key.Escape) {
+                Palette.open = false;
+                fs.focus();
+                return EventResult.accept;
+            }
+            return EventResult.reject;
+        }
     VerticalLayout {
         // ── Title bar ──────────────────────────────────────────────
         Rectangle {
@@ -1902,6 +1989,32 @@ export component AppWindow inherits Window {
                     }
                 }
                 Rectangle { horizontal-stretch: 1; }
+                Rectangle {
+                    width: 120px;
+                    height: 26px;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: Theme.divider;
+                    background: Theme.track;
+                    Text {
+                        text: "SEARCH · CTRL+K";
+                        color: Theme.text-dim;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                        font-size: 10px;
+                    }
+                    TouchArea {
+                        clicked => {
+                            Palette.open = !Palette.open;
+                            if (Palette.open) {
+                                Palette.query = "";
+                                Palette.filter();
+                            } else {
+                                fs.focus();
+                            }
+                        }
+                    }
+                }
                 Rectangle {
                     width: 112px;
                     height: 26px;
@@ -2095,4 +2208,113 @@ export component AppWindow inherits Window {
             }
         }
     }
+
+    // ── Command palette (Ctrl+K) ───────────────────────────────
+    if Palette.open: Rectangle {
+        background: #05080dcc;
+        TouchArea {
+            clicked => {
+                Palette.open = false;
+                fs.focus();
+            }
+        }
+        Rectangle {
+            width: min(540px, parent.width - 80px);
+            height: min(400px, parent.height - 120px);
+            x: (parent.width - self.width) / 2;
+            y: 84px;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.accent.with-alpha(0.45);
+            background: Theme.bg;
+            TouchArea {} // absorb clicks so they don't close the palette
+            VerticalLayout {
+                padding: 14px;
+                spacing: 10px;
+                Rectangle {
+                    height: 36px;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: Theme.accent.with-alpha(0.5);
+                    background: Theme.track;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        palette-input := TextInput {
+                            init => {
+                                self.focus();
+                            }
+                            text <=> Palette.query;
+                            color: Theme.text-body;
+                            font-size: 14px;
+                            vertical-alignment: center;
+                            single-line: true;
+                            edited => {
+                                Palette.filter();
+                            }
+                            accepted => {
+                                if (Palette.items.length > 0) {
+                                    Palette.run(Palette.items[0].id);
+                                }
+                                Palette.open = false;
+                                fs.focus();
+                            }
+                        }
+                    }
+                    if Palette.query == "": Text {
+                        x: 13px;
+                        text: "Jump to a panel, run an action…";
+                        color: Theme.text-dim;
+                        font-size: 14px;
+                        vertical-alignment: center;
+                    }
+                }
+                ListView {
+                    vertical-stretch: 1;
+                    for it in Palette.items: Rectangle {
+                        height: 38px;
+                        background: ptouch.has-hover ? Theme.accent.with-alpha(0.1) : transparent;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            spacing: 10px;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: it.label;
+                                    color: Theme.text-body;
+                                    font-size: 13px;
+                                    overflow: elide;
+                                }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: it.hint;
+                                    color: Theme.text-dim;
+                                    font-size: 10px;
+                                }
+                            }
+                        }
+                        ptouch := TouchArea {
+                            clicked => {
+                                Palette.run(it.id);
+                                Palette.open = false;
+                                fs.focus();
+                            }
+                        }
+                        Rectangle {
+                            x: 0;
+                            y: parent.height - 1px;
+                            width: parent.width;
+                            height: 1px;
+                            background: Theme.divider;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    } // end FocusScope
 }

@@ -24,8 +24,8 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    cleanup, config, debloat, engine, features, installs, journal, modes, netmon, power, privacy,
-    quick, repair, settings, startup, tweaks,
+    cleanup, config, debloat, dns, engine, features, installs, journal, modes, netmon, power,
+    privacy, quick, repair, settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -492,6 +492,7 @@ fn wire_installs(app: &AppWindow, notify: &Notify) {
 
     let cat = catalog.clone();
     let notify = notify.clone();
+    let notify2 = notify.clone();
     app.global::<Installer>().on_install(move |id| {
         if let Some(a) = cat.get(id as usize) {
             match Command::new("winget").args(installs::install_args(&a.id)).spawn() {
@@ -500,6 +501,16 @@ fn wire_installs(app: &AppWindow, notify: &Notify) {
             }
         }
     });
+
+    {
+        let notify = notify2.clone();
+        app.global::<Installer>().on_update_all(move || {
+            match launch_console("winget upgrade --all --include-unknown") {
+                Ok(()) => notify("info", "Updating all apps — see the console window."),
+                Err(e) => notify("error", &format!("winget: {e}")),
+            }
+        });
+    }
 }
 
 // ── Config ──────────────────────────────────────────────────────────
@@ -598,6 +609,29 @@ fn wire_config(
             }
         });
     }
+
+    // Restore points — create one (elevated) or open the Windows wizard.
+    {
+        let notify = notify.clone();
+        app.global::<Configuration>().on_create_restore_point(move || {
+            let script = "Enable-ComputerRestore -Drive 'C:\\'; \
+                Checkpoint-Computer -Description 'NeonPrime' -RestorePointType 'MODIFY_SETTINGS'; \
+                Write-Host 'Restore point created.'";
+            match launch_elevated_ps(script, true) {
+                Ok(()) => notify("info", "Creating restore point — approve UAC; see the console."),
+                Err(e) => notify("error", &format!("Restore point: {e}")),
+            }
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Configuration>().on_open_system_restore(move || {
+            match Command::new("rstrui.exe").spawn() {
+                Ok(_) => notify("info", "Opening System Restore…"),
+                Err(e) => notify("error", &format!("Couldn't open System Restore: {e}")),
+            }
+        });
+    }
 }
 
 // ── Theme + Undo ────────────────────────────────────────────────────
@@ -665,6 +699,14 @@ fn launch_elevated_ps(script: &str, visible: bool) -> io::Result<()> {
     let ps = format!("Start-Process -FilePath 'powershell' -ArgumentList {inner} -Verb RunAs{hidden}");
     Command::new("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
+        .spawn()
+        .map(|_| ())
+}
+
+/// Launch a script in a visible, non-elevated PowerShell console (stays open).
+fn launch_console(script: &str) -> io::Result<()> {
+    Command::new("powershell")
+        .args(["-NoExit", "-Command", script])
         .spawn()
         .map(|_| ())
 }
@@ -1050,7 +1092,7 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
 
 /// Network monitor — snapshot active outbound TCP connections per process.
 /// Returns a refresh closure (driven by nav + the telemetry tick while visible).
-fn wire_network(app: &AppWindow) -> Rc<dyn Fn()> {
+fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     let model: Rc<VecModel<NetRow>> = Rc::new(VecModel::default());
     app.global::<Network>().set_rows(model.clone().into());
 
@@ -1079,7 +1121,87 @@ fn wire_network(app: &AppWindow) -> Rc<dyn Fn()> {
         let refresh = refresh.clone();
         app.global::<Network>().on_refresh(move || refresh());
     }
+    {
+        let notify = notify.clone();
+        app.global::<Network>().on_set_dns(move |idx| {
+            let Some(script) = dns::set_script(idx as usize) else { return };
+            let name = dns::providers().get(idx as usize).map(|p| p.name).unwrap_or("DNS");
+            match launch_elevated_ps(&script, false) {
+                Ok(()) => notify("info", &format!("Setting DNS → {name} (approve UAC)")),
+                Err(e) => notify("error", &format!("DNS: {e}")),
+            }
+        });
+    }
     refresh
+}
+
+/// Command palette (Ctrl+K): fuzzy list of panels to jump to + actions to run.
+/// id encodes the target — `<1000` nav page, `1000+` quick action, `2000+` mode.
+fn wire_palette(app: &AppWindow) {
+    const NAV: &[(&str, i32)] = &[
+        ("Dashboard", 0),
+        ("Network", 11),
+        ("Tweaks", 1),
+        ("Privacy", 8),
+        ("Debloat", 10),
+        ("Cleanup", 12),
+        ("Startup", 6),
+        ("Install", 2),
+        ("Features", 7),
+        ("Modes", 3),
+        ("Actions", 5),
+        ("Config", 4),
+        ("History", 9),
+    ];
+    let mut cmds: Vec<(String, &'static str, i32)> = Vec::new();
+    for (label, page) in NAV {
+        cmds.push((format!("Go to {label}"), "Panel", *page));
+    }
+    for (i, a) in quick::catalog().iter().enumerate() {
+        cmds.push((format!("Run: {}", a.name), "Action", 1000 + i as i32));
+    }
+    for (i, m) in modes::catalog().iter().enumerate() {
+        cmds.push((format!("Activate {} mode", m.name), "Mode", 2000 + i as i32));
+    }
+    let cmds = Rc::new(cmds);
+
+    let model: Rc<VecModel<PaletteItem>> = Rc::new(VecModel::default());
+    app.global::<Palette>().set_items(model.clone().into());
+
+    {
+        let weak = app.as_weak();
+        let cmds = cmds.clone();
+        let model = model.clone();
+        app.global::<Palette>().on_filter(move || {
+            let q = weak
+                .upgrade()
+                .map(|a| a.global::<Palette>().get_query().to_lowercase())
+                .unwrap_or_default();
+            let items: Vec<PaletteItem> = cmds
+                .iter()
+                .filter(|(l, _, _)| q.is_empty() || l.to_lowercase().contains(&q))
+                .take(50)
+                .map(|(l, h, id)| PaletteItem { label: l.as_str().into(), hint: (*h).into(), id: *id })
+                .collect();
+            model.set_vec(items);
+        });
+    }
+    app.global::<Palette>().invoke_filter();
+
+    {
+        let weak = app.as_weak();
+        app.global::<Palette>().on_run(move |id| {
+            let Some(app) = weak.upgrade() else { return };
+            if id >= 2000 {
+                app.global::<Modes>().invoke_activate(id - 2000);
+            } else if id >= 1000 {
+                app.global::<Quick>().invoke_run(id - 1000);
+            } else {
+                app.global::<Nav>().set_page(id);
+                app.global::<Nav>().invoke_changed(id);
+            }
+        });
+    }
 }
 
 /// Privacy/Hardening score — a view over the tweak catalog. Reads live state to
@@ -1455,7 +1577,8 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_features(&app, &notify);
     let _debloat_pump = wire_debloat(&app, &notify);
     let _cleanup_pump = wire_cleanup(&app, &notify);
-    let net_refresh = wire_network(&app);
+    let net_refresh = wire_network(&app, &notify);
+    wire_palette(&app);
     let power_refresh = wire_power(&app, &notify);
     let (_privacy_pump, privacy_refresh) =
         wire_privacy(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model);
