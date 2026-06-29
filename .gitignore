@@ -5,3 +5,6 @@ sensors/bin/
 sensors/obj/
 /dist
 *.msi
+
+# Windows Sandbox staging
+/sandbox/share/

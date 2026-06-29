@@ -1,0 +1,17 @@
+<Configuration>
+  <!-- Windows Sandbox config for testing NeonPrime in a disposable Win11 VM.
+       Stage the build first:  pwsh sandbox\build-sandbox.ps1
+       Then double-click this file. -->
+  <VGpu>Enable</VGpu>
+  <Networking>Enable</Networking>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>E:\Repos\NeonPrime\sandbox\share</HostFolder>
+      <SandboxFolder>C:\NeonPrime</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>explorer.exe C:\NeonPrime</Command>
+  </LogonCommand>
+</Configuration>
