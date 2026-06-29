@@ -537,26 +537,53 @@ component QuickActionRow inherits Rectangle {
     }
 }
 
+// Shared panel header: title (left), dim hint + any action buttons (right).
+component PanelHeader inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> hint: "";
+    height: 30px;
+    padding-left: 20px;
+    padding-right: 20px;
+    spacing: 10px;
+    VerticalLayout {
+        alignment: center;
+        Text {
+            text: root.title;
+            color: Theme.accent-soft;
+            font-size: 14px;
+        }
+    }
+    Rectangle { horizontal-stretch: 1; }
+    VerticalLayout {
+        alignment: center;
+        Text {
+            text: root.hint;
+            color: Theme.text-dim;
+            font-size: 11px;
+            horizontal-alignment: right;
+        }
+    }
+    @children
+}
+
+// Centered placeholder for empty / loading lists.
+component EmptyState inherits VerticalLayout {
+    in property <string> text;
+    alignment: center;
+    Text {
+        text: root.text;
+        color: Theme.text-dim;
+        font-size: 12px;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+}
+
 component QuickActionsView inherits VerticalLayout {
     padding-top: 18px;
     padding-bottom: 8px;
     spacing: 12px;
-    HorizontalLayout {
-        padding-left: 20px;
-        padding-right: 20px;
-        Text {
-            text: "QUICK ACTIONS";
-            color: Theme.accent-soft;
-            font-size: 14px;
-        }
-        Rectangle { horizontal-stretch: 1; }
-        Text {
-            text: "one-click maintenance";
-            color: Theme.text-dim;
-            font-size: 11px;
-            vertical-alignment: center;
-        }
-    }
+    PanelHeader { title: "QUICK ACTIONS"; hint: "one-click maintenance"; }
     ListView {
         vertical-stretch: 1;
         for a in Quick.rows: QuickActionRow {
@@ -619,26 +646,10 @@ component AppRowView inherits Rectangle {
 }
 
 component InstallView inherits VerticalLayout {
-    padding-top: 16px;
+    padding-top: 18px;
     padding-bottom: 8px;
     spacing: 10px;
-    HorizontalLayout {
-        padding-left: 20px;
-        padding-right: 20px;
-        Text {
-            text: "INSTALL";
-            color: Theme.accent-soft;
-            font-size: 14px;
-            vertical-alignment: center;
-        }
-        Rectangle { horizontal-stretch: 1; }
-        Text {
-            text: "\{Installer.count} apps · winget";
-            color: Theme.text-dim;
-            font-size: 11px;
-            vertical-alignment: center;
-        }
-    }
+    PanelHeader { title: "INSTALL"; hint: "\{Installer.count} apps · winget"; }
     HorizontalLayout {
         padding-left: 20px;
         padding-right: 20px;
@@ -671,7 +682,11 @@ component InstallView inherits VerticalLayout {
             }
         }
     }
-    ListView {
+    if Installer.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No apps match your search.";
+    }
+    if Installer.rows.length > 0: ListView {
         vertical-stretch: 1;
         for a in Installer.rows: AppRowView {
             app: a;
@@ -971,19 +986,11 @@ component FilterChip inherits Rectangle {
 }
 
 component TweaksView inherits VerticalLayout {
-    padding-top: 16px;
+    padding-top: 18px;
     padding-bottom: 8px;
     spacing: 10px;
-    HorizontalLayout {
-        padding-left: 20px;
-        padding-right: 20px;
-        Text {
-            text: Theme.hev ? "PRY THE BLOAT" : "TWEAKS";
-            color: Theme.accent-soft;
-            font-size: 14px;
-            vertical-alignment: center;
-        }
-        Rectangle { horizontal-stretch: 1; }
+    PanelHeader {
+        title: Theme.hev ? "PRY THE BLOAT" : "TWEAKS";
         PushButton {
             w: 104px;
             label: "ESSENTIALS";
@@ -991,7 +998,6 @@ component TweaksView inherits VerticalLayout {
                 Tweaks.apply-essential();
             }
         }
-        Rectangle { width: 8px; }
         PushButton {
             w: 96px;
             label: "UNDO LAST";
@@ -1046,7 +1052,11 @@ component TweaksView inherits VerticalLayout {
         FilterChip { label: "SANDBOX"; active: Tweaks.filter-cat == "SANDBOX"; clicked => { Tweaks.filter-cat = "SANDBOX"; Tweaks.filter(); } }
         Rectangle { horizontal-stretch: 1; }
     }
-    ListView {
+    if Tweaks.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No tweaks match your search.";
+    }
+    if Tweaks.rows.length > 0: ListView {
         vertical-stretch: 1;
         for row in Tweaks.rows: TweakRowView {
             tw: row;
@@ -1055,126 +1065,115 @@ component TweaksView inherits VerticalLayout {
 }
 
 component ConfigView inherits VerticalLayout {
-    padding: 20px;
-    spacing: 14px;
-    Text {
-        text: "CONFIG";
-        color: Theme.accent-soft;
-        font-size: 14px;
-    }
-    Text {
-        text: "Capture your tuned setup to a portable TOML file, and replay it on a fresh install.";
-        color: Theme.text-dim;
-        font-size: 12px;
-        wrap: word-wrap;
-    }
+    property <int> tab: 0;
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 12px;
+    PanelHeader { title: "CONFIG"; hint: "backup · repair · updates"; }
+    // Sub-tabs
     HorizontalLayout {
-        spacing: 12px;
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 7px;
         alignment: start;
-        PushButton {
-            label: "EXPORT";
-            clicked => {
-                Configuration.export-config();
-            }
-        }
-        PushButton {
-            w: 128px;
-            label: "IMPORT & APPLY";
-            clicked => {
-                Configuration.import-config();
-            }
-        }
-    }
-    Text {
-        text: Configuration.status;
-        color: Theme.ember-soft;
-        font-size: 11px;
-        wrap: word-wrap;
+        FilterChip { label: "BACKUP"; active: root.tab == 0; clicked => { root.tab = 0; } }
+        FilterChip { label: "FIXES"; active: root.tab == 1; clicked => { root.tab = 1; } }
+        FilterChip { label: "UPDATES"; active: root.tab == 2; clicked => { root.tab = 2; } }
+        Rectangle { horizontal-stretch: 1; }
     }
 
-    Rectangle { height: 1px; background: Theme.divider; }
-
-    Text {
-        text: "FIXES";
-        color: Theme.accent-soft;
-        font-size: 14px;
-    }
-    Text {
-        text: "Elevated repairs — each opens a console and asks for admin (UAC).";
-        color: Theme.text-dim;
-        font-size: 12px;
-        wrap: word-wrap;
-    }
-    HorizontalLayout {
-        spacing: 10px;
-        alignment: start;
-        PushButton {
-            w: 132px;
-            label: "REPAIR SYSTEM";
-            clicked => { Configuration.run-fix(0); }
-        }
-        PushButton {
-            w: 128px;
-            label: "RESET NETWORK";
-            clicked => { Configuration.run-fix(1); }
-        }
-        PushButton {
-            w: 160px;
-            label: "RESET WIN UPDATE";
-            clicked => { Configuration.run-fix(2); }
-        }
-    }
-
-    Rectangle { height: 1px; background: Theme.divider; }
-
-    Text {
-        text: "WINDOWS UPDATE";
-        color: Theme.accent-soft;
-        font-size: 14px;
-    }
-    Text {
-        text: "Choose how updates behave. DEFAULT clears the policy and undoes the others.";
-        color: Theme.text-dim;
-        font-size: 12px;
-        wrap: word-wrap;
-    }
-    HorizontalLayout {
-        spacing: 10px;
-        alignment: start;
-        PushButton {
-            w: 96px;
-            label: "DEFAULT";
-            clicked => { Configuration.set-update-mode(0); }
-        }
-        PushButton {
-            w: 124px;
-            label: "SECURITY ONLY";
-            clicked => { Configuration.set-update-mode(1); }
-        }
-        PushButton {
-            w: 100px;
-            danger: true;
-            label: "DISABLED";
-            clicked => { Configuration.set-update-mode(2); }
-        }
-    }
-
-    Rectangle {
+    // ── BACKUP ──────────────────────────────────────────────────
+    if root.tab == 0: VerticalLayout {
         vertical-stretch: 1;
-        border-radius: 8px;
-        border-width: 1px;
-        border-color: Theme.divider;
-        background: Theme.track;
-        VerticalLayout {
-            padding: 12px;
-            Text {
-                text: Configuration.preview == "" ? "// Click EXPORT to snapshot your current tweaks + active mode." : Configuration.preview;
-                color: Theme.text-body;
-                font-size: 11px;
-                wrap: word-wrap;
-            }
-            Rectangle { vertical-stretch: 1; }
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 12px;
+        Text {
+            text: "Capture your tuned setup to a portable TOML file, and replay it on a fresh install.";
+            color: Theme.text-dim;
+            font-size: 12px;
+            wrap: word-wrap;
         }
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: start;
+            PushButton {
+                label: "EXPORT";
+                clicked => { Configuration.export-config(); }
+            }
+            PushButton {
+                w: 128px;
+                label: "IMPORT & APPLY";
+                clicked => { Configuration.import-config(); }
+            }
+        }
+        Text {
+            text: Configuration.status;
+            color: Theme.ember-soft;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.divider;
+            background: Theme.track;
+            VerticalLayout {
+                padding: 12px;
+                Text {
+                    text: Configuration.preview == "" ? "// Click EXPORT to snapshot your current tweaks + active mode." : Configuration.preview;
+                    color: Theme.text-body;
+                    font-size: 11px;
+                    wrap: word-wrap;
+                }
+                Rectangle { vertical-stretch: 1; }
+            }
+        }
+    }
+
+    // ── FIXES ───────────────────────────────────────────────────
+    if root.tab == 1: VerticalLayout {
+        vertical-stretch: 1;
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 12px;
+        Text {
+            text: "Elevated repairs — each opens a console and asks for admin (UAC).";
+            color: Theme.text-dim;
+            font-size: 12px;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: start;
+            PushButton { w: 132px; label: "REPAIR SYSTEM"; clicked => { Configuration.run-fix(0); } }
+            PushButton { w: 128px; label: "RESET NETWORK"; clicked => { Configuration.run-fix(1); } }
+            PushButton { w: 160px; label: "RESET WIN UPDATE"; clicked => { Configuration.run-fix(2); } }
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+
+    // ── UPDATES ─────────────────────────────────────────────────
+    if root.tab == 2: VerticalLayout {
+        vertical-stretch: 1;
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 12px;
+        Text {
+            text: "Choose how updates behave. DEFAULT clears the policy and undoes the others.";
+            color: Theme.text-dim;
+            font-size: 12px;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: start;
+            PushButton { w: 96px; label: "DEFAULT"; clicked => { Configuration.set-update-mode(0); } }
+            PushButton { w: 124px; label: "SECURITY ONLY"; clicked => { Configuration.set-update-mode(1); } }
+            PushButton { w: 100px; danger: true; label: "DISABLED"; clicked => { Configuration.set-update-mode(2); } }
+        }
+        Rectangle { vertical-stretch: 1; }
     }
 }
 
@@ -1225,29 +1224,12 @@ component StartupView inherits VerticalLayout {
     padding-top: 18px;
     padding-bottom: 8px;
     spacing: 12px;
-    HorizontalLayout {
-        padding-left: 20px;
-        padding-right: 20px;
-        Text {
-            text: "STARTUP";
-            color: Theme.accent-soft;
-            font-size: 14px;
-        }
-        Rectangle { horizontal-stretch: 1; }
-        Text {
-            text: "user startup apps";
-            color: Theme.text-dim;
-            font-size: 11px;
-            vertical-alignment: center;
-        }
-    }
-    if Startup.rows.length == 0: Text {
+    PanelHeader { title: "STARTUP"; hint: "user startup apps"; }
+    if Startup.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
         text: "No user startup entries found.";
-        color: Theme.text-dim;
-        font-size: 12px;
-        horizontal-alignment: center;
     }
-    ListView {
+    if Startup.rows.length > 0: ListView {
         vertical-stretch: 1;
         for e in Startup.rows: StartupRowView {
             entry: e;
@@ -1324,22 +1306,7 @@ component FeaturesView inherits VerticalLayout {
     padding-top: 18px;
     padding-bottom: 8px;
     spacing: 12px;
-    HorizontalLayout {
-        padding-left: 20px;
-        padding-right: 20px;
-        Text {
-            text: "FEATURES";
-            color: Theme.accent-soft;
-            font-size: 14px;
-        }
-        Rectangle { horizontal-stretch: 1; }
-        Text {
-            text: "windows optional features";
-            color: Theme.text-dim;
-            font-size: 11px;
-            vertical-alignment: center;
-        }
-    }
+    PanelHeader { title: "FEATURES"; hint: "windows optional features"; }
     ListView {
         vertical-stretch: 1;
         for e in Features.rows: FeatureRowView {
@@ -1541,23 +1508,9 @@ component HistoryView inherits VerticalLayout {
     padding-top: 18px;
     padding-bottom: 8px;
     spacing: 12px;
-    HorizontalLayout {
-        padding-left: 20px;
-        padding-right: 20px;
-        spacing: 12px;
-        Text {
-            text: "HISTORY";
-            color: Theme.accent-soft;
-            font-size: 14px;
-            vertical-alignment: center;
-        }
-        Rectangle { horizontal-stretch: 1; }
-        Text {
-            text: History.active-count + " active change(s)";
-            color: Theme.text-dim;
-            font-size: 11px;
-            vertical-alignment: center;
-        }
+    PanelHeader {
+        title: "HISTORY";
+        hint: History.active-count + " active change(s)";
         PushButton {
             w: 110px;
             danger: true;
@@ -1567,13 +1520,11 @@ component HistoryView inherits VerticalLayout {
             }
         }
     }
-    if History.rows.length == 0: Text {
-        text: "No changes recorded yet. Apply a tweak or harden something to see it here.";
-        color: Theme.text-dim;
-        font-size: 12px;
-        horizontal-alignment: center;
+    if History.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No changes recorded yet.\nApply a tweak or harden something to see it here.";
     }
-    ListView {
+    if History.rows.length > 0: ListView {
         vertical-stretch: 1;
         for e in History.rows: HistoryRowView {
             entry: e;
@@ -1650,23 +1601,9 @@ component DebloatView inherits VerticalLayout {
     padding-top: 18px;
     padding-bottom: 8px;
     spacing: 12px;
-    HorizontalLayout {
-        padding-left: 20px;
-        padding-right: 20px;
-        spacing: 12px;
-        Text {
-            text: "DEBLOAT";
-            color: Theme.accent-soft;
-            font-size: 14px;
-            vertical-alignment: center;
-        }
-        Rectangle { horizontal-stretch: 1; }
-        Text {
-            text: Debloat.probing ? "scanning packages…" : "removals are per-user · reinstall from Store";
-            color: Theme.text-dim;
-            font-size: 11px;
-            vertical-alignment: center;
-        }
+    PanelHeader {
+        title: "DEBLOAT";
+        hint: Debloat.probing ? "scanning packages…" : "removals are per-user · reinstall from Store";
         PushButton {
             w: 188px;
             danger: true;
@@ -1676,7 +1613,11 @@ component DebloatView inherits VerticalLayout {
             }
         }
     }
-    ListView {
+    if Debloat.probing: EmptyState {
+        vertical-stretch: 1;
+        text: "Scanning installed packages…";
+    }
+    if !Debloat.probing: ListView {
         vertical-stretch: 1;
         for e in Debloat.rows: DebloatRowView {
             entry: e;
