@@ -24,7 +24,8 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    config, engine, features, installs, journal, modes, quick, repair, settings, startup, tweaks,
+    config, engine, features, installs, journal, modes, privacy, quick, repair, settings, startup,
+    tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -730,6 +731,158 @@ fn wire_features(app: &AppWindow, notify: &Notify) {
     });
 }
 
+/// Privacy/Hardening score — a view over the tweak catalog. Reads live state to
+/// score exposure (no elevation needed just to view), and hardens via the same
+/// reversible apply path as the Tweaks panel. Returns the elevated-result pump.
+fn wire_privacy(
+    app: &AppWindow,
+    jrnl: &SharedJournal,
+    journal_path: &Path,
+    notify: &Notify,
+    tweaks_catalog: &Rc<Vec<tweaks::Tweak>>,
+    tweaks_model: &Rc<VecModel<TweakRow>>,
+) -> Timer {
+    // Resolve each privacy check id to its catalog index, once.
+    let indices: Rc<Vec<usize>> = Rc::new(
+        privacy::check_ids()
+            .iter()
+            .filter_map(|id| tweaks_catalog.iter().position(|t| t.id == *id))
+            .collect(),
+    );
+    let model: Rc<VecModel<PrivacyCheck>> = Rc::new(VecModel::default());
+
+    let broker: Arc<Mutex<Option<BrokerSession>>> = Arc::new(Mutex::new(None));
+    let (tx, rx) = mpsc::channel::<ElevatedMsg>();
+
+    // Re-probe every check from live registry state and recompute the score.
+    let refresh: Rc<dyn Fn()> = {
+        let weak = app.as_weak();
+        let model = model.clone();
+        let cat = tweaks_catalog.clone();
+        let indices = indices.clone();
+        Rc::new(move || {
+            let mut hardened = 0i32;
+            let rows: Vec<PrivacyCheck> = indices
+                .iter()
+                .map(|&i| {
+                    let t = &cat[i];
+                    let on = t.is_applied();
+                    if on {
+                        hardened += 1;
+                    }
+                    PrivacyCheck {
+                        id: i as i32,
+                        name: t.name.into(),
+                        desc: t.desc.into(),
+                        hardened: on,
+                        elevated: t.needs_elevation(),
+                    }
+                })
+                .collect();
+            let total = rows.len() as i32;
+            model.set_vec(rows);
+            if let Some(app) = weak.upgrade() {
+                let p = app.global::<Privacy>();
+                p.set_hardened_count(hardened);
+                p.set_total(total);
+                p.set_score(if total > 0 { hardened * 100 / total } else { 0 });
+            }
+        })
+    };
+    refresh();
+    app.global::<Privacy>().set_checks(model.clone().into());
+
+    // Harden a single check (id == catalog index).
+    {
+        let cat = tweaks_catalog.clone();
+        let jrnl = jrnl.clone();
+        let path = journal_path.to_path_buf();
+        let notify = notify.clone();
+        let broker = broker.clone();
+        let tx = tx.clone();
+        let refresh = refresh.clone();
+        app.global::<Privacy>().on_harden(move |id| {
+            let Some(t) = cat.get(id as usize) else { return };
+            if t.needs_elevation() {
+                notify("info", "Requesting elevation — approve the UAC prompt…");
+                let (broker, tx, name, on) = (broker.clone(), tx.clone(), t.name.to_string(), t.on.clone());
+                std::thread::spawn(move || elevated_worker(broker, tx, on, id, name, true));
+            } else {
+                let _ = run_local(&t.on, &jrnl, t, true);
+                let _ = jrnl.borrow().save(&path);
+                refresh();
+                notify("success", &format!("Hardened: {}", t.name));
+            }
+        });
+    }
+
+    // Harden every currently-exposed check in one go.
+    {
+        let cat = tweaks_catalog.clone();
+        let indices = indices.clone();
+        let jrnl = jrnl.clone();
+        let path = journal_path.to_path_buf();
+        let notify = notify.clone();
+        let broker = broker.clone();
+        let tx = tx.clone();
+        let refresh = refresh.clone();
+        app.global::<Privacy>().on_harden_all(move || {
+            let (mut local, mut elevated) = (0, 0);
+            for &i in indices.iter() {
+                let t = &cat[i];
+                if t.is_applied() {
+                    continue;
+                }
+                if t.needs_elevation() {
+                    elevated += 1;
+                    let (broker, tx, name, on) = (broker.clone(), tx.clone(), t.name.to_string(), t.on.clone());
+                    std::thread::spawn(move || elevated_worker(broker, tx, on, i as i32, name, true));
+                } else if run_local(&t.on, &jrnl, t, true).is_ok() {
+                    local += 1;
+                }
+            }
+            let _ = jrnl.borrow().save(&path);
+            refresh();
+            if elevated > 0 {
+                notify("info", &format!("Hardened {local} now; approve UAC for {elevated} more…"));
+            } else {
+                notify("success", &format!("Hardened {local} checks"));
+            }
+        });
+    }
+
+    // Pump: journal + refresh once elevated hardening completes.
+    let cat = tweaks_catalog.clone();
+    let jrnl = jrnl.clone();
+    let path = journal_path.to_path_buf();
+    let notify = notify.clone();
+    let tmodel = tweaks_model.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(150), move || {
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                ElevatedMsg::Done { name, want, results, .. } => {
+                    {
+                        let mut j = jrnl.borrow_mut();
+                        for (a, rev) in results {
+                            j.record(format!("{}: {}", name, if want { "on" } else { "off" }), a, rev);
+                        }
+                    }
+                    let _ = jrnl.borrow().save(&path);
+                    refresh();
+                    refresh_tweaks(&tmodel, &cat);
+                    notify("success", &format!("Hardened: {name}"));
+                }
+                ElevatedMsg::Failed { name, error, .. } => {
+                    refresh();
+                    notify("error", &format!("{name}: {error}"));
+                }
+            }
+        }
+    });
+    timer
+}
+
 fn main() -> Result<(), slint::PlatformError> {
     // Single-instance guard — a second launch exits rather than racing the journal.
     let instance = single_instance::SingleInstance::new("neonprime-singleton").ok();
@@ -775,6 +928,7 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_quick(&app, &notify);
     wire_startup(&app, &notify);
     wire_features(&app, &notify);
+    let _privacy_pump = wire_privacy(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model);
     wire_config(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
     wire_undo(&app, &jrnl, &journal_path, &notify, &tweaks_catalog, &tweaks_model, &modes_catalog);
     apply_specs(&app);

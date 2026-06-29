@@ -8,6 +8,7 @@ pub mod installs;
 pub mod ipc;
 pub mod journal;
 pub mod modes;
+pub mod privacy;
 pub mod quick;
 pub mod registry;
 pub mod repair;

@@ -152,6 +152,23 @@ export global Features {
     callback apply(int, bool); // (id, enable)
 }
 
+export struct PrivacyCheck {
+    id: int, // tweak catalog index
+    name: string,
+    desc: string,
+    hardened: bool,
+    elevated: bool,
+}
+
+export global Privacy {
+    in property <[PrivacyCheck]> checks;
+    in property <int> score; // 0..100
+    in property <int> hardened-count;
+    in property <int> total;
+    callback harden(int);
+    callback harden-all();
+}
+
 component NavItem inherits Rectangle {
     in property <string> label;
     in property <int> index;
@@ -1187,6 +1204,132 @@ component FeaturesView inherits VerticalLayout {
     }
 }
 
+component PrivacyCheckView inherits Rectangle {
+    in property <PrivacyCheck> check;
+    height: 56px;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: root.check.name;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.check.elevated ? "· ADMIN" : "";
+                    color: Theme.ember-soft;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: root.check.desc;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+        // Status badge.
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 86px;
+                height: 20px;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: root.check.hardened ? Theme.accent : Theme.ember;
+                background: (root.check.hardened ? Theme.accent : Theme.ember).with-alpha(0.12);
+                Text {
+                    text: root.check.hardened ? "HARDENED" : "EXPOSED";
+                    color: root.check.hardened ? Theme.accent-soft : Theme.ember-soft;
+                    font-size: 10px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 80px;
+            if !root.check.hardened: PushButton {
+                w: 74px;
+                label: "HARDEN";
+                clicked => {
+                    Privacy.harden(root.check.id);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component PrivacyView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 12px;
+    // Header with score gauge + harden-all.
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 18px;
+        Gauge {
+            ratio: Privacy.score / 100;
+            value-text: Privacy.score + "%";
+            caption: "HARDENED";
+            warn: Privacy.score < 60;
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 8px;
+            horizontal-stretch: 1;
+            Text {
+                text: "PRIVACY SHIELD";
+                color: Theme.accent-soft;
+                font-size: 16px;
+            }
+            Text {
+                text: Privacy.hardened-count + " of " + Privacy.total + " checks hardened. " +
+                    (Privacy.score == 100 ? "Fully locked down." : "Harden the exposed items below.");
+                color: Theme.text-dim;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                alignment: start;
+                PushButton {
+                    w: 132px;
+                    label: "HARDEN ALL";
+                    clicked => {
+                        Privacy.harden-all();
+                    }
+                }
+            }
+        }
+    }
+    Rectangle { height: 1px; background: Theme.divider; }
+    ListView {
+        vertical-stretch: 1;
+        for c in Privacy.checks: PrivacyCheckView {
+            check: c;
+        }
+    }
+}
+
 component Toast inherits Rectangle {
     in property <string> message;
     in property <string> kind;
@@ -1311,6 +1454,7 @@ export component AppWindow inherits Window {
                     NavItem { label: "ACTIONS"; index: 5; icon: @image-url("icons/bolt.svg"); }
                     NavItem { label: "STARTUP"; index: 6; icon: @image-url("icons/power.svg"); }
                     NavItem { label: "FEATURES"; index: 7; icon: @image-url("icons/features.svg"); }
+                    NavItem { label: "PRIVACY"; index: 8; icon: @image-url("icons/shield.svg"); }
                     Rectangle { vertical-stretch: 1; }
                     HorizontalLayout {
                         padding-left: 18px;
@@ -1371,6 +1515,10 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 7: FeaturesView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 8: PrivacyView {
                     width: parent.width;
                     height: parent.height;
                 }
