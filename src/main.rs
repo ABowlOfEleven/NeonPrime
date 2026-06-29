@@ -115,20 +115,9 @@ fn spark_push(buf: &mut std::collections::VecDeque<f32>, v: f32) {
     buf.push_back(v.clamp(0.0, 1.0));
 }
 
-/// Build polyline path commands for a 100×100 viewbox from a history buffer.
-fn spark_path(buf: &std::collections::VecDeque<f32>) -> String {
-    if buf.len() < 2 {
-        return String::new();
-    }
-    let n = buf.len() as f32;
-    let mut s = String::with_capacity(buf.len() * 12);
-    for (i, v) in buf.iter().enumerate() {
-        let x = i as f32 / (n - 1.0) * 100.0;
-        let y = 100.0 - v * 100.0;
-        s.push_str(if i == 0 { "M " } else { "L " });
-        s.push_str(&format!("{x:.1} {y:.1} "));
-    }
-    s
+/// Snapshot a history buffer into a Slint float model (newest last).
+fn spark_model(buf: &std::collections::VecDeque<f32>) -> ModelRc<f32> {
+    ModelRc::new(VecModel::from(buf.iter().copied().collect::<Vec<f32>>()))
 }
 
 /// One-time static system specs (OS / CPU / RAM) for the Dashboard strip.
@@ -1311,8 +1300,8 @@ fn main() -> Result<(), slint::PlatformError> {
             spark_push(&mut cpu_hist, s.cpu_ratio);
             spark_push(&mut gpu_hist, s.gpu_ratio);
             let sys = app.global::<Sys>();
-            sys.set_cpu_spark(spark_path(&cpu_hist).into());
-            sys.set_gpu_spark(spark_path(&gpu_hist).into());
+            sys.set_cpu_history(spark_model(&cpu_hist));
+            sys.set_gpu_history(spark_model(&gpu_hist));
         }
     });
 

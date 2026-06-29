@@ -45,9 +45,9 @@ export global Sys {
     in-out property <string> spec-cpu: "—";
     in-out property <string> spec-ram: "—";
     in-out property <string> spec-uptime: "—";
-    // Rolling-history polyline commands (100×100 viewbox), built in Rust.
-    in-out property <string> cpu-spark;
-    in-out property <string> gpu-spark;
+    // Rolling-history samples (0..1), newest last. Rendered as bar sparklines.
+    in-out property <[float]> cpu-history;
+    in-out property <[float]> gpu-history;
 }
 
 export global Power {
@@ -214,7 +214,7 @@ component NavItem inherits Rectangle {
     in property <int> index;
     in property <image> icon;
     property <bool> active: Nav.page == root.index;
-    height: 34px;
+    height: 31px;
     background: active ? Theme.accent.with-alpha(0.08) : transparent;
 
     Rectangle {
@@ -249,6 +249,20 @@ component NavItem inherits Rectangle {
             Nav.page = root.index;
             Nav.changed(root.index);
         }
+    }
+}
+
+// A dim caption that groups the nav items beneath it.
+component NavSection inherits Rectangle {
+    in property <string> label;
+    height: 22px;
+    Text {
+        x: 18px;
+        y: parent.height - self.height - 2px;
+        text: root.label;
+        color: Theme.text-dim.with-alpha(0.7);
+        font-size: 9px;
+        letter-spacing: 1px;
     }
 }
 
@@ -368,7 +382,7 @@ component Gauge inherits Rectangle {
 }
 
 component Sparkline inherits Rectangle {
-    in property <string> commands;
+    in property <[float]> values;
     in property <color> tint;
     in property <string> label;
     in property <string> value;
@@ -390,26 +404,27 @@ component Sparkline inherits Rectangle {
                 font-size: 14px;
             }
         }
+        // Bar histogram — fills the full width via layout, newest on the right.
         Rectangle {
             horizontal-stretch: 1;
-            // Baseline.
+            clip: true;
             Rectangle {
                 y: parent.height - 1px;
                 width: parent.width;
                 height: 1px;
                 background: Theme.divider;
             }
-            Path {
-                width: parent.width;
-                height: parent.height;
-                viewbox-x: 0;
-                viewbox-y: 0;
-                viewbox-width: 100;
-                viewbox-height: 100;
-                commands: root.commands;
-                stroke: root.tint;
-                stroke-width: 1.5px;
-                fill: transparent;
+            HorizontalLayout {
+                spacing: 1px;
+                for v in root.values: Rectangle {
+                    bar := Rectangle {
+                        width: parent.width;
+                        height: max(1px, parent.height * clamp(v, 0, 1));
+                        y: parent.height - self.height;
+                        border-radius: 1px;
+                        background: root.tint.with-alpha(0.85);
+                    }
+                }
             }
         }
     }
@@ -890,13 +905,13 @@ component DashboardView inherits VerticalLayout {
                 label: "CPU";
                 value: Sys.cpu-text;
                 tint: Theme.accent;
-                commands: Sys.cpu-spark;
+                values: Sys.cpu-history;
             }
             Sparkline {
                 label: "GPU";
                 value: Sys.gpu-text;
                 tint: Theme.ember;
-                commands: Sys.gpu-spark;
+                values: Sys.gpu-history;
             }
         }
     }
@@ -1706,10 +1721,10 @@ component Toast inherits Rectangle {
 export component AppWindow inherits Window {
     title: "NeonPrime";
     default-font-size: 13px;
-    preferred-width: 720px;
-    preferred-height: 500px;
-    min-width: 620px;
-    min-height: 440px;
+    preferred-width: 760px;
+    preferred-height: 600px;
+    min-width: 640px;
+    min-height: 540px;
     background: Theme.bg;
 
     VerticalLayout {
@@ -1782,20 +1797,26 @@ export component AppWindow inherits Window {
             Rectangle {
                 width: 160px;
                 VerticalLayout {
-                    padding-top: 26px;
-                    padding-bottom: 16px;
-                    spacing: 4px;
+                    padding-top: 14px;
+                    padding-bottom: 14px;
+                    spacing: 2px;
                     NavItem { label: "DASHBOARD"; index: 0; icon: @image-url("icons/dashboard.svg"); }
+
+                    NavSection { label: "OPTIMIZE"; }
                     NavItem { label: Theme.tweaks-label; index: 1; icon: Theme.hev ? @image-url("icons/crowbar.svg") : @image-url("icons/tweaks.svg"); }
-                    NavItem { label: "INSTALL"; index: 2; icon: @image-url("icons/install.svg"); }
-                    NavItem { label: "MODES"; index: 3; icon: @image-url("icons/modes.svg"); }
-                    NavItem { label: "CONFIG"; index: 4; icon: @image-url("icons/config.svg"); }
-                    NavItem { label: "ACTIONS"; index: 5; icon: @image-url("icons/bolt.svg"); }
-                    NavItem { label: "STARTUP"; index: 6; icon: @image-url("icons/power.svg"); }
-                    NavItem { label: "FEATURES"; index: 7; icon: @image-url("icons/features.svg"); }
                     NavItem { label: "PRIVACY"; index: 8; icon: @image-url("icons/shield.svg"); }
-                    NavItem { label: "HISTORY"; index: 9; icon: @image-url("icons/history.svg"); }
                     NavItem { label: "DEBLOAT"; index: 10; icon: @image-url("icons/debloat.svg"); }
+                    NavItem { label: "STARTUP"; index: 6; icon: @image-url("icons/power.svg"); }
+
+                    NavSection { label: "SOFTWARE"; }
+                    NavItem { label: "INSTALL"; index: 2; icon: @image-url("icons/install.svg"); }
+                    NavItem { label: "FEATURES"; index: 7; icon: @image-url("icons/features.svg"); }
+
+                    NavSection { label: "SYSTEM"; }
+                    NavItem { label: "MODES"; index: 3; icon: @image-url("icons/modes.svg"); }
+                    NavItem { label: "ACTIONS"; index: 5; icon: @image-url("icons/bolt.svg"); }
+                    NavItem { label: "CONFIG"; index: 4; icon: @image-url("icons/config.svg"); }
+                    NavItem { label: "HISTORY"; index: 9; icon: @image-url("icons/history.svg"); }
                     Rectangle { vertical-stretch: 1; }
                     HorizontalLayout {
                         padding-left: 18px;
