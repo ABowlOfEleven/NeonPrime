@@ -40,6 +40,7 @@ The heart of NeonPrime. One click changes who your PC is:
 - **Process manager** — top processes by CPU/RAM with **per-process GPU% and VRAM**, plus a kill button.
 - **Network monitor** — live outbound TCP connections per process (remote IP:port + state), refreshing while open — see what's phoning home, then **block any app** at the firewall in one click. Plus a DNS switcher (Cloudflare / Google / Quad9 / automatic).
 - **Services manager** — searchable list of every service with start/stop and start-type (auto/manual/disabled).
+- **MicroWin** — build a slimmed, debloated Windows ISO: strip bundled apps, apply offline privacy tweaks, and inject an autounattend that bypasses TPM/SecureBoot/RAM and skips OOBE.
 - **Disk cleanup** — scan reclaimable space (temp, Recycle Bin, thumbnails, system/update caches) and clear it per-target.
 - **Command palette** — Ctrl+K to fuzzy-jump to any panel or run any action.
 - **Accessible** — WCAG-AA contrast, screen-reader roles/labels (UIA), and full keyboard navigation (Tab / Enter / Space with focus rings).
@@ -87,11 +88,11 @@ Rollback, modes, and config-export are all the same primitive: a **reversible, d
 
 ## Status
 
-15 panels — Dashboard / Network / Processes / Tweaks / Privacy / Debloat /
-Cleanup / Startup / Install / Features / Modes / Services / Actions / Config /
-History — grouped into Monitor / Optimize / Software / System in a scrollable
-sidebar. Elevated work runs off the UI thread (no freeze during UAC). 43 unit +
-integration tests pass.
+16 panels — Dashboard / Network / Processes / Tweaks / Privacy / Debloat /
+Cleanup / Startup / Install / Features / MicroWin / Modes / Services / Actions /
+Config / History — grouped into Monitor / Optimize / Software / System in a
+scrollable sidebar. Elevated work runs off the UI thread (no freeze during UAC).
+47 unit + integration tests pass.
 
 **Known limitations / next steps:**
 - The elevated broker (HKLM tweaks) needs an interactive UAC prompt, so the
