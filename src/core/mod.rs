@@ -19,6 +19,7 @@ pub mod procmon;
 pub mod quick;
 pub mod registry;
 pub mod repair;
+pub mod services;
 pub mod session;
 pub mod settings;
 pub mod startup;

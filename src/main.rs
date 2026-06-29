@@ -25,7 +25,7 @@ use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
     cleanup, config, debloat, dns, engine, features, firewall, installs, journal, modes, netmon,
-    power, privacy, procmon, quick, repair, settings, startup, tweaks,
+    power, privacy, procmon, quick, repair, services, settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -1145,6 +1145,109 @@ fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     refresh
 }
 
+/// Services manager — list (unelevated, off-thread) with search; start/stop and
+/// start-type changes go through the elevated shell. Returns the load pump.
+fn wire_services(app: &AppWindow, notify: &Notify) -> Timer {
+    let source: Rc<VecModel<ServiceRow>> = Rc::new(VecModel::default());
+    let filter_text = Rc::new(RefCell::new(String::new()));
+    let filtered = Rc::new(FilterModel::new(ModelRc::from(source.clone()), {
+        let ft = filter_text.clone();
+        move |row: &ServiceRow| {
+            let q = ft.borrow();
+            q.is_empty()
+                || row.display.to_lowercase().contains(q.as_str())
+                || row.name.to_lowercase().contains(q.as_str())
+        }
+    }));
+    app.global::<Services>().set_rows(ModelRc::from(filtered.clone()));
+    app.global::<Services>().set_scanning(true);
+
+    {
+        let weak = app.as_weak();
+        let ft = filter_text.clone();
+        let filtered = filtered.clone();
+        app.global::<Services>().on_filter(move || {
+            if let Some(app) = weak.upgrade() {
+                *ft.borrow_mut() = app.global::<Services>().get_filter_text().to_lowercase();
+                filtered.reset();
+            }
+        });
+    }
+
+    let (tx, rx) = mpsc::channel::<Vec<services::Svc>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(services::list());
+            });
+        }
+    };
+    scan();
+
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Services>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Services>().set_scanning(true);
+            }
+            scan();
+        });
+    }
+
+    // Elevated start / stop / start-type.
+    {
+        let notify = notify.clone();
+        app.global::<Services>().on_start(move |name| match launch_elevated_ps(&services::start_script(&name), false) {
+            Ok(()) => notify("info", &format!("Starting {name} (approve UAC) — then REFRESH")),
+            Err(e) => notify("error", &format!("{name}: {e}")),
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Services>().on_stop(move |name| match launch_elevated_ps(&services::stop_script(&name), false) {
+            Ok(()) => notify("info", &format!("Stopping {name} (approve UAC) — then REFRESH")),
+            Err(e) => notify("error", &format!("{name}: {e}")),
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Services>().on_set_startup(move |name, code| {
+            match launch_elevated_ps(&services::startup_script(&name, code), false) {
+                Ok(()) => notify("info", &format!("{name}: start-type change (approve UAC) — then REFRESH")),
+                Err(e) => notify("error", &format!("{name}: {e}")),
+            }
+        });
+    }
+
+    // Pump: populate the source model when the scan completes.
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let filtered2 = filtered.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(svcs) = rx.try_recv() {
+            let rows: Vec<ServiceRow> = svcs
+                .iter()
+                .map(|s| ServiceRow {
+                    name: s.name.as_str().into(),
+                    display: s.display.as_str().into(),
+                    running: s.running,
+                    startup: s.startup as i32,
+                })
+                .collect();
+            source2.set_vec(rows);
+            filtered2.reset();
+            if let Some(app) = weak.upgrade() {
+                app.global::<Services>().set_scanning(false);
+            }
+        }
+    });
+    timer
+}
+
 /// Network monitor — snapshot active outbound TCP connections per process.
 /// Returns a refresh closure (driven by nav + the telemetry tick while visible).
 fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
@@ -1676,6 +1779,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let _cleanup_pump = wire_cleanup(&app, &notify);
     let net_refresh = wire_network(&app, &notify);
     let proc_refresh = wire_proc(&app, &notify);
+    let _services_pump = wire_services(&app, &notify);
     wire_palette(&app);
     let power_refresh = wire_power(&app, &notify);
     let (_privacy_pump, privacy_refresh) =
