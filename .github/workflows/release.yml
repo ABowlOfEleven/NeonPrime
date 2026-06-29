@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Install WiX
+        run: dotnet tool install --global wix --version 5.0.2
+
+      - name: Resolve version
+        id: ver
+        shell: pwsh
+        run: |
+          $v = if ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}' -replace '^v', '' } else { '3.0.0' }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build installer (MSI + staged payload)
+        shell: pwsh
+        run: ./build-installer.ps1 -Version ${{ steps.ver.outputs.version }}
+
+      - name: Portable zip
+        shell: pwsh
+        run: Compress-Archive -Path dist/* -DestinationPath "NeonPrime-${{ steps.ver.outputs.version }}-portable.zip" -Force
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            NeonPrime-*-Setup.msi
+            NeonPrime-*-portable.zip
+          generate_release_notes: true
+          fail_on_unmatched_files: true
