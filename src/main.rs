@@ -24,8 +24,8 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    config, debloat, engine, features, installs, journal, modes, netmon, power, privacy, quick,
-    repair, settings, startup, tweaks,
+    cleanup, config, debloat, engine, features, installs, journal, modes, netmon, power, privacy,
+    quick, repair, settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -53,6 +53,12 @@ enum RevertMsg {
 enum DebloatMsg {
     Probed(std::collections::HashSet<String>),
     Removed { idx: i32, ok: bool, name: String, err: String },
+}
+
+/// Background results for the Cleanup panel.
+enum CleanMsg {
+    Scanned(Vec<u64>),
+    Cleaned { idx: i32, size: u64, name: String },
 }
 
 // ── Toast notifier ──────────────────────────────────────────────────
@@ -924,6 +930,124 @@ fn wire_power(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     refresh
 }
 
+/// Disk cleanup: scan reclaimable sizes off-thread, clean user targets in-process
+/// and system caches via an elevated shell. Returns the result pump.
+fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
+    let model: Rc<VecModel<CleanRow>> = Rc::new(VecModel::default());
+    let rows: Vec<CleanRow> = cleanup::catalog()
+        .iter()
+        .enumerate()
+        .map(|(i, t)| CleanRow {
+            id: i as i32,
+            name: t.name.into(),
+            desc: t.desc.into(),
+            size: "—".into(),
+            elevated: t.elevated,
+        })
+        .collect();
+    model.set_vec(rows);
+    app.global::<Cleanup>().set_rows(model.clone().into());
+    app.global::<Cleanup>().set_scanning(true);
+
+    let sizes: Rc<RefCell<Vec<u64>>> = Rc::new(RefCell::new(vec![0; cleanup::catalog().len()]));
+    let (tx, rx) = mpsc::channel::<CleanMsg>();
+
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let v: Vec<u64> = cleanup::catalog().iter().map(|t| cleanup::size_of(t.id)).collect();
+                let _ = tx.send(CleanMsg::Scanned(v));
+            });
+        }
+    };
+    scan();
+
+    // Rescan button.
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Cleanup>().on_rescan(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Cleanup>().set_scanning(true);
+            }
+            scan();
+        });
+    }
+
+    // Clean one target.
+    {
+        let notify = notify.clone();
+        let tx = tx.clone();
+        app.global::<Cleanup>().on_clean(move |idx| {
+            let Some(t) = cleanup::catalog().get(idx as usize) else { return };
+            if t.elevated {
+                if let Some(script) = cleanup::clean_script(t.id) {
+                    match launch_elevated_ps(&script, false) {
+                        Ok(()) => notify("info", &format!("Clearing {} — approve UAC, then RESCAN.", t.name)),
+                        Err(e) => notify("error", &format!("{}: {e}", t.name)),
+                    }
+                }
+            } else {
+                notify("info", &format!("Cleaning {}…", t.name));
+                let (tx, name) = (tx.clone(), t.name.to_string());
+                std::thread::spawn(move || {
+                    let id = cleanup::catalog()[idx as usize].id;
+                    let _ = cleanup::clean(id);
+                    let size = cleanup::size_of(id);
+                    let _ = tx.send(CleanMsg::Cleaned { idx, size, name });
+                });
+            }
+        });
+    }
+
+    // Pump.
+    let weak = app.as_weak();
+    let model2 = model.clone();
+    let sizes2 = sizes.clone();
+    let notify2 = notify.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        let mut dirty = false;
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                CleanMsg::Scanned(v) => {
+                    for (i, &sz) in v.iter().enumerate() {
+                        if let Some(mut row) = model2.row_data(i) {
+                            row.size = cleanup::human(sz).into();
+                            model2.set_row_data(i, row);
+                        }
+                    }
+                    *sizes2.borrow_mut() = v;
+                    if let Some(app) = weak.upgrade() {
+                        app.global::<Cleanup>().set_scanning(false);
+                    }
+                    dirty = true;
+                }
+                CleanMsg::Cleaned { idx, size, name } => {
+                    if let Some(mut row) = model2.row_data(idx as usize) {
+                        row.size = cleanup::human(size).into();
+                        model2.set_row_data(idx as usize, row);
+                    }
+                    if let Some(s) = sizes2.borrow_mut().get_mut(idx as usize) {
+                        *s = size;
+                    }
+                    notify2("success", &format!("Cleaned: {name}"));
+                    dirty = true;
+                }
+            }
+        }
+        if dirty {
+            if let Some(app) = weak.upgrade() {
+                let total: u64 = sizes2.borrow().iter().sum();
+                app.global::<Cleanup>().set_total(cleanup::human(total).into());
+            }
+        }
+    });
+    timer
+}
+
 /// Network monitor — snapshot active outbound TCP connections per process.
 /// Returns a refresh closure (driven by nav + the telemetry tick while visible).
 fn wire_network(app: &AppWindow) -> Rc<dyn Fn()> {
@@ -1330,6 +1454,7 @@ fn main() -> Result<(), slint::PlatformError> {
     wire_startup(&app, &notify);
     wire_features(&app, &notify);
     let _debloat_pump = wire_debloat(&app, &notify);
+    let _cleanup_pump = wire_cleanup(&app, &notify);
     let net_refresh = wire_network(&app);
     let power_refresh = wire_power(&app, &notify);
     let (_privacy_pump, privacy_refresh) =

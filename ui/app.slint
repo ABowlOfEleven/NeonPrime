@@ -178,6 +178,22 @@ export global Privacy {
     callback harden-all();
 }
 
+export struct CleanRow {
+    id: int,
+    name: string,
+    desc: string,
+    size: string,
+    elevated: bool,
+}
+
+export global Cleanup {
+    in property <[CleanRow]> rows;
+    in property <bool> scanning: true;
+    in property <string> total;
+    callback clean(int);
+    callback rescan();
+}
+
 export struct NetRow {
     proc-name: string,
     pid: int,
@@ -1638,6 +1654,97 @@ component DebloatView inherits VerticalLayout {
     }
 }
 
+component CleanupRowView inherits Rectangle {
+    in property <CleanRow> target;
+    height: 56px;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: root.target.name;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.target.elevated ? "· ADMIN" : "";
+                    color: Theme.ember-soft;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: root.target.desc;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 74px;
+            Text {
+                text: root.target.size;
+                color: Theme.accent-soft;
+                font-size: 14px;
+                horizontal-alignment: right;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            PushButton {
+                w: 72px;
+                label: "CLEAN";
+                clicked => {
+                    Cleanup.clean(root.target.id);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component CleanupView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 12px;
+    PanelHeader {
+        title: "CLEANUP";
+        hint: Cleanup.scanning ? "scanning disk…" : Cleanup.total + " reclaimable";
+        PushButton {
+            w: 90px;
+            label: "RESCAN";
+            clicked => {
+                Cleanup.rescan();
+            }
+        }
+    }
+    if Cleanup.scanning: EmptyState {
+        vertical-stretch: 1;
+        text: "Scanning disk usage…";
+    }
+    if !Cleanup.scanning: ListView {
+        vertical-stretch: 1;
+        for t in Cleanup.rows: CleanupRowView {
+            target: t;
+        }
+    }
+}
+
 component NetRowView inherits Rectangle {
     in property <NetRow> conn;
     height: 48px;
@@ -1755,9 +1862,9 @@ export component AppWindow inherits Window {
     title: "NeonPrime";
     default-font-size: 13px;
     preferred-width: 760px;
-    preferred-height: 620px;
+    preferred-height: 640px;
     min-width: 640px;
-    min-height: 580px;
+    min-height: 600px;
     background: Theme.bg;
 
     VerticalLayout {
@@ -1840,6 +1947,7 @@ export component AppWindow inherits Window {
                     NavItem { label: Theme.tweaks-label; index: 1; icon: Theme.hev ? @image-url("icons/crowbar.svg") : @image-url("icons/tweaks.svg"); }
                     NavItem { label: "PRIVACY"; index: 8; icon: @image-url("icons/shield.svg"); }
                     NavItem { label: "DEBLOAT"; index: 10; icon: @image-url("icons/debloat.svg"); }
+                    NavItem { label: "CLEANUP"; index: 12; icon: @image-url("icons/cleanup.svg"); }
                     NavItem { label: "STARTUP"; index: 6; icon: @image-url("icons/power.svg"); }
 
                     NavSection { label: "SOFTWARE"; }
@@ -1927,6 +2035,10 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 11: NetworkView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 12: CleanupView {
                     width: parent.width;
                     height: parent.height;
                 }
