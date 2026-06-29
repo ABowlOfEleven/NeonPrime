@@ -227,6 +227,22 @@ export global Network {
     callback set-dns(int); // 0 auto, 1 cloudflare, 2 google, 3 quad9
 }
 
+export struct ProcRow {
+    pid: int,
+    name: string,
+    cpu: string,
+    mem: string,
+    gpu: string,
+    vram: string,
+}
+
+export global Procs {
+    in property <[ProcRow]> rows;
+    in property <int> count;
+    callback refresh();
+    callback kill(int);
+}
+
 export struct DebloatRow {
     id: int,
     name: string,
@@ -1987,6 +2003,107 @@ component NetworkView inherits VerticalLayout {
     }
 }
 
+component ProcStat inherits VerticalLayout {
+    in property <string> value;
+    in property <color> tint;
+    in property <length> w: 52px;
+    width: root.w;
+    alignment: center;
+    Text {
+        text: root.value;
+        color: root.tint;
+        font-size: 11px;
+        horizontal-alignment: right;
+    }
+}
+
+component ProcRowView inherits Rectangle {
+    in property <ProcRow> proc;
+    height: 44px;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 8px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 2px;
+            horizontal-stretch: 1;
+            Text {
+                text: root.proc.name;
+                color: Theme.text-body;
+                font-size: 12px;
+                overflow: elide;
+            }
+            Text {
+                text: "pid " + root.proc.pid;
+                color: Theme.text-dim;
+                font-size: 10px;
+            }
+        }
+        ProcStat { value: root.proc.cpu; tint: Theme.accent-soft; w: 46px; }
+        ProcStat { value: root.proc.mem; tint: Theme.text-body; w: 64px; }
+        ProcStat { value: root.proc.gpu; tint: Theme.ember-soft; w: 46px; }
+        ProcStat { value: root.proc.vram; tint: Theme.text-body; w: 64px; }
+        VerticalLayout {
+            alignment: center;
+            PushButton {
+                w: 50px;
+                danger: true;
+                label: "KILL";
+                clicked => {
+                    Procs.kill(root.proc.pid);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component ProcessesView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "PROCESSES";
+        hint: Procs.count + " shown · by CPU";
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Procs.refresh();
+            }
+        }
+    }
+    // Column headers
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 8px;
+        Rectangle { horizontal-stretch: 1; }
+        Text { width: 46px; text: "CPU"; color: Theme.text-dim; font-size: 10px; horizontal-alignment: right; }
+        Text { width: 64px; text: "RAM"; color: Theme.text-dim; font-size: 10px; horizontal-alignment: right; }
+        Text { width: 46px; text: "GPU"; color: Theme.text-dim; font-size: 10px; horizontal-alignment: right; }
+        Text { width: 64px; text: "VRAM"; color: Theme.text-dim; font-size: 10px; horizontal-alignment: right; }
+        Rectangle { width: 58px; }
+    }
+    if Procs.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "Gathering process telemetry…";
+    }
+    if Procs.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for p in Procs.rows: ProcRowView {
+            proc: p;
+        }
+    }
+}
+
 component Toast inherits Rectangle {
     in property <string> message;
     in property <string> kind;
@@ -2025,9 +2142,9 @@ export component AppWindow inherits Window {
     title: "NeonPrime";
     default-font-size: 13px;
     preferred-width: 760px;
-    preferred-height: 676px;
+    preferred-height: 684px;
     min-width: 640px;
-    min-height: 640px;
+    min-height: 660px;
     background: Theme.bg;
     forward-focus: fs;
 
@@ -2161,6 +2278,7 @@ export component AppWindow inherits Window {
                     spacing: 2px;
                     NavItem { label: "DASHBOARD"; index: 0; icon: @image-url("icons/dashboard.svg"); }
                     NavItem { label: "NETWORK"; index: 11; icon: @image-url("icons/network.svg"); }
+                    NavItem { label: "PROCESSES"; index: 13; icon: @image-url("icons/processes.svg"); }
 
                     NavSection { label: "OPTIMIZE"; }
                     NavItem { label: Theme.tweaks-label; index: 1; icon: Theme.hev ? @image-url("icons/crowbar.svg") : @image-url("icons/tweaks.svg"); }
@@ -2258,6 +2376,10 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 12: CleanupView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 13: ProcessesView {
                     width: parent.width;
                     height: parent.height;
                 }

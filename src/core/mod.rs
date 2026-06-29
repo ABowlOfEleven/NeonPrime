@@ -14,6 +14,7 @@ pub mod modes;
 pub mod netmon;
 pub mod power;
 pub mod privacy;
+pub mod procmon;
 pub mod quick;
 pub mod registry;
 pub mod repair;

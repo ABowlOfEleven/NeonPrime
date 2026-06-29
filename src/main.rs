@@ -25,7 +25,7 @@ use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
     cleanup, config, debloat, dns, engine, features, installs, journal, modes, netmon, power,
-    privacy, quick, repair, settings, startup, tweaks,
+    privacy, procmon, quick, repair, settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -1090,6 +1090,61 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
     timer
 }
 
+/// Process & resource monitor — top processes by CPU with per-process GPU/VRAM,
+/// plus a kill action. Returns a refresh closure (nav + telemetry-tick driven).
+fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
+    let model: Rc<VecModel<ProcRow>> = Rc::new(VecModel::default());
+    app.global::<Procs>().set_rows(model.clone().into());
+    let monitor = Rc::new(RefCell::new(procmon::ProcMonitor::new()));
+
+    let refresh: Rc<dyn Fn()> = {
+        let weak = app.as_weak();
+        let model = model.clone();
+        let monitor = monitor.clone();
+        Rc::new(move || {
+            let procs = monitor.borrow_mut().snapshot(40);
+            let rows: Vec<ProcRow> = procs
+                .iter()
+                .map(|p| {
+                    let gpu = if p.gpu >= 0.5 { format!("{:.0}%", p.gpu) } else { "—".into() };
+                    let vram = if p.vram > 0 { cleanup::human(p.vram) } else { "—".into() };
+                    ProcRow {
+                        pid: p.pid as i32,
+                        name: p.name.as_str().into(),
+                        cpu: format!("{:.0}%", p.cpu).as_str().into(),
+                        mem: cleanup::human(p.mem).as_str().into(),
+                        gpu: gpu.as_str().into(),
+                        vram: vram.as_str().into(),
+                    }
+                })
+                .collect();
+            let n = rows.len() as i32;
+            model.set_vec(rows);
+            if let Some(app) = weak.upgrade() {
+                app.global::<Procs>().set_count(n);
+            }
+        })
+    };
+    refresh();
+    {
+        let refresh = refresh.clone();
+        app.global::<Procs>().on_refresh(move || refresh());
+    }
+    {
+        let notify = notify.clone();
+        let refresh = refresh.clone();
+        app.global::<Procs>().on_kill(move |pid| {
+            if procmon::kill(pid as u32) {
+                notify("success", &format!("Killed pid {pid}"));
+            } else {
+                notify("error", &format!("Couldn't kill pid {pid} (protected?)"));
+            }
+            refresh();
+        });
+    }
+    refresh
+}
+
 /// Network monitor — snapshot active outbound TCP connections per process.
 /// Returns a refresh closure (driven by nav + the telemetry tick while visible).
 fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
@@ -1578,6 +1633,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let _debloat_pump = wire_debloat(&app, &notify);
     let _cleanup_pump = wire_cleanup(&app, &notify);
     let net_refresh = wire_network(&app, &notify);
+    let proc_refresh = wire_proc(&app, &notify);
     wire_palette(&app);
     let power_refresh = wire_power(&app, &notify);
     let (_privacy_pump, privacy_refresh) =
@@ -1594,12 +1650,14 @@ fn main() -> Result<(), slint::PlatformError> {
         let tcat = tweaks_catalog.clone();
         let tmodel = tweaks_model.clone();
         let net = net_refresh.clone();
+        let proc = proc_refresh.clone();
         app.global::<Nav>().on_changed(move |page| match page {
             1 => refresh_tweaks(&tmodel, &tcat),
             3 => power_refresh(),
             8 => privacy_refresh(),
             9 => history_refresh(),
             11 => net(),
+            13 => proc(),
             _ => {}
         });
     }
@@ -1631,10 +1689,14 @@ fn main() -> Result<(), slint::PlatformError> {
             let sys = app.global::<Sys>();
             sys.set_cpu_history(spark_model(&cpu_hist));
             sys.set_gpu_history(spark_model(&gpu_hist));
-            // Live-refresh the network panel (every 2s) only while it's visible.
+            // Live-refresh Network / Processes (every 2s) only while visible.
             tick += 1;
-            if tick % 2 == 0 && app.global::<Nav>().get_page() == 11 {
-                net_refresh();
+            if tick % 2 == 0 {
+                match app.global::<Nav>().get_page() {
+                    11 => net_refresh(),
+                    13 => proc_refresh(),
+                    _ => {}
+                }
             }
         }
     });
