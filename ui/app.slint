@@ -15,7 +15,8 @@ export global Theme {
     out property <color> ember: hev ? #e24b4a : #ce8a1f;
     out property <color> ember-soft: hev ? #ff7a6a : #e6ae45;
 
-    out property <color> text-dim: hev ? #8a6a2a : #5c7e92;
+    // Brightened to clear WCAG AA 4.5:1 on the dark bg (was #8a6a2a / #5c7e92).
+    out property <color> text-dim: hev ? #a8853a : #6b90a4;
     out property <color> text-body: hev ? #c9a766 : #a9c6d6;
 
     out property <string> overview-title: hev ? "HAZARD SYSTEMS ONLINE" : "SYSTEM OVERVIEW";
@@ -262,7 +263,16 @@ component NavItem inherits Rectangle {
     in property <image> icon;
     property <bool> active: Nav.page == root.index;
     height: 31px;
-    background: active ? Theme.accent.with-alpha(0.08) : transparent;
+    background: active ? Theme.accent.with-alpha(0.08) : (fscope.has-focus ? Theme.accent.with-alpha(0.04) : transparent);
+    border-width: fscope.has-focus ? 1px : 0px;
+    border-color: Theme.accent-soft;
+    border-radius: 4px;
+    accessible-role: tab;
+    accessible-label: root.label;
+    accessible-action-default => {
+        Nav.page = root.index;
+        Nav.changed(root.index);
+    }
 
     Rectangle {
         x: 0;
@@ -291,8 +301,21 @@ component NavItem inherits Rectangle {
             font-size: 12px;
         }
     }
+    fscope := FocusScope {
+        width: 100%;
+        height: 100%;
+        key-pressed(e) => {
+            if (e.text == " " || e.text == Key.Return) {
+                Nav.page = root.index;
+                Nav.changed(root.index);
+                return EventResult.accept;
+            }
+            return EventResult.reject;
+        }
+    }
     TouchArea {
         clicked => {
+            fscope.focus();
             Nav.page = root.index;
             Nav.changed(root.index);
         }
@@ -308,7 +331,7 @@ component NavSection inherits Rectangle {
         y: parent.height - self.height - 2px;
         text: root.label;
         color: Theme.text-dim.with-alpha(0.7);
-        font-size: 9px;
+        font-size: 10px;
         letter-spacing: 1px;
     }
 }
@@ -320,9 +343,14 @@ component ModePill inherits Rectangle {
     width: 58px;
     height: 26px;
     border-radius: 8px;
-    border-width: 1px;
-    border-color: active ? Theme.accent : Theme.divider;
+    border-width: fscope.has-focus ? 2px : 1px;
+    border-color: fscope.has-focus ? Theme.accent-soft : (active ? Theme.accent : Theme.divider);
     background: active ? Theme.accent.with-alpha(0.16) : transparent;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => {
+        root.clicked();
+    }
     Text {
         text: root.label;
         color: active ? Theme.accent-soft : Theme.text-dim;
@@ -330,8 +358,20 @@ component ModePill inherits Rectangle {
         vertical-alignment: center;
         font-size: 11px;
     }
+    fscope := FocusScope {
+        width: 100%;
+        height: 100%;
+        key-pressed(e) => {
+            if (e.text == " " || e.text == Key.Return) {
+                root.clicked();
+                return EventResult.accept;
+            }
+            return EventResult.reject;
+        }
+    }
     TouchArea {
         clicked => {
+            fscope.focus();
             root.clicked();
         }
     }
@@ -479,13 +519,20 @@ component Sparkline inherits Rectangle {
 
 component Toggle inherits Rectangle {
     in property <bool> on;
+    in property <string> a11y-label;
     callback toggled(bool);
     width: 44px;
     height: 22px;
     border-radius: 11px;
-    border-width: 1px;
-    border-color: on ? Theme.accent : Theme.divider;
+    border-width: fscope.has-focus ? 2px : 1px;
+    border-color: fscope.has-focus ? Theme.accent-soft : (on ? Theme.accent : Theme.divider);
     background: on ? Theme.accent.with-alpha(0.2) : transparent;
+    accessible-role: checkbox;
+    accessible-label: root.a11y-label;
+    accessible-checked: root.on;
+    accessible-action-default => {
+        root.toggled(!root.on);
+    }
 
     Rectangle {
         width: 16px;
@@ -496,8 +543,20 @@ component Toggle inherits Rectangle {
         background: on ? Theme.accent : Theme.text-dim;
         animate x { duration: 110ms; easing: ease-out; }
     }
+    fscope := FocusScope {
+        width: 100%;
+        height: 100%;
+        key-pressed(e) => {
+            if (e.text == " " || e.text == Key.Return) {
+                root.toggled(!root.on);
+                return EventResult.accept;
+            }
+            return EventResult.reject;
+        }
+    }
     TouchArea {
         clicked => {
+            fscope.focus();
             root.toggled(!root.on);
         }
     }
@@ -513,9 +572,14 @@ component PushButton inherits Rectangle {
     width: root.w;
     height: 26px;
     border-radius: 7px;
-    border-width: 1px;
-    border-color: tint;
+    border-width: fscope.has-focus ? 2px : 1px;
+    border-color: fscope.has-focus ? tint-soft : tint;
     background: touch.pressed ? tint.with-alpha(0.28) : tint.with-alpha(0.12);
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => {
+        root.clicked();
+    }
     Text {
         text: root.label;
         color: tint-soft;
@@ -523,8 +587,20 @@ component PushButton inherits Rectangle {
         vertical-alignment: center;
         font-size: 11px;
     }
+    fscope := FocusScope {
+        width: 100%;
+        height: 100%;
+        key-pressed(e) => {
+            if (e.text == " " || e.text == Key.Return) {
+                root.clicked();
+                return EventResult.accept;
+            }
+            return EventResult.reject;
+        }
+    }
     touch := TouchArea {
         clicked => {
+            fscope.focus();
             root.clicked();
         }
     }
@@ -553,7 +629,7 @@ component QuickActionRow inherits Rectangle {
                 if root.qa.elevated: Text {
                     text: "· ADMIN";
                     color: Theme.ember-soft;
-                    font-size: 9px;
+                    font-size: 10px;
                     vertical-alignment: center;
                 }
             }
@@ -662,7 +738,7 @@ component AppRowView inherits Rectangle {
                 Text {
                     text: root.app.category;
                     color: Theme.text-dim;
-                    font-size: 9px;
+                    font-size: 10px;
                     vertical-alignment: center;
                 }
             }
@@ -866,13 +942,13 @@ component TweakRowView inherits Rectangle {
                 Text {
                     text: root.tw.category;
                     color: Theme.text-dim;
-                    font-size: 9px;
+                    font-size: 10px;
                     vertical-alignment: center;
                 }
                 if root.tw.elevated: Text {
                     text: "· ADMIN";
                     color: Theme.ember-soft;
-                    font-size: 9px;
+                    font-size: 10px;
                     vertical-alignment: center;
                 }
             }
@@ -887,6 +963,7 @@ component TweakRowView inherits Rectangle {
             alignment: center;
             Toggle {
                 on: root.tw.applied;
+                a11y-label: root.tw.name;
                 toggled(v) => {
                     Tweaks.toggle(root.tw.id, v);
                 }
@@ -1025,9 +1102,14 @@ component FilterChip inherits Rectangle {
     height: 24px;
     width: chip-txt.preferred-width + 18px;
     border-radius: 6px;
-    border-width: 1px;
-    border-color: active ? Theme.accent : Theme.divider;
+    border-width: fscope.has-focus ? 2px : 1px;
+    border-color: fscope.has-focus ? Theme.accent-soft : (active ? Theme.accent : Theme.divider);
     background: active ? Theme.accent.with-alpha(0.16) : transparent;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => {
+        root.clicked();
+    }
     chip-txt := Text {
         x: 9px;
         text: root.label;
@@ -1035,8 +1117,20 @@ component FilterChip inherits Rectangle {
         vertical-alignment: center;
         font-size: 10px;
     }
+    fscope := FocusScope {
+        width: 100%;
+        height: 100%;
+        key-pressed(e) => {
+            if (e.text == " " || e.text == Key.Return) {
+                root.clicked();
+                return EventResult.accept;
+            }
+            return EventResult.reject;
+        }
+    }
     TouchArea {
         clicked => {
+            fscope.focus();
             root.clicked();
         }
     }
@@ -1284,6 +1378,7 @@ component StartupRowView inherits Rectangle {
             alignment: center;
             Toggle {
                 on: root.entry.enabled;
+                a11y-label: root.entry.name;
                 toggled(v) => {
                     Startup.toggle(root.entry.id, v);
                 }
@@ -1831,7 +1926,7 @@ component NetRowView inherits Rectangle {
                 Text {
                     text: root.conn.state;
                     color: root.conn.state == "ESTABLISHED" ? Theme.accent-soft : Theme.text-dim;
-                    font-size: 9px;
+                    font-size: 10px;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
