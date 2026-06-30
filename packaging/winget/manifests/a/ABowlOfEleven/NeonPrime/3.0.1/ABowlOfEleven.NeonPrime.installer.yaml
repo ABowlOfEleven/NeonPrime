@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+PackageIdentifier: ABowlOfEleven.NeonPrime
+PackageVersion: 3.0.1
+InstallerType: wix
+Scope: machine
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+UpgradeBehavior: install
+ProductCode: '{PRODUCTCODE_PLACEHOLDER}'
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/ABowlOfEleven/NeonPrime/releases/download/v3.0.1/NeonPrime-3.0.1-Setup.msi
+    InstallerSha256: SHA256_PLACEHOLDER
+ManifestType: installer
+ManifestVersion: 1.12.0

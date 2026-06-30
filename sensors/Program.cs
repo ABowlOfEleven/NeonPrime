@@ -100,8 +100,13 @@ internal static class Program
             }
             else
             {
+                // No --out: print one snapshot and exit. The app always runs us
+                // with --out (a polled file), so the streaming loop only applies
+                // there. A bare run must terminate so installer/AV validators
+                // that launch the binary don't hang forever.
                 Console.Out.WriteLine(json);
                 Console.Out.Flush();
+                return;
             }
 
             Thread.Sleep(interval);
