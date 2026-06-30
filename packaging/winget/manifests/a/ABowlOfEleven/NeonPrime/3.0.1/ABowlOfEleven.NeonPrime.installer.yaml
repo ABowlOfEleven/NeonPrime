@@ -8,10 +8,10 @@ InstallModes:
   - silent
   - silentWithProgress
 UpgradeBehavior: install
-ProductCode: '{PRODUCTCODE_PLACEHOLDER}'
+ProductCode: '{74368D2D-BBFA-43D4-B76C-9D82724B2FAD}'
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/ABowlOfEleven/NeonPrime/releases/download/v3.0.1/NeonPrime-3.0.1-Setup.msi
-    InstallerSha256: SHA256_PLACEHOLDER
+    InstallerSha256: EBA7CB7453F3F1BCA439E552A7C2A45E087C18093201C68354B39F04D2BDD047
 ManifestType: installer
 ManifestVersion: 1.12.0
