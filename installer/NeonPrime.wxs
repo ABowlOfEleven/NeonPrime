@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="NeonPrime"
-           Manufacturer="Ethan Belanger"
-           Version="3.0.0"
+           Manufacturer="NeonPrime contributors"
+           Version="3.0.1"
            UpgradeCode="8F3A2C1E-7B4D-4E9A-9C2F-1A2B3C4D5E6F"
            Scope="perMachine">
 

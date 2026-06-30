@@ -1,0 +1,7 @@
+# Statically link the MSVC C runtime so neonprime.exe / broker.exe start on a
+# clean Windows that has never had the VC++ redistributable installed. Without
+# this they depend on vcruntime140.dll and fail with STATUS_DLL_NOT_FOUND
+# (0xC0000135) — which winget's Sandbox validation flags. Applies to local and
+# CI builds. Verify with: dumpbin /dependents target\release\neonprime.exe
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

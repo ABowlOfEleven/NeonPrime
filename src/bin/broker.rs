@@ -26,8 +26,10 @@ fn main() {
         }
     }
     if token.is_empty() {
-        eprintln!("usage: broker --port <port> --token <token>");
-        std::process::exit(2);
+        // Bare run (no token): print usage and exit cleanly. Exiting 0 keeps
+        // installer/AV validators happy; the real launch always passes a token.
+        println!("NeonPrime broker. Launched by the app with --port <port> --token <token>.");
+        return;
     }
 
     let listener = match TcpListener::bind(("127.0.0.1", port)) {

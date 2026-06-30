@@ -1,9 +1,9 @@
 [package]
 name = "neonprime"
-version = "3.0.0"
+version = "3.0.1"
 edition = "2021"
-description = "A holographic system control deck for Windows. One machine, three modes — it counts all the way to three."
-authors = ["Ethan Belanger <belangerethan@gmail.com>"]
+description = "A holographic system control deck for Windows. One machine, three modes. It counts all the way to three."
+authors = ["NeonPrime contributors"]
 license = "MIT"
 
 [dependencies]
