@@ -30,7 +30,7 @@ mod tui {
 
     use neonprime::core::linux::{
         apps, autostart, cleanup, debloat, dns, firewall, pkg, power, quick, restore, services,
-        telemetry,
+        telemetry, tweaks,
     };
 
     const CATS: &[&str] = &[
