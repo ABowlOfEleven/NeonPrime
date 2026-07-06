@@ -767,6 +767,7 @@ mod ui {
             1 => Some("Interface"),
             2 => Some("Performance"),
             3 => Some("Privacy"),
+            4 => Some("Security"),
             _ => None,
         };
         let states = applied.lock().unwrap();
@@ -784,6 +785,7 @@ mod ui {
                 name: t.name.into(),
                 desc: t.desc.into(),
                 category: t.category.into(),
+                warn: t.warn.into(),
                 applied: states.get(i).copied().unwrap_or(false),
                 privileged: tweaks::privileged(t),
             })

@@ -218,9 +218,14 @@ mod tui {
             .map(|t| {
                 let on = tweaks::is_applied(t);
                 let priv_ = tweaks::privileged(t);
+                let detail = if t.warn.is_empty() {
+                    t.desc.to_string()
+                } else {
+                    format!("{}   [!] {}", t.desc, t.warn)
+                };
                 Item {
                     label: format!("[{}] {}", if on { "x" } else { " " }, t.name),
-                    detail: t.desc.to_string(),
+                    detail,
                     run: Box::new(move || Outcome::Shell(tweaks::apply_argv(t, !on), priv_)),
                 }
             })

@@ -174,8 +174,14 @@ fn make_row(index: usize, t: &tweaks::Tweak) -> TweakRow {
 }
 
 /// Search/category predicate for a tweak row. `text` is already lowercased.
+/// Security-hardening tweaks live in the Privacy/Hardening panel, so they are
+/// hidden from the Tweaks list (the "ALL" view excludes SECURITY).
 fn tweak_matches(row: &TweakRow, text: &str, cat: &str) -> bool {
-    let cat_ok = cat == "ALL" || row.category.as_str() == cat;
+    let cat_ok = if cat == "ALL" {
+        row.category.as_str() != "SECURITY"
+    } else {
+        row.category.as_str() == cat
+    };
     let text_ok = text.is_empty()
         || row.name.to_lowercase().contains(text)
         || row.desc.to_lowercase().contains(text);
@@ -1842,6 +1848,7 @@ fn wire_privacy(
                         id: i as i32,
                         name: t.name.into(),
                         desc: t.desc.into(),
+                        warn: t.warn.into(),
                         hardened: on,
                         elevated: t.needs_elevation(),
                     }

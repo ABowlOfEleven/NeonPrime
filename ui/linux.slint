@@ -196,6 +196,7 @@ export struct TweakRow {
     name: string,
     desc: string,
     category: string,
+    warn: string, // caveat / what-could-break (empty = none)
     applied: bool,
     privileged: bool,
 }
@@ -1430,6 +1431,7 @@ component TweaksView inherits VerticalLayout {
         FilterChip { label: "INTERFACE"; active: Tweaks.category == 1; clicked => { Tweaks.category = 1; Tweaks.filter(); } }
         FilterChip { label: "PERFORMANCE"; active: Tweaks.category == 2; clicked => { Tweaks.category = 2; Tweaks.filter(); } }
         FilterChip { label: "PRIVACY"; active: Tweaks.category == 3; clicked => { Tweaks.category = 3; Tweaks.filter(); } }
+        FilterChip { label: "SECURITY"; active: Tweaks.category == 4; clicked => { Tweaks.category = 4; Tweaks.filter(); } }
         Rectangle { horizontal-stretch: 1; }
     }
     if Tweaks.rows.length == 0: EmptyState {
@@ -1439,7 +1441,7 @@ component TweaksView inherits VerticalLayout {
     if Tweaks.rows.length > 0: ListView {
         vertical-stretch: 1;
         for t in Tweaks.rows: Rectangle {
-            height: 56px;
+            height: t.warn != "" ? 88px : 56px;
             HorizontalLayout {
                 padding-left: 18px;
                 padding-right: 18px;
@@ -1469,6 +1471,12 @@ component TweaksView inherits VerticalLayout {
                         color: Theme.text-dim;
                         font-size: 10px;
                         overflow: elide;
+                    }
+                    if t.warn != "": Text {
+                        text: "⚠ " + t.warn;
+                        color: Theme.ember-soft;
+                        font-size: 10px;
+                        wrap: word-wrap;
                     }
                 }
                 VerticalLayout {

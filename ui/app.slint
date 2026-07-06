@@ -184,6 +184,7 @@ export struct PrivacyCheck {
     id: int, // tweak catalog index
     name: string,
     desc: string,
+    warn: string, // caveat / what-could-break (empty = none)
     hardened: bool,
     elevated: bool,
 }
@@ -1582,7 +1583,7 @@ component FeaturesView inherits VerticalLayout {
 
 component PrivacyCheckView inherits Rectangle {
     in property <PrivacyCheck> check;
-    height: 56px;
+    height: root.check.warn != "" ? 92px : 56px;
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -1612,6 +1613,12 @@ component PrivacyCheckView inherits Rectangle {
                 color: Theme.text-dim;
                 font-size: 10px;
                 overflow: elide;
+            }
+            if root.check.warn != "": Text {
+                text: "⚠ " + root.check.warn;
+                color: Theme.ember-soft;
+                font-size: 10px;
+                wrap: word-wrap;
             }
         }
         // Status badge.

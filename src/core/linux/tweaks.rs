@@ -105,7 +105,9 @@ pub struct Tweak {
     pub id: &'static str,
     pub name: &'static str,
     pub desc: &'static str,
-    pub category: &'static str, // "Interface" | "Performance" | "Privacy"
+    pub category: &'static str, // "Interface" | "Performance" | "Privacy" | "Security"
+    /// A caveat / what-could-break note (empty = none). Used on Security tweaks.
+    pub warn: &'static str,
     pub op: Op,
 }
 
@@ -118,6 +120,7 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Show battery percentage",
             desc: "Display the battery charge percentage in the top bar.",
             category: "Interface",
+            warn: "",
             op: Gsettings {
                 schema: "org.gnome.desktop.interface",
                 key: "show-battery-percentage",
@@ -130,6 +133,7 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Show seconds in clock",
             desc: "Add seconds to the top-bar clock.",
             category: "Interface",
+            warn: "",
             op: Gsettings {
                 schema: "org.gnome.desktop.interface",
                 key: "clock-show-seconds",
@@ -142,6 +146,7 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Show weekday in clock",
             desc: "Add the day of the week to the top-bar clock.",
             category: "Interface",
+            warn: "",
             op: Gsettings {
                 schema: "org.gnome.desktop.interface",
                 key: "clock-show-weekday",
@@ -154,6 +159,7 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Tap to click",
             desc: "Enable tap-to-click on the touchpad.",
             category: "Interface",
+            warn: "",
             op: Gsettings {
                 schema: "org.gnome.desktop.peripherals.touchpad",
                 key: "tap-to-click",
@@ -166,6 +172,7 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Disable animations",
             desc: "Turn off desktop animations for a snappier UI.",
             category: "Performance",
+            warn: "",
             op: Gsettings {
                 schema: "org.gnome.desktop.interface",
                 key: "enable-animations",
@@ -178,6 +185,7 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Don't remember recent files",
             desc: "Stop tracking recently used files.",
             category: "Privacy",
+            warn: "",
             op: Gsettings {
                 schema: "org.gnome.desktop.privacy",
                 key: "remember-recent-files",
@@ -190,6 +198,7 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Don't track app usage",
             desc: "Stop recording application usage history.",
             category: "Privacy",
+            warn: "",
             op: Gsettings {
                 schema: "org.gnome.desktop.privacy",
                 key: "remember-app-usage",
@@ -202,6 +211,7 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Disable software usage stats",
             desc: "Stop sending anonymous software usage statistics.",
             category: "Privacy",
+            warn: "",
             op: Gsettings {
                 schema: "org.gnome.desktop.privacy",
                 key: "send-software-usage-stats",
@@ -214,6 +224,7 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Disable technical problem reports",
             desc: "Stop automatically reporting technical problems.",
             category: "Privacy",
+            warn: "",
             op: Gsettings {
                 schema: "org.gnome.desktop.privacy",
                 key: "report-technical-problems",
@@ -227,6 +238,7 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Disable animations",
             desc: "Set the global animation speed to instant.",
             category: "Performance",
+            warn: "",
             op: Kconfig {
                 file: "kdeglobals",
                 group: "KDE",
@@ -240,6 +252,7 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Single-click to open",
             desc: "Open files and folders with a single click.",
             category: "Interface",
+            warn: "",
             op: Kconfig {
                 file: "kdeglobals",
                 group: "KDE",
@@ -253,6 +266,7 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Disable file indexing (Baloo)",
             desc: "Turn off the desktop file-content indexer.",
             category: "Privacy",
+            warn: "",
             op: Kconfig {
                 file: "baloofilerc",
                 group: "Basic Settings",
@@ -267,6 +281,7 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Single-click to open",
             desc: "Open items in the file manager with a single click.",
             category: "Interface",
+            warn: "",
             op: Xfconf {
                 channel: "thunar",
                 prop: "/misc-single-click",
@@ -280,6 +295,7 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Don't save session on exit",
             desc: "Stop XFCE from restoring apps from the last session.",
             category: "Privacy",
+            warn: "",
             op: Xfconf {
                 channel: "xfce4-session",
                 prop: "/general/SaveOnExit",
@@ -294,10 +310,133 @@ pub fn catalog() -> &'static [Tweak] {
             name: "Lower swappiness (10)",
             desc: "Prefer RAM over swap (vm.swappiness 10, default 60).",
             category: "Performance",
+            warn: "",
             op: Sysctl {
                 param: "vm.swappiness",
                 on: "10",
                 off: "60",
+            },
+        },
+        // ── Security hardening (sysctl, universal). Real hardening, not just
+        //    privacy. Each carries a warning about what it does / could break. ──
+        Tweak {
+            id: "sec-kptr",
+            name: "Hide kernel addresses",
+            desc: "kernel.kptr_restrict=2, hide kernel memory pointers from userspace.",
+            category: "Security",
+            warn: "Defeats a common exploit-development aid. Safe; only affects low-level debugging tools.",
+            op: Sysctl {
+                param: "kernel.kptr_restrict",
+                on: "2",
+                off: "0",
+            },
+        },
+        Tweak {
+            id: "sec-dmesg",
+            name: "Restrict kernel log",
+            desc: "kernel.dmesg_restrict=1, only root can read the kernel ring buffer.",
+            category: "Security",
+            warn: "Hides kernel info useful to attackers. Some diagnostics then need sudo to read dmesg.",
+            op: Sysctl {
+                param: "kernel.dmesg_restrict",
+                on: "1",
+                off: "0",
+            },
+        },
+        Tweak {
+            id: "sec-ptrace",
+            name: "Restrict ptrace",
+            desc: "kernel.yama.ptrace_scope=1, processes can't attach-debug unrelated processes.",
+            category: "Security",
+            warn: "Blocks a credential-theft technique. Debuggers still work on their own children; attaching to an unrelated running process then needs sudo.",
+            op: Sysctl {
+                param: "kernel.yama.ptrace_scope",
+                on: "1",
+                off: "0",
+            },
+        },
+        Tweak {
+            id: "sec-syncookies",
+            name: "SYN-flood protection",
+            desc: "net.ipv4.tcp_syncookies=1, mitigate TCP SYN-flood denial of service.",
+            category: "Security",
+            warn: "Standard network hardening. Safe.",
+            op: Sysctl {
+                param: "net.ipv4.tcp_syncookies",
+                on: "1",
+                off: "0",
+            },
+        },
+        Tweak {
+            id: "sec-rpfilter",
+            name: "Reverse-path filtering",
+            desc: "net.ipv4.conf.all.rp_filter=1, drop packets with spoofed source addresses.",
+            category: "Security",
+            warn: "Anti-spoofing. Safe on normal hosts; can break asymmetric or multi-homed routing.",
+            op: Sysctl {
+                param: "net.ipv4.conf.all.rp_filter",
+                on: "1",
+                off: "0",
+            },
+        },
+        Tweak {
+            id: "sec-no-redirects",
+            name: "Ignore ICMP redirects",
+            desc: "net.ipv4.conf.all.accept_redirects=0, reject ICMP redirect (MITM) messages.",
+            category: "Security",
+            warn: "Blocks a man-in-the-middle route-injection trick. Safe on a normal host (not a router).",
+            op: Sysctl {
+                param: "net.ipv4.conf.all.accept_redirects",
+                on: "0",
+                off: "1",
+            },
+        },
+        Tweak {
+            id: "sec-no-source-route",
+            name: "Reject source routing",
+            desc: "net.ipv4.conf.all.accept_source_route=0, drop source-routed packets.",
+            category: "Security",
+            warn: "Blocks a spoofing/bypass technique. Safe.",
+            op: Sysctl {
+                param: "net.ipv4.conf.all.accept_source_route",
+                on: "0",
+                off: "1",
+            },
+        },
+        Tweak {
+            id: "sec-no-bcast-ping",
+            name: "Ignore broadcast pings",
+            desc: "net.ipv4.icmp_echo_ignore_broadcasts=1, don't answer broadcast ICMP.",
+            category: "Security",
+            warn: "Stops your host amplifying smurf DoS attacks. Safe.",
+            op: Sysctl {
+                param: "net.ipv4.icmp_echo_ignore_broadcasts",
+                on: "1",
+                off: "0",
+            },
+        },
+        Tweak {
+            id: "sec-protect-symlinks",
+            name: "Protect symlinks",
+            desc: "fs.protected_symlinks=1, block symlink-following attacks in world-writable dirs.",
+            category: "Security",
+            warn: "Prevents a classic /tmp privilege-escalation trick. Usually already on. Safe.",
+            op: Sysctl {
+                param: "fs.protected_symlinks",
+                on: "1",
+                off: "0",
+            },
+        },
+        Tweak {
+            id: "sec-no-suid-dump",
+            name: "No core dumps for setuid",
+            desc: "fs.suid_dumpable=0, don't write crash dumps for privileged programs.",
+            category: "Security",
+            warn: "Stops secrets leaking into core dumps of setuid binaries. Safe.",
+            op: Sysctl {
+                param: "fs.suid_dumpable",
+                on: "0",
+                off: "1",
             },
         },
     ]
