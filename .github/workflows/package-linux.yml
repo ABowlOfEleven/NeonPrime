@@ -1,0 +1,54 @@
+name: Package (Linux)
+
+# Manual-only for now. The Linux desktop UI binary is still a stub (see
+# LINUX.md), so these produce validation artifacts, not shippable releases.
+# Once the Linux UI lands, flip this to trigger on tags and publish to the
+# GitHub release alongside the Windows MSI.
+on:
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install packaging tools
+        run: |
+          cargo install cargo-deb cargo-generate-rpm --locked
+          sudo apt-get update
+          sudo apt-get install -y librsvg2-bin
+
+      - name: Resolve version
+        id: ver
+        run: echo "version=$(grep -m1 '^version' Cargo.toml | cut -d'\"' -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Build release binary
+        run: cargo build --release --bin neonprime
+
+      - name: Tarball
+        run: bash packaging/linux/build-tarball.sh "${{ steps.ver.outputs.version }}"
+
+      - name: Deb
+        run: cargo deb --no-build
+
+      - name: Rpm
+        run: cargo generate-rpm
+
+      - name: AppImage
+        run: bash packaging/linux/build-appimage.sh "${{ steps.ver.outputs.version }}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: neonprime-linux-${{ steps.ver.outputs.version }}
+          path: |
+            NeonPrime-*-linux-*.tar.gz
+            NeonPrime-*-*.AppImage
+            target/debian/*.deb
+            target/generate-rpm/*.rpm
+          if-no-files-found: warn

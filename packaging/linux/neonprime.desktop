@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=NeonPrime
+GenericName=System Control Deck
+Comment=Holographic system monitor and control deck
+Exec=neonprime
+Icon=neonprime
+Terminal=false
+Categories=System;Monitor;Utility;
+Keywords=system;monitor;cpu;gpu;services;packages;network;dns;
+StartupNotify=true

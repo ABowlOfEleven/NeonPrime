@@ -2,12 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
   workflow_dispatch:
 
 jobs:
-  build:
+  windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,6 +23,32 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --all-targets
+
+      - name: Test
+        run: cargo test --all
+
+  # Verifies the cross-platform split: the crate + Linux backend build, and the
+  # Linux backend's unit tests pass. The desktop UI binary is a stub on Linux
+  # for now (see LINUX.md), so there is nothing to run, only to compile + test.
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets
+
+      - name: Build
+        run: cargo build --all-targets
 
       - name: Test
         run: cargo test --all

@@ -8,19 +8,21 @@ license = "MIT"
 
 # Cross-platform dependencies (Windows + Linux).
 [dependencies]
-slint = "1"
 sysinfo = "0.33"
+dns-lookup = "2"
+
+# Windows-only backend: registry, WMI, DXGI/PDH telemetry, NVML, shell, and the
+# Slint UI (the desktop UI is Windows-only today; the Linux UI is scaffolded).
+# Keeping Slint here means the Linux library builds with no GUI/system deps.
+[target.'cfg(windows)'.dependencies]
+slint = "1"
+nvml-wrapper = "0.10"
+winreg = "0.52"
+wmi = "0.14"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 single-instance = "0.3"
 toml = "0.8"
-dns-lookup = "2"
-
-# Windows-only backend: registry, WMI, DXGI/PDH telemetry, NVML, shell.
-[target.'cfg(windows)'.dependencies]
-nvml-wrapper = "0.10"
-winreg = "0.52"
-wmi = "0.14"
 
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.58"
@@ -44,3 +46,26 @@ winresource = "0.1"
 # Dev-only: rasterize SVG icons to PNG so they can be previewed during design.
 [dev-dependencies]
 resvg = "0.47"
+
+# ── Linux packaging ─────────────────────────────────────────────────────────
+# `cargo deb` (cargo-deb) reads this to build a .deb.
+[package.metadata.deb]
+maintainer = "NeonPrime contributors"
+copyright = "2026, NeonPrime contributors"
+license-file = ["LICENSE", "0"]
+extended-description = "NeonPrime is a holographic system control deck: live telemetry, process and service management, package installs, and network/DNS controls in one keyboard-driven HUD."
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/neonprime", "usr/bin/", "755"],
+    ["packaging/linux/neonprime.desktop", "usr/share/applications/", "644"],
+    ["assets/app-icon.svg", "usr/share/icons/hicolor/scalable/apps/neonprime.svg", "644"],
+]
+
+# `cargo generate-rpm` (cargo-generate-rpm) reads this to build a .rpm.
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/neonprime", dest = "/usr/bin/neonprime", mode = "755" },
+    { source = "packaging/linux/neonprime.desktop", dest = "/usr/share/applications/neonprime.desktop", mode = "644" },
+    { source = "assets/app-icon.svg", dest = "/usr/share/icons/hicolor/scalable/apps/neonprime.svg", mode = "644" },
+]

@@ -72,12 +72,7 @@ pub fn terminate(pid: u32) -> bool {
 
 /// A `pkexec`-ready force-kill for processes the user can't signal directly.
 pub fn force_kill_argv(pid: u32) -> Vec<String> {
-    vec![
-        "pkexec".into(),
-        "kill".into(),
-        "-9".into(),
-        pid.to_string(),
-    ]
+    vec!["pkexec".into(), "kill".into(), "-9".into(), pid.to_string()]
 }
 
 #[cfg(test)]
