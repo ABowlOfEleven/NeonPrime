@@ -94,14 +94,27 @@ export struct PkgMgrItem {
     label: string,
 }
 
+export struct AppRow {
+    name: string,
+    desc: string,
+    category: string,
+    id: string,       // package id for the selected manager
+    available: bool,  // installable with the selected manager
+}
+
 export global Packages {
     in property <[PkgMgrItem]> managers;
     in-out property <int> selected: 0;
     in-out property <string> query;
     in property <string> status: "";
+    in property <[AppRow]> catalog;
+    in property <int> catalog-count;
+    in-out property <int> category: 0; // 0 all, else index into the category chips
     callback install(string);
     callback remove(string);
     callback update-all();
+    callback select(int);
+    callback filter();
 }
 
 export struct DnsProv {
@@ -196,6 +209,30 @@ export global Tweaks {
     in-out property <int> category: 0; // 0 all, 1 Interface, 2 Performance, 3 Privacy
     callback filter();
     callback toggle(int);
+}
+
+export struct BloatRow {
+    id: int,
+    name: string,
+    desc: string,
+    installed: bool,
+    removable: bool,
+}
+
+export global Debloat {
+    in property <[BloatRow]> rows;
+    in property <bool> scanning: true;
+    callback refresh();
+    callback remove(int);
+}
+
+export global Restore {
+    in property <string> tool: "none";
+    in property <bool> available: false;
+    in property <bool> has-gui: false;
+    in-out property <string> comment;
+    callback create();
+    callback browse();
 }
 
 export global Nav {
@@ -819,7 +856,7 @@ component PackagesView inherits VerticalLayout {
             label: m.label;
             active: Packages.selected == i;
             clicked => {
-                Packages.selected = i;
+                Packages.select(i);
             }
         }
         Rectangle { horizontal-stretch: 1; }
@@ -829,15 +866,20 @@ component PackagesView inherits VerticalLayout {
         text: "No supported package manager found\n(apt, dnf, pacman, zypper, flatpak).";
     }
     if Packages.managers.length > 0: VerticalLayout {
-        padding-left: 20px;
-        padding-right: 20px;
+        vertical-stretch: 1;
         spacing: 10px;
+        // Manual install/remove by exact name or id.
         HorizontalLayout {
+            padding-left: 20px;
+            padding-right: 20px;
             spacing: 10px;
             SearchBox {
-                placeholder: "Package name or id…";
+                placeholder: "Search the catalog, or type a package name/id…";
                 text <=> Packages.query;
                 horizontal-stretch: 1;
+                edited => {
+                    Packages.filter();
+                }
             }
             PushButton {
                 w: 84px;
@@ -855,13 +897,90 @@ component PackagesView inherits VerticalLayout {
                 }
             }
         }
-        Text {
+        // Category chips for the curated catalog.
+        HorizontalLayout {
+            padding-left: 20px;
+            padding-right: 20px;
+            spacing: 6px;
+            alignment: start;
+            FilterChip { label: "ALL"; active: Packages.category == 0; clicked => { Packages.category = 0; Packages.filter(); } }
+            FilterChip { label: "WEB"; active: Packages.category == 1; clicked => { Packages.category = 1; Packages.filter(); } }
+            FilterChip { label: "DEV"; active: Packages.category == 2; clicked => { Packages.category = 2; Packages.filter(); } }
+            FilterChip { label: "MEDIA"; active: Packages.category == 3; clicked => { Packages.category = 3; Packages.filter(); } }
+            FilterChip { label: "CHAT"; active: Packages.category == 4; clicked => { Packages.category = 4; Packages.filter(); } }
+            FilterChip { label: "UTILS"; active: Packages.category == 5; clicked => { Packages.category = 5; Packages.filter(); } }
+            FilterChip { label: "GAMES"; active: Packages.category == 6; clicked => { Packages.category = 6; Packages.filter(); } }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        if Packages.status != "": Text {
+            x: 20px;
             text: Packages.status;
             color: Theme.text-dim;
             font-size: 11px;
             wrap: word-wrap;
         }
-        Rectangle { vertical-stretch: 1; }
+        // Curated app catalog.
+        ListView {
+            vertical-stretch: 1;
+            for a in Packages.catalog: Rectangle {
+                height: 50px;
+                HorizontalLayout {
+                    padding-left: 18px;
+                    padding-right: 18px;
+                    spacing: 10px;
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text {
+                            text: a.name;
+                            color: Theme.text-body;
+                            font-size: 13px;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: a.desc;
+                            color: Theme.text-dim;
+                            font-size: 10px;
+                            overflow: elide;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: a.category;
+                            color: Theme.text-dim;
+                            font-size: 9px;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        width: 84px;
+                        if a.available: PushButton {
+                            w: 84px;
+                            label: "INSTALL";
+                            clicked => {
+                                Packages.install(a.id);
+                            }
+                        }
+                        if !a.available: Text {
+                            text: "n/a here";
+                            color: Theme.text-dim;
+                            font-size: 10px;
+                            horizontal-alignment: right;
+                        }
+                    }
+                }
+                Rectangle {
+                    x: 0;
+                    y: parent.height - 1px;
+                    width: parent.width;
+                    height: 1px;
+                    background: Theme.divider;
+                }
+            }
+        }
     }
 }
 
@@ -1382,6 +1501,139 @@ component TweaksView inherits VerticalLayout {
     }
 }
 
+component DebloatView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "DEBLOAT";
+        hint: Debloat.scanning ? "checking installed packages…" : "remove preinstalled cruft";
+        PushButton {
+            label: "REFRESH";
+            clicked => {
+                Debloat.refresh();
+            }
+        }
+    }
+    if Debloat.scanning: EmptyState {
+        vertical-stretch: 1;
+        text: "Checking installed packages…";
+    }
+    if !Debloat.scanning: ListView {
+        vertical-stretch: 1;
+        for b in Debloat.rows: Rectangle {
+            height: 56px;
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    Text {
+                        text: b.name;
+                        color: Theme.text-body;
+                        font-size: 13px;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: b.desc;
+                        color: Theme.text-dim;
+                        font-size: 10px;
+                        overflow: elide;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 84px;
+                        height: 18px;
+                        border-radius: 5px;
+                        border-width: 1px;
+                        border-color: b.installed ? Theme.accent : Theme.divider;
+                        background: (b.installed ? Theme.accent : Theme.text-dim).with-alpha(0.1);
+                        Text {
+                            text: b.installed ? "INSTALLED" : "ABSENT";
+                            color: b.installed ? Theme.accent-soft : Theme.text-dim;
+                            font-size: 10px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    width: 72px;
+                    if b.installed && b.removable: PushButton {
+                        w: 72px;
+                        danger: true;
+                        label: "REMOVE";
+                        clicked => {
+                            Debloat.remove(b.id);
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                x: 0;
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.divider;
+            }
+        }
+    }
+}
+
+component RestoreView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 16px;
+    PanelHeader {
+        title: "RESTORE POINTS";
+        hint: Restore.available ? Restore.tool : "no snapshot tool found";
+    }
+    if !Restore.available: EmptyState {
+        vertical-stretch: 1;
+        text: "No snapshot tool found.\nInstall Timeshift or Snapper to create restore points.";
+    }
+    if Restore.available: VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 12px;
+        HorizontalLayout {
+            spacing: 10px;
+            SearchBox {
+                placeholder: "Snapshot comment…";
+                text <=> Restore.comment;
+                horizontal-stretch: 1;
+            }
+            PushButton {
+                w: 150px;
+                label: "CREATE SNAPSHOT";
+                clicked => {
+                    Restore.create();
+                }
+            }
+        }
+        if Restore.has-gui: PushButton {
+            w: 160px;
+            label: "OPEN SNAPSHOT TOOL";
+            clicked => {
+                Restore.browse();
+            }
+        }
+        Text {
+            text: "Creating a snapshot needs pkexec. Browsing and restoring use the tool's own app.";
+            color: Theme.text-dim;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
 // ── Root window ─────────────────────────────────────────────────────────────
 export component AppWindow inherits Window {
     title: "NeonPrime";
@@ -1420,6 +1672,7 @@ export component AppWindow inherits Window {
                 NavItem { label: "Dashboard"; page: 0; }
                 Text { text: "OPTIMIZE"; color: Theme.text-dim; font-size: 9px; letter-spacing: 1px; x: 18px; }
                 NavItem { label: "Tweaks"; page: 11; }
+                NavItem { label: "Debloat"; page: 12; }
                 Text { text: "MONITOR"; color: Theme.text-dim; font-size: 9px; letter-spacing: 1px; x: 18px; }
                 NavItem { label: "Processes"; page: 1; }
                 NavItem { label: "Network"; page: 2; }
@@ -1432,6 +1685,7 @@ export component AppWindow inherits Window {
                 NavItem { label: "Autostart"; page: 10; }
                 Text { text: "MAINTENANCE"; color: Theme.text-dim; font-size: 9px; letter-spacing: 1px; x: 18px; }
                 NavItem { label: "Cleanup"; page: 6; }
+                NavItem { label: "Restore Points"; page: 13; }
                 NavItem { label: "Quick Actions"; page: 8; }
                 Rectangle { vertical-stretch: 1; }
             }
@@ -1451,6 +1705,8 @@ export component AppWindow inherits Window {
             if Nav.page == 9: FirewallView {}
             if Nav.page == 10: AutostartView {}
             if Nav.page == 11: TweaksView {}
+            if Nav.page == 12: DebloatView {}
+            if Nav.page == 13: RestoreView {}
         }
     }
 }

@@ -27,8 +27,8 @@ mod ui {
     use slint::{Model, Timer, TimerMode, VecModel};
 
     use neonprime::core::linux::{
-        autostart, cleanup, dns, firewall, netmon, pkg, power, procmon, quick, services, telemetry,
-        tweaks, ElevatedCmd,
+        apps, autostart, cleanup, debloat, dns, firewall, netmon, pkg, power, procmon, quick,
+        restore, services, telemetry, tweaks, ElevatedCmd,
     };
 
     const HISTORY: usize = 60;
@@ -85,6 +85,8 @@ mod ui {
         let refresh_fw = wire_firewall(&app);
         let refresh_auto = wire_autostart(&app);
         let refresh_tweaks = wire_tweaks(&app);
+        let refresh_debloat = wire_debloat(&app);
+        wire_restore(&app);
 
         // Nav change: refresh the panel being shown.
         {
@@ -100,6 +102,7 @@ mod ui {
                     9 => refresh_fw(),
                     10 => refresh_auto(),
                     11 => refresh_tweaks(),
+                    12 => refresh_debloat(),
                     _ => {}
                 }
             });
@@ -430,6 +433,65 @@ mod ui {
                     app.global::<Packages>().set_status(status.into());
                 }
             });
+        }
+
+        // Curated catalog: rebuild for the selected manager + search + category.
+        let rebuild: Rc<dyn Fn()> = {
+            let weak = app.as_weak();
+            let managers = managers.clone();
+            Rc::new(move || {
+                let Some(app) = weak.upgrade() else { return };
+                let idx = app.global::<Packages>().get_selected() as usize;
+                let Some(&m) = managers.get(idx) else { return };
+                let q = app.global::<Packages>().get_query().to_lowercase();
+                let cat = match app.global::<Packages>().get_category() {
+                    1 => Some("Browsers"),
+                    2 => Some("Development"),
+                    3 => Some("Media"),
+                    4 => Some("Communication"),
+                    5 => Some("Utilities"),
+                    6 => Some("Gaming"),
+                    _ => None,
+                };
+                let rows: Vec<AppRow> = apps::catalog()
+                    .iter()
+                    .filter(|a| cat.is_none_or(|c| a.category == c))
+                    .filter(|a| {
+                        q.is_empty()
+                            || a.name.to_lowercase().contains(&q)
+                            || a.desc.to_lowercase().contains(&q)
+                    })
+                    .map(|a| {
+                        let id = apps::pkg_id(a, m).unwrap_or("");
+                        AppRow {
+                            name: a.name.into(),
+                            desc: a.desc.into(),
+                            category: a.category.into(),
+                            id: id.into(),
+                            available: !id.is_empty(),
+                        }
+                    })
+                    .collect();
+                let n = rows.len() as i32;
+                app.global::<Packages>()
+                    .set_catalog(Rc::new(VecModel::from(rows)).into());
+                app.global::<Packages>().set_catalog_count(n);
+            })
+        };
+        rebuild();
+        {
+            let weak = app.as_weak();
+            let rebuild = rebuild.clone();
+            app.global::<Packages>().on_select(move |idx| {
+                if let Some(app) = weak.upgrade() {
+                    app.global::<Packages>().set_selected(idx);
+                }
+                rebuild();
+            });
+        }
+        {
+            let rebuild = rebuild.clone();
+            app.global::<Packages>().on_filter(move || rebuild());
         }
     }
 
@@ -787,5 +849,91 @@ mod ui {
             });
         }
         scan
+    }
+
+    fn fill_debloat(app: &AppWindow, installed: &[bool]) {
+        let rows: Vec<BloatRow> = debloat::catalog()
+            .iter()
+            .enumerate()
+            .map(|(i, b)| BloatRow {
+                id: i as i32,
+                name: b.name.into(),
+                desc: b.desc.into(),
+                installed: installed.get(i).copied().unwrap_or(false),
+                removable: debloat::pkg_name(b).is_some(),
+            })
+            .collect();
+        app.global::<Debloat>()
+            .set_rows(Rc::new(VecModel::from(rows)).into());
+        app.global::<Debloat>().set_scanning(false);
+    }
+
+    /// Debloat: probe installed state off-thread; remove via pkexec.
+    fn wire_debloat(app: &AppWindow) -> Rc<dyn Fn()> {
+        app.global::<Debloat>().set_scanning(true);
+        let scan: Rc<dyn Fn()> = {
+            let weak = app.as_weak();
+            Rc::new(move || {
+                let weak = weak.clone();
+                std::thread::spawn(move || {
+                    let installed: Vec<bool> = debloat::catalog()
+                        .iter()
+                        .map(|b| {
+                            debloat::pkg_name(b)
+                                .map(debloat::is_installed)
+                                .unwrap_or(false)
+                        })
+                        .collect();
+                    let _ = weak.upgrade_in_event_loop(move |app| fill_debloat(&app, &installed));
+                });
+            })
+        };
+        scan();
+        {
+            let scan = scan.clone();
+            app.global::<Debloat>().on_refresh(move || scan());
+        }
+        {
+            let scan = scan.clone();
+            app.global::<Debloat>().on_remove(move |id| {
+                if let Some(b) = debloat::catalog().get(id as usize) {
+                    if let Some(cmd) = debloat::remove_cmd(b) {
+                        let _ = run_elevated(&cmd, true);
+                    }
+                }
+                scan();
+            });
+        }
+        scan
+    }
+
+    /// Restore points via Timeshift/Snapper: create a snapshot, open the tool GUI.
+    fn wire_restore(app: &AppWindow) {
+        let tool = restore::detect();
+        let g = app.global::<Restore>();
+        g.set_tool(tool.label().into());
+        g.set_available(tool != restore::Tool::None);
+        g.set_has_gui(restore::browse_argv().is_some());
+
+        {
+            let weak = app.as_weak();
+            app.global::<Restore>().on_create(move || {
+                let Some(app) = weak.upgrade() else { return };
+                let c = app.global::<Restore>().get_comment().to_string();
+                let comment = if c.trim().is_empty() {
+                    "NeonPrime"
+                } else {
+                    c.trim()
+                };
+                if let Some(cmd) = restore::create_cmd(comment) {
+                    let _ = run_elevated(&cmd, true);
+                }
+            });
+        }
+        app.global::<Restore>().on_browse(|| {
+            if let Some(argv) = restore::browse_argv() {
+                let _ = spawn_cmd(&argv);
+            }
+        });
     }
 }

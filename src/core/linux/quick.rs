@@ -35,7 +35,47 @@ pub fn catalog() -> &'static [Action] {
             desc: "sync + drop pagecache/dentries/inodes (frees cached RAM).",
             privileged: true,
         },
+        Action {
+            id: "autoremove",
+            name: "Remove orphaned packages",
+            desc: "Purge packages no longer needed by anything (autoremove).",
+            privileged: true,
+        },
+        Action {
+            id: "trim-ssd",
+            name: "Trim SSDs now",
+            desc: "Run fstrim on all mounted filesystems.",
+            privileged: true,
+        },
+        Action {
+            id: "enable-flathub",
+            name: "Enable Flathub",
+            desc: "Add the Flathub remote for Flatpak (per user).",
+            privileged: false,
+        },
     ]
+}
+
+/// Orphaned-package removal for the detected package manager.
+fn autoremove_argv() -> Vec<String> {
+    match super::pkg::primary() {
+        Some(super::pkg::Manager::Apt) => vec!["apt-get".into(), "autoremove".into(), "-y".into()],
+        Some(super::pkg::Manager::Dnf) => vec!["dnf".into(), "autoremove".into(), "-y".into()],
+        Some(super::pkg::Manager::Pacman) => vec![
+            "sh".into(),
+            "-c".into(),
+            "pacman -Qtdq | pacman -Rns --noconfirm -".into(),
+        ],
+        Some(super::pkg::Manager::Zypper) => {
+            vec![
+                "zypper".into(),
+                "--non-interactive".into(),
+                "packages".into(),
+                "--orphaned".into(),
+            ]
+        }
+        _ => vec!["true".into()],
+    }
 }
 
 /// The command line for an action id, or None if unknown.
@@ -53,6 +93,16 @@ pub fn run_argv(id: &str) -> Option<Vec<String>> {
             "sh".into(),
             "-c".into(),
             "sync && echo 3 > /proc/sys/vm/drop_caches".into(),
+        ],
+        "autoremove" => autoremove_argv(),
+        "trim-ssd" => vec!["fstrim".into(), "-av".into()],
+        "enable-flathub" => vec![
+            "flatpak".into(),
+            "remote-add".into(),
+            "--if-not-exists".into(),
+            "--user".into(),
+            "flathub".into(),
+            "https://flathub.org/repo/flathub.flatpakrepo".into(),
         ],
         _ => return None,
     };
