@@ -9,30 +9,43 @@ native Linux release.
 | Area | State |
 | --- | --- |
 | Cross-platform compile (one source tree) | Done. The crate and Linux backend build on Linux; the Windows build is unchanged. |
-| Linux system backend (`src/core/linux`) | Done (scaffold). Telemetry, processes, network, systemd, packages, DNS, with unit tests. |
-| Linux desktop UI binary (`neonprime-linux`) | Done. Slint window, eleven panels wired to the backend; verified on Linux CI. |
-| Packaging (AppImage, tarball, deb, rpm) | Builds and ships `neonprime-linux` (installed as `neonprime`). |
+| Linux system backend (`src/core/linux`) | Done. Telemetry, processes, network, systemd, packages, DNS, tweaks, cleanup, power, firewall, autostart, debloat, restore, quick, app catalog. Unit-tested. |
+| Linux desktop UI (`neonprime-linux`) | Done. Slint window, fourteen panels; verified on Linux CI. |
+| Linux terminal UI (`neonprime-tui`) | Done. Headless ratatui UI over the same backend; verified on Linux CI. |
+| Packaging (AppImage, tarball, deb, rpm) | Builds and ships both binaries (`neonprime` GUI + `neonprime-tui`). |
 
-The Linux UI is `ui/linux.slint` + `src/bin/neonprime-linux.rs`. It shares the
-holographic look of the Windows deck with eleven panels, covering every Windows
-feature that has a real Linux analog:
+The GUI is `ui/linux.slint` + `src/bin/neonprime-linux.rs`, sharing the
+holographic look of the Windows deck. It has fourteen panels covering every
+Windows feature with a real Linux analog:
 
 - Dashboard: live CPU / RAM / CPU-temp meters, a CPU sparkline, and specs.
+- Tweaks: desktop-environment aware (gsettings / KConfig / xfconf) + sysctl,
+  Interface / Performance / Privacy, live applied-state, searchable.
+- Debloat: remove snapd and preinstalled apps, with live installed-state.
 - Processes: sortable (CPU / RAM / name) + name-filterable, kill.
 - Network: outbound connections with cached reverse-DNS.
 - Firewall: ufw enabled state + enable / disable / reset.
 - Services: systemd list (lazy) + start / stop / enable / disable.
-- Packages: detected managers (apt / dnf / pacman / zypper / flatpak) +
-  install / remove / update-all.
+- Packages: detected managers (apt / dnf / pacman / zypper / flatpak), a curated
+  app catalog (category chips + search), install / remove / update-all.
 - DNS: provider switch on the default-route link (resolvectl).
 - Cleanup: cache / Trash / package-cache / journald sizing, sorted with bars.
 - Power: power-profiles-daemon (power-saver / balanced / performance).
 - Autostart: XDG autostart entries, toggled via the Hidden key.
-- Quick Actions: flush DNS, clear cache, empty Trash, drop memory caches.
+- Restore Points: create Timeshift / Snapper snapshots, open the tool GUI.
+- Quick Actions: flush DNS, clear cache, empty Trash, drop memory caches,
+  remove orphaned packages, trim SSDs, enable Flathub.
 
-Privileged actions run through `pkexec`. The Windows-only panels (registry
-Tweaks, DISM Features, Appx Debloat, MicroWin, the Privacy score, and the
-reversible History over the elevated broker) have no Linux equivalent by nature.
+The TUI (`neonprime-tui`) is a headless / SSH-friendly ratatui front end over
+the same backend, covering the same action panels plus a live Dashboard. It
+needs no display or GUI libraries at runtime; privileged actions suspend the
+TUI and run through `sudo` (in-terminal prompt) rather than the GUI's graphical
+`pkexec`. The GUI binary prints a pointer to it if it cannot open a display.
+
+Privileged GUI actions run through `pkexec`. The Windows-only panels (registry
+tweaks beyond gsettings, DISM Features, Appx internals, MicroWin, the Privacy
+score, and the reversible History over the elevated broker) have no Linux
+equivalent by nature.
 
 > Note: because Slint's Linux stack needs `fontconfig`/`xcb` at build time, the
 > Linux UI can only be compiled on Linux (or a Linux CI runner), not
@@ -77,6 +90,10 @@ broker rather than mutating the system inline.
 | `quick` | one-shot maintenance commands | Quick Actions |
 | `firewall` | ufw (`/etc/ufw/ufw.conf` + `pkexec ufw`) | Windows Firewall |
 | `autostart` | XDG `~/.config/autostart` + `/etc/xdg/autostart` | Startup |
+| `tweaks` | gsettings / KConfig / xfconf / sysctl | Tweaks + Privacy |
+| `debloat` | dpkg/rpm/pacman probe + `pkexec` remove | Debloat |
+| `restore` | Timeshift / Snapper | Restore Points |
+| `apps` | per-manager names + Flathub ids | Install catalog |
 
 ## Building and packaging locally
 
@@ -84,7 +101,11 @@ broker rather than mutating the system inline.
 # Compile + test the Linux backend
 cargo test --lib
 
-# Portable tarball, deb, rpm, AppImage
+# Run the GUI, or the terminal UI (headless)
+cargo run --bin neonprime-linux
+cargo run --bin neonprime-tui
+
+# Portable tarball, deb, rpm, AppImage (ship both binaries)
 packaging/linux/build-tarball.sh
 cargo deb            # needs: cargo install cargo-deb
 cargo generate-rpm   # needs: cargo install cargo-generate-rpm
@@ -93,8 +114,9 @@ packaging/linux/build-appimage.sh   # needs: rsvg-convert or ImageMagick
 
 CI runs the Windows and Linux build/test matrix on every push
 (`.github/workflows/ci.yml`). `.github/workflows/package-linux.yml` builds the
-Linux artifacts on demand; it stays manual until the Linux UI exists, at which
-point it should trigger on version tags and publish to the release.
+Linux artifacts on demand; it stays manual until the Linux UI is confirmed
+running on hardware, then it should trigger on version tags and publish to the
+release.
 
 ## What is next
 
