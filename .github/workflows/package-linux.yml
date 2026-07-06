@@ -1,11 +1,13 @@
 name: Package (Linux)
 
-# Manual-only for now. The Linux desktop UI binary is still a stub (see
-# LINUX.md), so these produce validation artifacts, not shippable releases.
-# Once the Linux UI lands, flip this to trigger on tags and publish to the
-# GitHub release alongside the Windows MSI.
+# Manual build of the Linux artifacts (tarball / deb / rpm / AppImage) as
+# workflow artifacts, for testing packaging without cutting a release. The
+# actual release publishing happens in release.yml on a version tag.
 on:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   package:
