@@ -8,14 +8,12 @@ license = "MIT"
 
 # Cross-platform dependencies (Windows + Linux).
 [dependencies]
+slint = "1"
 sysinfo = "0.33"
 dns-lookup = "2"
 
-# Windows-only backend: registry, WMI, DXGI/PDH telemetry, NVML, shell, and the
-# Slint UI (the desktop UI is Windows-only today; the Linux UI is scaffolded).
-# Keeping Slint here means the Linux library builds with no GUI/system deps.
+# Windows-only backend: registry, WMI, DXGI/PDH telemetry, NVML, shell.
 [target.'cfg(windows)'.dependencies]
-slint = "1"
 nvml-wrapper = "0.10"
 winreg = "0.52"
 wmi = "0.14"
@@ -57,7 +55,7 @@ extended-description = "NeonPrime is a holographic system control deck: live tel
 section = "utils"
 priority = "optional"
 assets = [
-    ["target/release/neonprime", "usr/bin/", "755"],
+    ["target/release/neonprime-linux", "usr/bin/neonprime", "755"],
     ["packaging/linux/neonprime.desktop", "usr/share/applications/", "644"],
     ["assets/app-icon.svg", "usr/share/icons/hicolor/scalable/apps/neonprime.svg", "644"],
 ]
@@ -65,7 +63,7 @@ assets = [
 # `cargo generate-rpm` (cargo-generate-rpm) reads this to build a .rpm.
 [package.metadata.generate-rpm]
 assets = [
-    { source = "target/release/neonprime", dest = "/usr/bin/neonprime", mode = "755" },
+    { source = "target/release/neonprime-linux", dest = "/usr/bin/neonprime", mode = "755" },
     { source = "packaging/linux/neonprime.desktop", dest = "/usr/share/applications/neonprime.desktop", mode = "644" },
     { source = "assets/app-icon.svg", dest = "/usr/share/icons/hicolor/scalable/apps/neonprime.svg", mode = "644" },
 ]

@@ -17,13 +17,12 @@ include!("app_win.rs");
 
 #[cfg(not(windows))]
 fn main() {
-    // The Slint UI shell and the Linux backend both compile, but they are not
-    // wired into a runnable Linux binary yet. Point users at what exists today.
+    // The default `neonprime` binary is the Windows deck. On Linux the native UI
+    // is a separate binary; point there instead of doing nothing useful.
     eprintln!(
-        "NeonPrime {}: the desktop UI binary is currently Windows-only.\n\
-         The Linux backend (telemetry, processes, network, services, packages, DNS) \
-         lives in the library and is being wired into a native Linux UI. \
-         See LINUX.md for status.",
+        "NeonPrime {}: this is the Windows desktop binary.\n\
+         On Linux, run the native UI:  cargo run --bin neonprime-linux\n\
+         (packaged builds install it as `neonprime`). See LINUX.md.",
         env!("CARGO_PKG_VERSION")
     );
     std::process::exit(2);

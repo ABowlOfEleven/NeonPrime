@@ -9,12 +9,12 @@ NAME="NeonPrime-${VERSION}-linux-${ARCH}"
 STAGE="target/pkg/${NAME}"
 
 echo ">> Building release binary"
-cargo build --release --bin neonprime
+cargo build --release --bin neonprime-linux
 
 echo ">> Staging ${STAGE}"
 rm -rf "${STAGE}"
 mkdir -p "${STAGE}"
-cp target/release/neonprime "${STAGE}/"
+cp target/release/neonprime-linux "${STAGE}/neonprime"
 cp packaging/linux/neonprime.desktop "${STAGE}/"
 cp assets/app-icon.svg "${STAGE}/neonprime.svg"
 cp README.md LICENSE "${STAGE}/" 2>/dev/null || true

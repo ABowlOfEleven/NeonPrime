@@ -9,7 +9,7 @@ ARCH="$(uname -m)"
 APPDIR="target/AppDir"
 
 echo ">> Building release binary"
-cargo build --release --bin neonprime
+cargo build --release --bin neonprime-linux
 
 echo ">> Assembling ${APPDIR}"
 rm -rf "${APPDIR}"
@@ -18,7 +18,7 @@ mkdir -p "${APPDIR}/usr/bin" \
          "${APPDIR}/usr/share/icons/hicolor/scalable/apps" \
          "${APPDIR}/usr/share/icons/hicolor/256x256/apps"
 
-install -m755 target/release/neonprime "${APPDIR}/usr/bin/neonprime"
+install -m755 target/release/neonprime-linux "${APPDIR}/usr/bin/neonprime"
 install -m755 packaging/linux/AppRun    "${APPDIR}/AppRun"
 install -m644 packaging/linux/neonprime.desktop "${APPDIR}/neonprime.desktop"
 install -m644 packaging/linux/neonprime.desktop "${APPDIR}/usr/share/applications/neonprime.desktop"

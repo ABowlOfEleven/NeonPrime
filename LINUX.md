@@ -10,8 +10,21 @@ native Linux release.
 | --- | --- |
 | Cross-platform compile (one source tree) | Done. The crate and Linux backend build on Linux; the Windows build is unchanged. |
 | Linux system backend (`src/core/linux`) | Done (scaffold). Telemetry, processes, network, systemd, packages, DNS, with unit tests. |
-| Linux desktop UI binary | Not started. The default binary is a stub on Linux; the real UI is next. |
-| Packaging (AppImage, tarball, deb, rpm) | Scripts + CI in place; produce validation artifacts until the UI lands. |
+| Linux desktop UI binary (`neonprime-linux`) | Done (first cut). Slint window with all six panels wired to the backend; verified on Linux CI. |
+| Packaging (AppImage, tarball, deb, rpm) | Builds and ships `neonprime-linux` (installed as `neonprime`). |
+
+The Linux UI is `ui/linux.slint` + `src/bin/neonprime-linux.rs`. It shares the
+holographic look of the Windows deck with six panels: Dashboard (live CPU / RAM /
+temp / load + a CPU sparkline and specs), Processes (sortable + filterable, kill),
+Network (outbound connections with reverse-DNS), Services (systemd list + start /
+stop / enable / disable), Packages (detected managers + install / remove / update),
+and DNS (provider switch on the default link). Privileged actions run through
+`pkexec`.
+
+> Note: because Slint's Linux stack needs `fontconfig`/`xcb` at build time, the
+> Linux UI can only be compiled on Linux (or a Linux CI runner), not
+> cross-checked from Windows. The Linux *backend* (no Slint) still cross-checks
+> from any host.
 
 ## How the split works
 
