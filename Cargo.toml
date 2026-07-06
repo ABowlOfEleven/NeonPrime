@@ -14,8 +14,8 @@ dns-lookup = "2"
 
 # Linux-only: the terminal UI (headless/SSH-friendly, no display needed).
 [target.'cfg(target_os = "linux")'.dependencies]
-ratatui = "0.29"
-crossterm = "0.28"
+ratatui = "0.30"
+crossterm = "0.29"
 
 # Windows-only backend: registry, WMI, DXGI/PDH telemetry, NVML, shell.
 [target.'cfg(windows)'.dependencies]
