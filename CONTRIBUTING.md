@@ -69,9 +69,6 @@ revert. CI is the source of truth for the Linux build.
   sends intent, not command strings.
 - **Warn honestly.** Security or behavior-changing toggles must carry a `warn`
   explaining what they do and what could break.
-- **Shipped text reads human-written.** READMEs, release notes, in-app copy, and
-  commit messages avoid em/en-dashes (use commas, periods, or parentheses) and
-  keep emoji sparse.
 - **Match the surrounding code.** Comment density, naming, and idiom should look
   like the file you are editing.
 
