@@ -31,8 +31,8 @@ mod ui {
     use slint::{Model, Timer, TimerMode, VecModel};
 
     use neonprime::core::linux::{
-        apps, autostart, cleanup, debloat, dns, firewall, netmon, pkg, power, procmon, quick,
-        restore, services, telemetry, tweaks, ElevatedCmd,
+        apps, autostart, cleanup, debloat, dns, firewall, gaming, gpudriver, netmon, pkg, power,
+        procmon, quick, restore, servers, services, telemetry, tweaks, ElevatedCmd,
     };
 
     const HISTORY: usize = 60;
@@ -91,6 +91,8 @@ mod ui {
         let refresh_tweaks = wire_tweaks(&app);
         let refresh_debloat = wire_debloat(&app);
         wire_restore(&app);
+        let refresh_gpu = wire_graphics(&app);
+        let refresh_servers = wire_servers(&app);
 
         // Nav change: refresh the panel being shown.
         {
@@ -107,6 +109,8 @@ mod ui {
                     10 => refresh_auto(),
                     11 => refresh_tweaks(),
                     12 => refresh_debloat(),
+                    14 => refresh_gpu(),
+                    15 => refresh_servers(),
                     _ => {}
                 }
             });
@@ -941,5 +945,151 @@ mod ui {
                 let _ = spawn_cmd(&argv);
             }
         });
+    }
+
+    /// Graphics: GPU detection, driver install, and hybrid-GPU gaming setup.
+    fn wire_graphics(app: &AppWindow) -> Rc<dyn Fn()> {
+        let refresh: Rc<dyn Fn()> = {
+            let weak = app.as_weak();
+            Rc::new(move || {
+                let Some(app) = weak.upgrade() else { return };
+                let gpus = gpudriver::detect();
+                let items: Vec<GpuItem> = gpus
+                    .iter()
+                    .map(|g| GpuItem {
+                        vendor: g.vendor.label().into(),
+                        name: g.name.as_str().into(),
+                    })
+                    .collect();
+                let g = app.global::<Gpu>();
+                g.set_gpus(Rc::new(VecModel::from(items)).into());
+                g.set_nvidia_present(gpus.iter().any(|x| x.vendor == gpudriver::Vendor::Nvidia));
+                g.set_amd_present(gpus.iter().any(|x| x.vendor == gpudriver::Vendor::Amd));
+                g.set_intel_present(gpus.iter().any(|x| x.vendor == gpudriver::Vendor::Intel));
+                g.set_nvidia_loaded(gpudriver::nvidia_loaded());
+                g.set_hybrid(gaming::is_hybrid());
+                g.set_switcheroo_active(gaming::switcheroo_active());
+                g.set_launch_options(gaming::launch_options().into());
+            })
+        };
+        refresh();
+        {
+            let weak = app.as_weak();
+            app.global::<Gpu>().on_install_driver(move |v| {
+                let vendor = match v {
+                    0 => gpudriver::Vendor::Nvidia,
+                    1 => gpudriver::Vendor::Amd,
+                    2 => gpudriver::Vendor::Intel,
+                    _ => gpudriver::Vendor::Other,
+                };
+                let status = match gpudriver::install_cmd(vendor) {
+                    Some(c) => run_elevated(&c, true),
+                    None => "No driver command for this system.".into(),
+                };
+                if let Some(app) = weak.upgrade() {
+                    app.global::<Gpu>().set_status(status.into());
+                }
+            });
+        }
+        {
+            let weak = app.as_weak();
+            app.global::<Gpu>().on_install_tools(move || {
+                let status = match gaming::install_tools_cmd() {
+                    Some(c) => run_elevated(&c, true),
+                    None => "No package manager found.".into(),
+                };
+                if let Some(app) = weak.upgrade() {
+                    app.global::<Gpu>().set_status(status.into());
+                }
+            });
+        }
+        {
+            let weak = app.as_weak();
+            let refresh = refresh.clone();
+            app.global::<Gpu>().on_enable_switcheroo(move || {
+                let status = match gaming::switcheroo_cmd() {
+                    Some(c) => run_elevated(&c, true),
+                    None => "No package manager found.".into(),
+                };
+                if let Some(app) = weak.upgrade() {
+                    app.global::<Gpu>().set_status(status.into());
+                }
+                refresh();
+            });
+        }
+        {
+            let refresh = refresh.clone();
+            app.global::<Gpu>().on_refresh(move || refresh());
+        }
+        refresh
+    }
+
+    /// Servers: SSH + Samba install/enable/disable, status scanned off-thread.
+    fn wire_servers(app: &AppWindow) -> Rc<dyn Fn()> {
+        let refresh: Rc<dyn Fn()> = {
+            let weak = app.as_weak();
+            Rc::new(move || {
+                if let Some(app) = weak.upgrade() {
+                    app.global::<Servers>().set_scanning(true);
+                }
+                let weak = weak.clone();
+                std::thread::spawn(move || {
+                    let rows: Vec<(i32, String, String, servers::Status)> = servers::catalog()
+                        .iter()
+                        .enumerate()
+                        .map(|(i, s)| {
+                            (
+                                i as i32,
+                                s.name.to_string(),
+                                s.desc.to_string(),
+                                servers::status(s),
+                            )
+                        })
+                        .collect();
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        let model: Vec<ServerRow> = rows
+                            .iter()
+                            .map(|(id, name, desc, st)| ServerRow {
+                                id: *id,
+                                name: name.as_str().into(),
+                                desc: desc.as_str().into(),
+                                installed: st.installed,
+                                running: st.running,
+                                enabled: st.enabled,
+                            })
+                            .collect();
+                        app.global::<Servers>()
+                            .set_rows(Rc::new(VecModel::from(model)).into());
+                        app.global::<Servers>().set_scanning(false);
+                    });
+                });
+            })
+        };
+        refresh();
+        {
+            let refresh = refresh.clone();
+            app.global::<Servers>().on_refresh(move || refresh());
+        }
+        {
+            let refresh = refresh.clone();
+            app.global::<Servers>().on_enable(move |id| {
+                if let Some(s) = servers::catalog().get(id as usize) {
+                    if let Some(c) = servers::install_enable_cmd(s) {
+                        let _ = run_elevated(&c, true);
+                    }
+                }
+                refresh();
+            });
+        }
+        {
+            let refresh = refresh.clone();
+            app.global::<Servers>().on_disable(move |id| {
+                if let Some(s) = servers::catalog().get(id as usize) {
+                    let _ = run_elevated(&servers::disable_cmd(s), true);
+                }
+                refresh();
+            });
+        }
+        refresh
     }
 }

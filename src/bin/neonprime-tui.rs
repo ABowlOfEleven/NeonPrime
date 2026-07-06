@@ -29,8 +29,8 @@ mod tui {
     use ratatui::{DefaultTerminal, Frame};
 
     use neonprime::core::linux::{
-        apps, autostart, cleanup, debloat, dns, firewall, pkg, power, quick, restore, services,
-        telemetry, tweaks,
+        apps, autostart, cleanup, debloat, dns, firewall, gaming, gpudriver, pkg, power, quick,
+        restore, servers, services, telemetry, tweaks,
     };
 
     const CATS: &[&str] = &[
@@ -46,6 +46,8 @@ mod tui {
         "Restore",
         "Packages",
         "Services",
+        "Graphics",
+        "Servers",
     ];
 
     /// What activating an item does.
@@ -202,8 +204,93 @@ mod tui {
                     }
                 })
                 .collect(),
+            12 => graphics_items(),
+            13 => servers_items(),
             _ => Vec::new(),
         }
+    }
+
+    fn graphics_items() -> Vec<Item> {
+        let gpus = gpudriver::detect();
+        let summary = gpus
+            .iter()
+            .map(|g| g.vendor.label())
+            .collect::<Vec<_>>()
+            .join(" + ");
+        let mut items = vec![info(format!("GPUs: {summary}"))];
+        if gaming::is_hybrid() {
+            items.push(info(format!(
+                "dGPU launch options: {}",
+                gaming::launch_options()
+            )));
+        }
+        for v in [
+            gpudriver::Vendor::Nvidia,
+            gpudriver::Vendor::Amd,
+            gpudriver::Vendor::Intel,
+        ] {
+            if gpus.iter().any(|g| g.vendor == v) {
+                if let Some(c) = gpudriver::install_cmd(v) {
+                    let argv = c.argv.clone();
+                    items.push(Item {
+                        label: format!("Install {} driver/userspace", v.label()),
+                        detail: c.summary.clone(),
+                        run: Box::new(move || Outcome::Shell(argv.clone(), true)),
+                    });
+                }
+            }
+        }
+        if let Some(c) = gaming::install_tools_cmd() {
+            let argv = c.argv.clone();
+            items.push(Item {
+                label: "Install gaming tools".into(),
+                detail: c.summary.clone(),
+                run: Box::new(move || Outcome::Shell(argv.clone(), true)),
+            });
+        }
+        if let Some(c) = gaming::switcheroo_cmd() {
+            let argv = c.argv.clone();
+            items.push(Item {
+                label: "Enable per-app GPU switching".into(),
+                detail: "switcheroo-control (right-click 'Run with dedicated GPU')".into(),
+                run: Box::new(move || Outcome::Shell(argv.clone(), true)),
+            });
+        }
+        items
+    }
+
+    fn servers_items() -> Vec<Item> {
+        servers::catalog()
+            .iter()
+            .map(|s| {
+                let st = servers::status(s);
+                let state = if !st.installed {
+                    "absent"
+                } else if st.running {
+                    "running"
+                } else {
+                    "stopped"
+                };
+                let disable = st.enabled && st.installed;
+                let cmd = if disable {
+                    Some(servers::disable_cmd(s))
+                } else {
+                    servers::install_enable_cmd(s)
+                };
+                match cmd {
+                    Some(c) => {
+                        let argv = c.argv.clone();
+                        let verb = if disable { "disable" } else { "enable" };
+                        Item {
+                            label: format!("[{state}] {} ({verb})", s.name),
+                            detail: s.desc.to_string(),
+                            run: Box::new(move || Outcome::Shell(argv.clone(), true)),
+                        }
+                    }
+                    None => info(format!("{} (no package manager)", s.name)),
+                }
+            })
+            .collect()
     }
 
     fn tweaks_items() -> Vec<Item> {
