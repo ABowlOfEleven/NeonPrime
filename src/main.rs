@@ -1130,6 +1130,7 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
             name: t.name.into(),
             desc: t.desc.into(),
             size: "—".into(),
+            frac: 0.0,
             elevated: t.elevated,
         })
         .collect();
@@ -1198,23 +1199,55 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
         });
     }
 
+    // Rebuild the visible list from current sizes: largest target first, each row
+    // carrying its share of the biggest so the bar shows relative weight.
+    let rebuild: Rc<dyn Fn()> = {
+        let weak = app.as_weak();
+        let model = model.clone();
+        let sizes = sizes.clone();
+        Rc::new(move || {
+            let sizes = sizes.borrow();
+            let max = sizes.iter().copied().max().unwrap_or(0).max(1);
+            let mut rows: Vec<CleanRow> = cleanup::catalog()
+                .iter()
+                .enumerate()
+                .map(|(i, t)| {
+                    let sz = sizes.get(i).copied().unwrap_or(0);
+                    CleanRow {
+                        id: i as i32,
+                        name: t.name.into(),
+                        desc: t.desc.into(),
+                        size: cleanup::human(sz).into(),
+                        frac: sz as f32 / max as f32,
+                        elevated: t.elevated,
+                    }
+                })
+                .collect();
+            rows.sort_by(|a, b| {
+                let sa = sizes.get(a.id as usize).copied().unwrap_or(0);
+                let sb = sizes.get(b.id as usize).copied().unwrap_or(0);
+                sb.cmp(&sa)
+            });
+            model.set_vec(rows);
+            if let Some(app) = weak.upgrade() {
+                let total: u64 = sizes.iter().sum();
+                app.global::<Cleanup>()
+                    .set_total(cleanup::human(total).into());
+            }
+        })
+    };
+
     // Pump.
     let weak = app.as_weak();
-    let model2 = model.clone();
     let sizes2 = sizes.clone();
     let notify2 = notify.clone();
+    let rebuild2 = rebuild.clone();
     let timer = Timer::default();
     timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
         let mut dirty = false;
         while let Ok(msg) = rx.try_recv() {
             match msg {
                 CleanMsg::Scanned(v) => {
-                    for (i, &sz) in v.iter().enumerate() {
-                        if let Some(mut row) = model2.row_data(i) {
-                            row.size = cleanup::human(sz).into();
-                            model2.set_row_data(i, row);
-                        }
-                    }
                     *sizes2.borrow_mut() = v;
                     if let Some(app) = weak.upgrade() {
                         app.global::<Cleanup>().set_scanning(false);
@@ -1222,10 +1255,6 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
                     dirty = true;
                 }
                 CleanMsg::Cleaned { idx, size, name } => {
-                    if let Some(mut row) = model2.row_data(idx as usize) {
-                        row.size = cleanup::human(size).into();
-                        model2.set_row_data(idx as usize, row);
-                    }
                     if let Some(s) = sizes2.borrow_mut().get_mut(idx as usize) {
                         *s = size;
                     }
@@ -1235,11 +1264,7 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
             }
         }
         if dirty {
-            if let Some(app) = weak.upgrade() {
-                let total: u64 = sizes2.borrow().iter().sum();
-                app.global::<Cleanup>()
-                    .set_total(cleanup::human(total).into());
-            }
+            rebuild2();
         }
     });
     timer
@@ -1251,13 +1276,32 @@ fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     let model: Rc<VecModel<ProcRow>> = Rc::new(VecModel::default());
     app.global::<Procs>().set_rows(model.clone().into());
     let monitor = Rc::new(RefCell::new(procmon::ProcMonitor::new()));
+    // Last raw sample, so sort/filter can re-render without re-sampling the system.
+    let last: Rc<RefCell<Vec<procmon::Proc>>> = Rc::new(RefCell::new(Vec::new()));
 
-    let refresh: Rc<dyn Fn()> = {
+    // Apply the current filter + sort key to the last snapshot.
+    let apply: Rc<dyn Fn()> = {
         let weak = app.as_weak();
         let model = model.clone();
-        let monitor = monitor.clone();
+        let last = last.clone();
         Rc::new(move || {
-            let procs = monitor.borrow_mut().snapshot(40);
+            let Some(app) = weak.upgrade() else { return };
+            let q = app.global::<Procs>().get_filter_text().to_lowercase();
+            let key = app.global::<Procs>().get_sort_key();
+            let src = last.borrow();
+            let mut procs: Vec<&procmon::Proc> = src
+                .iter()
+                .filter(|p| q.is_empty() || p.name.to_lowercase().contains(&q))
+                .collect();
+            let cmp_f = |x: f32, y: f32| y.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal);
+            match key {
+                1 => procs.sort_by_key(|p| std::cmp::Reverse(p.mem)),
+                2 => procs.sort_by(|a, b| cmp_f(a.gpu, b.gpu)),
+                3 => procs.sort_by_key(|p| std::cmp::Reverse(p.vram)),
+                4 => procs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+                _ => procs.sort_by(|a, b| cmp_f(a.cpu, b.cpu)),
+            }
+            procs.truncate(60);
             let rows: Vec<ProcRow> = procs
                 .iter()
                 .map(|p| {
@@ -1283,15 +1327,28 @@ fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
                 .collect();
             let n = rows.len() as i32;
             model.set_vec(rows);
-            if let Some(app) = weak.upgrade() {
-                app.global::<Procs>().set_count(n);
-            }
+            app.global::<Procs>().set_count(n);
+        })
+    };
+
+    let refresh: Rc<dyn Fn()> = {
+        let monitor = monitor.clone();
+        let last = last.clone();
+        let apply = apply.clone();
+        Rc::new(move || {
+            let snap = monitor.borrow_mut().snapshot(300);
+            *last.borrow_mut() = snap;
+            apply();
         })
     };
     refresh();
     {
         let refresh = refresh.clone();
         app.global::<Procs>().on_refresh(move || refresh());
+    }
+    {
+        let apply = apply.clone();
+        app.global::<Procs>().on_reapply(move || apply());
     }
     {
         let notify = notify.clone();
@@ -1521,9 +1578,11 @@ fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     app.global::<Network>()
         .set_fw_rules(fw_model.clone().into());
 
+    let resolver = netmon::Resolver::new();
     let refresh: Rc<dyn Fn()> = {
         let weak = app.as_weak();
         let model = model.clone();
+        let resolver = resolver.clone();
         Rc::new(move || {
             let rows: Vec<NetRow> = netmon::connections()
                 .iter()
@@ -1531,6 +1590,7 @@ fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
                     proc_name: c.proc_name.as_str().into(),
                     pid: c.pid as i32,
                     remote: c.remote.as_str().into(),
+                    host: resolver.host(c.remote_ip).as_str().into(),
                     state: c.state.as_str().into(),
                     path: c.path.as_str().into(),
                 })
@@ -1611,6 +1671,39 @@ fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     refresh
 }
 
+/// Subsequence fuzzy match. Returns None when `needle` is not a subsequence of
+/// `hay`, otherwise a score that rewards contiguous runs, a prefix hit, and a
+/// straight substring hit. Case-insensitive.
+fn fuzzy_score(hay: &str, needle: &str) -> Option<i32> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    let hay_l = hay.to_lowercase();
+    let needle_l = needle.to_lowercase();
+    let mut chars = hay_l.chars();
+    let mut score = 0i32;
+    let mut streak = 0i32;
+    for nc in needle_l.chars() {
+        loop {
+            match chars.next() {
+                Some(hc) if hc == nc => {
+                    streak += 1;
+                    score += 1 + streak;
+                    break;
+                }
+                Some(_) => streak = 0,
+                None => return None,
+            }
+        }
+    }
+    if hay_l.starts_with(&needle_l) {
+        score += 20;
+    } else if hay_l.contains(&needle_l) {
+        score += 10;
+    }
+    Some(score)
+}
+
 /// Command palette (Ctrl+K): fuzzy list of panels to jump to + actions to run.
 /// id encodes the target — `<1000` nav page, `1000+` quick action, `2000+` mode.
 fn wire_palette(app: &AppWindow) {
@@ -1640,6 +1733,8 @@ fn wire_palette(app: &AppWindow) {
         cmds.push((format!("Activate {} mode", m.name), "Mode", 2000 + i as i32));
     }
     let cmds = Rc::new(cmds);
+    // Recently-run command ids, most-recent first (session-scoped).
+    let recents: Rc<RefCell<Vec<i32>>> = Rc::new(RefCell::new(Vec::new()));
 
     let model: Rc<VecModel<PaletteItem>> = Rc::new(VecModel::default());
     app.global::<Palette>().set_items(model.clone().into());
@@ -1648,21 +1743,35 @@ fn wire_palette(app: &AppWindow) {
         let weak = app.as_weak();
         let cmds = cmds.clone();
         let model = model.clone();
+        let recents = recents.clone();
         app.global::<Palette>().on_filter(move || {
             let q = weak
                 .upgrade()
                 .map(|a| a.global::<Palette>().get_query().to_lowercase())
                 .unwrap_or_default();
-            let items: Vec<PaletteItem> = cmds
-                .iter()
-                .filter(|(l, _, _)| q.is_empty() || l.to_lowercase().contains(&q))
-                .take(50)
-                .map(|(l, h, id)| PaletteItem {
-                    label: l.as_str().into(),
-                    hint: (*h).into(),
-                    id: *id,
-                })
-                .collect();
+            let to_item = |(l, h, id): &(String, &'static str, i32)| PaletteItem {
+                label: l.as_str().into(),
+                hint: (*h).into(),
+                id: *id,
+            };
+            let items: Vec<PaletteItem> = if q.is_empty() {
+                // Empty query: recents first (recency order), then the rest.
+                let rec = recents.borrow();
+                let mut ordered: Vec<&(String, &'static str, i32)> = rec
+                    .iter()
+                    .filter_map(|id| cmds.iter().find(|(_, _, cid)| cid == id))
+                    .collect();
+                ordered.extend(cmds.iter().filter(|(_, _, id)| !rec.contains(id)));
+                ordered.into_iter().take(50).map(to_item).collect()
+            } else {
+                // Fuzzy: keep subsequence matches, best score first.
+                let mut scored: Vec<(i32, &(String, &'static str, i32))> = cmds
+                    .iter()
+                    .filter_map(|c| fuzzy_score(&c.0, &q).map(|s| (s, c)))
+                    .collect();
+                scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1 .0.len().cmp(&b.1 .0.len())));
+                scored.into_iter().take(50).map(|(_, c)| to_item(c)).collect()
+            };
             model.set_vec(items);
         });
     }
@@ -1670,7 +1779,14 @@ fn wire_palette(app: &AppWindow) {
 
     {
         let weak = app.as_weak();
+        let recents = recents.clone();
         app.global::<Palette>().on_run(move |id| {
+            {
+                let mut rec = recents.borrow_mut();
+                rec.retain(|&x| x != id);
+                rec.insert(0, id);
+                rec.truncate(8);
+            }
             let Some(app) = weak.upgrade() else { return };
             if id >= 2000 {
                 app.global::<Modes>().invoke_activate(id - 2000);

@@ -202,6 +202,7 @@ export struct CleanRow {
     name: string,
     desc: string,
     size: string,
+    frac: float, // size as a share of the largest target (0..1), for the bar
     elevated: bool,
 }
 
@@ -217,6 +218,7 @@ export struct NetRow {
     proc-name: string,
     pid: int,
     remote: string,
+    host: string,
     state: string,
     path: string,
 }
@@ -244,7 +246,10 @@ export struct ProcRow {
 export global Procs {
     in property <[ProcRow]> rows;
     in property <int> count;
+    in-out property <string> filter-text;
+    in-out property <int> sort-key: 0; // 0 cpu, 1 mem, 2 gpu, 3 vram, 4 name
     callback refresh();
+    callback reapply(); // re-sort / re-filter the last snapshot (no re-sample)
     callback kill(int);
 }
 
@@ -1918,6 +1923,19 @@ component CleanupRowView inherits Rectangle {
                 font-size: 10px;
                 overflow: elide;
             }
+            // Reclaimable-size bar, relative to the largest target.
+            Rectangle {
+                height: 3px;
+                border-radius: 1.5px;
+                background: Theme.track;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * max(root.target.frac, 0.0);
+                    height: parent.height;
+                    border-radius: 1.5px;
+                    background: Theme.accent.with-alpha(0.7);
+                }
+            }
         }
         VerticalLayout {
             alignment: center;
@@ -1994,7 +2012,7 @@ component NetRowView inherits Rectangle {
                 overflow: elide;
             }
             Text {
-                text: root.conn.remote;
+                text: root.conn.host != "" ? root.conn.remote + "  ·  " + root.conn.host : root.conn.remote;
                 color: Theme.text-dim;
                 font-size: 10px;
                 overflow: elide;
@@ -2218,13 +2236,36 @@ component ProcRowView inherits Rectangle {
     }
 }
 
+// A clickable, right-aligned column header that sorts the process list by `key`.
+component SortHeader inherits Rectangle {
+    in property <string> label;
+    in property <int> key;
+    in property <length> w: 46px;
+    width: root.w;
+    height: 16px;
+    TouchArea {
+        clicked => {
+            Procs.sort-key = root.key;
+            Procs.reapply();
+        }
+    }
+    Text {
+        width: 100%;
+        text: root.label;
+        color: Procs.sort-key == root.key ? Theme.accent-soft : Theme.text-dim;
+        font-size: 10px;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+}
+
 component ProcessesView inherits VerticalLayout {
     padding-top: 18px;
     padding-bottom: 8px;
     spacing: 10px;
     PanelHeader {
         title: "PROCESSES";
-        hint: Procs.count + " shown · by CPU";
+        hint: Procs.count + " shown";
         PushButton {
             w: 90px;
             label: "REFRESH";
@@ -2233,16 +2274,64 @@ component ProcessesView inherits VerticalLayout {
             }
         }
     }
-    // Column headers
+    // Filter
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        Rectangle {
+            height: 32px;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.divider;
+            background: Theme.track;
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                TextInput {
+                    text <=> Procs.filter-text;
+                    color: Theme.text-body;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    single-line: true;
+                    horizontal-stretch: 1;
+                    edited => {
+                        Procs.reapply();
+                    }
+                }
+            }
+            if Procs.filter-text == "": Text {
+                x: 13px;
+                text: "Filter by process name…";
+                color: Theme.text-dim;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+    }
+    // Column headers (click to sort)
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
         spacing: 8px;
-        Rectangle { horizontal-stretch: 1; }
-        Text { width: 46px; text: "CPU"; color: Theme.text-dim; font-size: 10px; horizontal-alignment: right; }
-        Text { width: 64px; text: "RAM"; color: Theme.text-dim; font-size: 10px; horizontal-alignment: right; }
-        Text { width: 46px; text: "GPU"; color: Theme.text-dim; font-size: 10px; horizontal-alignment: right; }
-        Text { width: 64px; text: "VRAM"; color: Theme.text-dim; font-size: 10px; horizontal-alignment: right; }
+        Rectangle {
+            horizontal-stretch: 1;
+            TouchArea {
+                clicked => {
+                    Procs.sort-key = 4;
+                    Procs.reapply();
+                }
+            }
+            Text {
+                text: "PROCESS";
+                color: Procs.sort-key == 4 ? Theme.accent-soft : Theme.text-dim;
+                font-size: 10px;
+                vertical-alignment: center;
+            }
+        }
+        SortHeader { label: "CPU"; key: 0; w: 46px; }
+        SortHeader { label: "RAM"; key: 1; w: 64px; }
+        SortHeader { label: "GPU"; key: 2; w: 46px; }
+        SortHeader { label: "VRAM"; key: 3; w: 64px; }
         Rectangle { width: 58px; }
     }
     if Procs.rows.length == 0: EmptyState {
