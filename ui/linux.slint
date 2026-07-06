@@ -157,6 +157,27 @@ export global Quick {
     callback run(int);
 }
 
+export global Firewall {
+    in property <bool> available: false;
+    in property <int> enabled: -1; // -1 unknown, 0 off, 1 on
+    callback enable();
+    callback disable();
+    callback reset();
+}
+
+export struct AutostartRow {
+    name: string,
+    file: string,
+    enabled: bool,
+    system: bool,
+}
+
+export global Autostart {
+    in property <[AutostartRow]> rows;
+    callback refresh();
+    callback toggle(string, bool);
+}
+
 export global Nav {
     in-out property <int> page: 0;
     callback changed(int);
@@ -1080,6 +1101,143 @@ component QuickView inherits VerticalLayout {
     }
 }
 
+component FirewallView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 16px;
+    PanelHeader {
+        title: "FIREWALL";
+        hint: !Firewall.available ? "ufw not installed" : (Firewall.enabled == 1 ? "ufw active" : Firewall.enabled == 0 ? "ufw inactive" : "ufw (state unknown, needs root)");
+    }
+    if !Firewall.available: EmptyState {
+        vertical-stretch: 1;
+        text: "ufw (Uncomplicated Firewall) is not installed.";
+    }
+    if Firewall.available: VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 14px;
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: start;
+            Rectangle {
+                width: 96px;
+                height: 26px;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: Firewall.enabled == 1 ? Theme.accent : Theme.divider;
+                background: (Firewall.enabled == 1 ? Theme.accent : Theme.text-dim).with-alpha(0.12);
+                Text {
+                    text: Firewall.enabled == 1 ? "ACTIVE" : Firewall.enabled == 0 ? "INACTIVE" : "UNKNOWN";
+                    color: Firewall.enabled == 1 ? Theme.accent-soft : Theme.text-dim;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+            PushButton {
+                w: 90px;
+                label: "ENABLE";
+                clicked => {
+                    Firewall.enable();
+                }
+            }
+            PushButton {
+                w: 90px;
+                danger: true;
+                label: "DISABLE";
+                clicked => {
+                    Firewall.disable();
+                }
+            }
+            PushButton {
+                w: 90px;
+                danger: true;
+                label: "RESET";
+                clicked => {
+                    Firewall.reset();
+                }
+            }
+        }
+        Text {
+            text: "Enable/disable/reset go through pkexec. Listing individual rules needs root; use `sudo ufw status numbered` in a terminal.";
+            color: Theme.text-dim;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+component AutostartView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "AUTOSTART";
+        hint: Autostart.rows.length + " entr(ies)";
+        PushButton {
+            label: "REFRESH";
+            clicked => {
+                Autostart.refresh();
+            }
+        }
+    }
+    if Autostart.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No autostart entries found.";
+    }
+    if Autostart.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for a in Autostart.rows: Rectangle {
+            height: 52px;
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+                        Text {
+                            text: a.name;
+                            color: Theme.text-body;
+                            font-size: 13px;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: a.system ? "· SYSTEM" : "";
+                            color: Theme.text-dim;
+                            font-size: 10px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    FilterChip {
+                        label: a.enabled ? "ENABLED" : "DISABLED";
+                        active: a.enabled;
+                        clicked => {
+                            Autostart.toggle(a.file, !a.enabled);
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                x: 0;
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.divider;
+            }
+        }
+    }
+}
+
 // ── Root window ─────────────────────────────────────────────────────────────
 export component AppWindow inherits Window {
     title: "NeonPrime";
@@ -1123,7 +1281,9 @@ export component AppWindow inherits Window {
                 NavItem { label: "Services"; page: 3; }
                 NavItem { label: "Packages"; page: 4; }
                 NavItem { label: "DNS"; page: 5; }
+                NavItem { label: "Firewall"; page: 9; }
                 NavItem { label: "Power"; page: 7; }
+                NavItem { label: "Autostart"; page: 10; }
                 Text { text: "MAINTENANCE"; color: Theme.text-dim; font-size: 9px; letter-spacing: 1px; x: 18px; }
                 NavItem { label: "Cleanup"; page: 6; }
                 NavItem { label: "Quick Actions"; page: 8; }
@@ -1142,6 +1302,8 @@ export component AppWindow inherits Window {
             if Nav.page == 6: CleanupView {}
             if Nav.page == 7: PowerView {}
             if Nav.page == 8: QuickView {}
+            if Nav.page == 9: FirewallView {}
+            if Nav.page == 10: AutostartView {}
         }
     }
 }

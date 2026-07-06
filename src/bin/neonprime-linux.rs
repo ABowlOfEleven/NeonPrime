@@ -26,7 +26,8 @@ mod ui {
     use slint::{Model, Timer, TimerMode, VecModel};
 
     use neonprime::core::linux::{
-        cleanup, dns, netmon, pkg, power, procmon, quick, services, telemetry, ElevatedCmd,
+        autostart, cleanup, dns, firewall, netmon, pkg, power, procmon, quick, services, telemetry,
+        ElevatedCmd,
     };
 
     const HISTORY: usize = 60;
@@ -80,6 +81,8 @@ mod ui {
         wire_cleanup(&app);
         wire_power(&app);
         wire_quick(&app);
+        let refresh_fw = wire_firewall(&app);
+        let refresh_auto = wire_autostart(&app);
 
         // Nav change: refresh the panel being shown.
         {
@@ -92,6 +95,8 @@ mod ui {
                     1 => refresh_procs(),
                     2 => refresh_net(),
                     3 => app.global::<Services>().invoke_refresh(),
+                    9 => refresh_fw(),
+                    10 => refresh_auto(),
                     _ => {}
                 }
             });
@@ -616,5 +621,71 @@ mod ui {
                 app.global::<Quick>().set_status(status.into());
             }
         });
+    }
+
+    /// ufw firewall: enabled state (read from config) + enable/disable/reset.
+    fn wire_firewall(app: &AppWindow) -> Rc<dyn Fn()> {
+        let refresh: Rc<dyn Fn()> = {
+            let weak = app.as_weak();
+            Rc::new(move || {
+                let Some(app) = weak.upgrade() else { return };
+                let fw = app.global::<Firewall>();
+                fw.set_available(firewall::available());
+                fw.set_enabled(match firewall::enabled() {
+                    Some(true) => 1,
+                    Some(false) => 0,
+                    None => -1,
+                });
+            })
+        };
+        refresh();
+
+        let bind = |cmd: ElevatedCmd, refresh: Rc<dyn Fn()>| {
+            move || {
+                let _ = run_elevated(&cmd, true);
+                refresh();
+            }
+        };
+        app.global::<Firewall>()
+            .on_enable(bind(firewall::enable(), refresh.clone()));
+        app.global::<Firewall>()
+            .on_disable(bind(firewall::disable(), refresh.clone()));
+        app.global::<Firewall>()
+            .on_reset(bind(firewall::reset(), refresh.clone()));
+        refresh
+    }
+
+    /// XDG autostart entries + enable/disable via the Hidden key (no elevation).
+    fn wire_autostart(app: &AppWindow) -> Rc<dyn Fn()> {
+        let refresh: Rc<dyn Fn()> = {
+            let weak = app.as_weak();
+            Rc::new(move || {
+                let Some(app) = weak.upgrade() else { return };
+                let rows: Vec<AutostartRow> = autostart::entries()
+                    .iter()
+                    .map(|e| AutostartRow {
+                        name: e.name.as_str().into(),
+                        file: e.file.as_str().into(),
+                        enabled: e.enabled,
+                        system: e.system,
+                    })
+                    .collect();
+                app.global::<Autostart>()
+                    .set_rows(Rc::new(VecModel::from(rows)).into());
+            })
+        };
+        refresh();
+        {
+            let refresh = refresh.clone();
+            app.global::<Autostart>().on_refresh(move || refresh());
+        }
+        {
+            let refresh = refresh.clone();
+            app.global::<Autostart>().on_toggle(move |file, enabled| {
+                let _ = autostart::set_enabled(&file, enabled);
+                refresh();
+            });
+        }
+        refresh
     }
 }

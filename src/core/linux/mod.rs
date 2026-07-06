@@ -16,8 +16,10 @@
 //! that the UI runs after an explicit confirmation, the Linux analog of handing a
 //! script to the elevated broker.
 
+pub mod autostart;
 pub mod cleanup;
 pub mod dns;
+pub mod firewall;
 pub mod netmon;
 pub mod pkg;
 pub mod power;
