@@ -222,7 +222,7 @@ mod ui {
                     .collect();
                 match key {
                     1 => procs.sort_by_key(|p| std::cmp::Reverse(p.mem)),
-                    2 => procs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+                    2 => procs.sort_by_key(|p| p.name.to_lowercase()),
                     _ => procs.sort_by(|a, b| {
                         b.cpu
                             .partial_cmp(&a.cpu)

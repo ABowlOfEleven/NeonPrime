@@ -93,7 +93,7 @@ pub fn entries() -> Vec<Entry> {
         }
     }
     let mut v: Vec<Entry> = map.into_values().collect();
-    v.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    v.sort_by_key(|e| e.name.to_lowercase());
     v
 }
 

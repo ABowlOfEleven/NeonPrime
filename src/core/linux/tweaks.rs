@@ -466,7 +466,7 @@ mod tests {
 
     #[test]
     fn catalog_covers_every_backend() {
-        let has = |f: fn(&&Tweak) -> bool| catalog().iter().any(f);
+        let has = |f: fn(&Tweak) -> bool| catalog().iter().any(f);
         assert!(has(|t| matches!(t.op, Op::Gsettings { .. })));
         assert!(has(|t| matches!(t.op, Op::Kconfig { .. })));
         assert!(has(|t| matches!(t.op, Op::Xfconf { .. })));
