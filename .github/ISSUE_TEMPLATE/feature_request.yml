@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest a panel, tweak, or capability
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Both
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      placeholder: "I want to ... but currently ..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should NeonPrime do? Which panel would it live in?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or prior art (optional)
+      description: Existing tools/commands that do this, or other approaches you considered.
