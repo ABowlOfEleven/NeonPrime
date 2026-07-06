@@ -25,7 +25,9 @@ mod ui {
 
     use slint::{Model, Timer, TimerMode, VecModel};
 
-    use neonprime::core::linux::{dns, netmon, pkg, procmon, services, telemetry, ElevatedCmd};
+    use neonprime::core::linux::{
+        cleanup, dns, netmon, pkg, power, procmon, quick, services, telemetry, ElevatedCmd,
+    };
 
     const HISTORY: usize = 60;
 
@@ -75,6 +77,9 @@ mod ui {
         wire_services(&app);
         wire_packages(&app);
         wire_dns(&app);
+        wire_cleanup(&app);
+        wire_power(&app);
+        wire_quick(&app);
 
         // Nav change: refresh the panel being shown.
         {
@@ -438,6 +443,177 @@ mod ui {
         app.global::<Dns>().on_set(move |idx| {
             if let Some(cmd) = dns::set_cmd(idx as usize, &link) {
                 let _ = run_elevated(&cmd, true);
+            }
+        });
+    }
+
+    /// Build the Cleanup model from a fresh set of per-target sizes: largest
+    /// first, each with its share of the biggest for the bar. Runs on the UI
+    /// thread (posted from the scan thread).
+    fn fill_cleanup(app: &AppWindow, sizes: &[u64]) {
+        let max = sizes.iter().copied().max().unwrap_or(0).max(1);
+        let mut indexed: Vec<(usize, CleanRow)> = cleanup::catalog()
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                let sz = sizes.get(i).copied().unwrap_or(0);
+                (
+                    i,
+                    CleanRow {
+                        id: i as i32,
+                        name: t.name.into(),
+                        desc: t.desc.into(),
+                        size: neonprime::core::linux::human(sz).into(),
+                        frac: sz as f32 / max as f32,
+                        elevated: t.elevated,
+                    },
+                )
+            })
+            .collect();
+        indexed.sort_by(|a, b| {
+            sizes
+                .get(b.0)
+                .copied()
+                .unwrap_or(0)
+                .cmp(&sizes.get(a.0).copied().unwrap_or(0))
+        });
+        let rows: Vec<CleanRow> = indexed.into_iter().map(|(_, r)| r).collect();
+        let total: u64 = sizes.iter().sum();
+        app.global::<Cleanup>()
+            .set_rows(Rc::new(VecModel::from(rows)).into());
+        app.global::<Cleanup>()
+            .set_total(neonprime::core::linux::human(total).into());
+        app.global::<Cleanup>().set_scanning(false);
+    }
+
+    /// Disk cleanup: sizes scanned off-thread, cleaned in-process (user) or via
+    /// pkexec (system).
+    fn wire_cleanup(app: &AppWindow) {
+        app.global::<Cleanup>().set_scanning(true);
+
+        let scan = {
+            let weak = app.as_weak();
+            move || {
+                let weak = weak.clone();
+                std::thread::spawn(move || {
+                    let sizes: Vec<u64> = cleanup::catalog()
+                        .iter()
+                        .map(|t| cleanup::size_of(t.id))
+                        .collect();
+                    let _ = weak.upgrade_in_event_loop(move |app| fill_cleanup(&app, &sizes));
+                });
+            }
+        };
+        scan();
+
+        {
+            let weak = app.as_weak();
+            let scan = scan.clone();
+            app.global::<Cleanup>().on_rescan(move || {
+                if let Some(app) = weak.upgrade() {
+                    app.global::<Cleanup>().set_scanning(true);
+                }
+                scan();
+            });
+        }
+        {
+            let weak = app.as_weak();
+            app.global::<Cleanup>().on_clean(move |idx| {
+                let Some(t) = cleanup::catalog().get(idx as usize) else {
+                    return;
+                };
+                if t.elevated {
+                    if let Some(cmd) = cleanup::clean_cmd(t.id) {
+                        let _ = run_elevated(&cmd, true);
+                    }
+                    return;
+                }
+                let id = t.id;
+                let weak = weak.clone();
+                std::thread::spawn(move || {
+                    let _ = cleanup::clean(id);
+                    let sizes: Vec<u64> = cleanup::catalog()
+                        .iter()
+                        .map(|t| cleanup::size_of(t.id))
+                        .collect();
+                    let _ = weak.upgrade_in_event_loop(move |app| fill_cleanup(&app, &sizes));
+                });
+            });
+        }
+    }
+
+    /// Power profiles via power-profiles-daemon.
+    fn wire_power(app: &AppWindow) {
+        app.global::<Power>().set_available(power::available());
+        let profs: Vec<PowerProfile> = power::profiles()
+            .iter()
+            .enumerate()
+            .map(|(i, p)| PowerProfile {
+                id: i as i32,
+                name: p.name.into(),
+            })
+            .collect();
+        app.global::<Power>()
+            .set_profiles(Rc::new(VecModel::from(profs)).into());
+
+        let set_active = {
+            let weak = app.as_weak();
+            move || {
+                let Some(app) = weak.upgrade() else { return };
+                let idx = power::active()
+                    .and_then(|a| power::profiles().iter().position(|p| p.id == a.as_str()))
+                    .map(|i| i as i32)
+                    .unwrap_or(-1);
+                app.global::<Power>().set_active(idx);
+            }
+        };
+        set_active();
+
+        {
+            let set_active = set_active.clone();
+            app.global::<Power>().on_set(move |idx| {
+                if let Some(p) = power::profiles().get(idx as usize) {
+                    let argv = power::set_argv(p.id);
+                    let _ = Command::new(&argv[0]).args(&argv[1..]).status();
+                }
+                set_active();
+            });
+        }
+    }
+
+    /// Quick maintenance actions.
+    fn wire_quick(app: &AppWindow) {
+        let items: Vec<QuickItem> = quick::catalog()
+            .iter()
+            .enumerate()
+            .map(|(i, a)| QuickItem {
+                id: i as i32,
+                name: a.name.into(),
+                desc: a.desc.into(),
+                privileged: a.privileged,
+            })
+            .collect();
+        app.global::<Quick>()
+            .set_actions(Rc::new(VecModel::from(items)).into());
+
+        let weak = app.as_weak();
+        app.global::<Quick>().on_run(move |idx| {
+            let Some(a) = quick::catalog().get(idx as usize) else {
+                return;
+            };
+            let Some(argv) = quick::run_argv(a.id) else {
+                return;
+            };
+            let argv = if a.privileged {
+                let mut v = vec!["pkexec".to_string()];
+                v.extend(argv);
+                v
+            } else {
+                argv
+            };
+            let status = spawn_cmd(&argv);
+            if let Some(app) = weak.upgrade() {
+                app.global::<Quick>().set_status(status.into());
             }
         });
     }

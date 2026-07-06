@@ -16,10 +16,13 @@
 //! that the UI runs after an explicit confirmation, the Linux analog of handing a
 //! script to the elevated broker.
 
+pub mod cleanup;
 pub mod dns;
 pub mod netmon;
 pub mod pkg;
+pub mod power;
 pub mod procmon;
+pub mod quick;
 pub mod services;
 pub mod telemetry;
 
