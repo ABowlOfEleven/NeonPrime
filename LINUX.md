@@ -10,16 +10,29 @@ native Linux release.
 | --- | --- |
 | Cross-platform compile (one source tree) | Done. The crate and Linux backend build on Linux; the Windows build is unchanged. |
 | Linux system backend (`src/core/linux`) | Done (scaffold). Telemetry, processes, network, systemd, packages, DNS, with unit tests. |
-| Linux desktop UI binary (`neonprime-linux`) | Done (first cut). Slint window with all six panels wired to the backend; verified on Linux CI. |
+| Linux desktop UI binary (`neonprime-linux`) | Done. Slint window, eleven panels wired to the backend; verified on Linux CI. |
 | Packaging (AppImage, tarball, deb, rpm) | Builds and ships `neonprime-linux` (installed as `neonprime`). |
 
 The Linux UI is `ui/linux.slint` + `src/bin/neonprime-linux.rs`. It shares the
-holographic look of the Windows deck with six panels: Dashboard (live CPU / RAM /
-temp / load + a CPU sparkline and specs), Processes (sortable + filterable, kill),
-Network (outbound connections with reverse-DNS), Services (systemd list + start /
-stop / enable / disable), Packages (detected managers + install / remove / update),
-and DNS (provider switch on the default link). Privileged actions run through
-`pkexec`.
+holographic look of the Windows deck with eleven panels, covering every Windows
+feature that has a real Linux analog:
+
+- Dashboard: live CPU / RAM / CPU-temp meters, a CPU sparkline, and specs.
+- Processes: sortable (CPU / RAM / name) + name-filterable, kill.
+- Network: outbound connections with cached reverse-DNS.
+- Firewall: ufw enabled state + enable / disable / reset.
+- Services: systemd list (lazy) + start / stop / enable / disable.
+- Packages: detected managers (apt / dnf / pacman / zypper / flatpak) +
+  install / remove / update-all.
+- DNS: provider switch on the default-route link (resolvectl).
+- Cleanup: cache / Trash / package-cache / journald sizing, sorted with bars.
+- Power: power-profiles-daemon (power-saver / balanced / performance).
+- Autostart: XDG autostart entries, toggled via the Hidden key.
+- Quick Actions: flush DNS, clear cache, empty Trash, drop memory caches.
+
+Privileged actions run through `pkexec`. The Windows-only panels (registry
+Tweaks, DISM Features, Appx Debloat, MicroWin, the Privacy score, and the
+reversible History over the elevated broker) have no Linux equivalent by nature.
 
 > Note: because Slint's Linux stack needs `fontconfig`/`xcb` at build time, the
 > Linux UI can only be compiled on Linux (or a Linux CI runner), not
@@ -59,6 +72,11 @@ broker rather than mutating the system inline.
 | `services` | `systemctl` | Service Control Manager |
 | `pkg` | apt / dnf / pacman / zypper / flatpak | winget |
 | `dns` | `resolvectl` | `netsh` |
+| `cleanup` | dir walk + `pkexec` package/journal clean | Cleanup panel |
+| `power` | `powerprofilesctl` | power plans / System Modes |
+| `quick` | one-shot maintenance commands | Quick Actions |
+| `firewall` | ufw (`/etc/ufw/ufw.conf` + `pkexec ufw`) | Windows Firewall |
+| `autostart` | XDG `~/.config/autostart` + `/etc/xdg/autostart` | Startup |
 
 ## Building and packaging locally
 
@@ -80,11 +98,13 @@ point it should trigger on version tags and publish to the release.
 
 ## What is next
 
-1. A Linux UI binary (`src/bin/neonprime-linux.rs` or a `cfg`-selected `main`)
-   that brings up the Slint shell against the Linux backend, starting with the
-   monitor panels (dashboard, processes, network) and then the management panels
-   (services, packages, DNS).
-2. Promote shared UI/backend traits into `src/platform.rs`.
+1. Run `neonprime-linux` on real hardware (CI compiles and tests it, but a GUI
+   can't be exercised headlessly). Once confirmed, flip `package-linux.yml` to
+   trigger on version tags and publish the AppImage / tarball / deb / rpm to the
+   release alongside the Windows MSI.
+2. Promote shared UI/backend traits into `src/platform.rs` so the two UIs stop
+   duplicating structure.
 3. GPU telemetry on Linux (NVML for NVIDIA, `/sys/class/drm` + amdgpu/i915 hwmon
    for AMD/Intel), and IPv6 connections (`/proc/net/tcp6`).
-4. Flip `package-linux.yml` to publish real release artifacts.
+4. Nice-to-haves: per-process GPU on Linux, firewalld support alongside ufw, and
+   a curated Packages catalog (the winget-catalog analog).
