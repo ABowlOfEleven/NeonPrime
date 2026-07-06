@@ -4,8 +4,6 @@
 //! produces install/remove/update command lines. System managers are wrapped in
 //! `pkexec`; Flatpak installs per-user and is run directly.
 
-use std::path::Path;
-
 use super::ElevatedCmd;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
