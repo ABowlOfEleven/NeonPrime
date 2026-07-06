@@ -21,13 +21,14 @@ mod ui {
     use std::cell::RefCell;
     use std::process::Command;
     use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
     use slint::{Model, Timer, TimerMode, VecModel};
 
     use neonprime::core::linux::{
         autostart, cleanup, dns, firewall, netmon, pkg, power, procmon, quick, services, telemetry,
-        ElevatedCmd,
+        tweaks, ElevatedCmd,
     };
 
     const HISTORY: usize = 60;
@@ -83,6 +84,7 @@ mod ui {
         wire_quick(&app);
         let refresh_fw = wire_firewall(&app);
         let refresh_auto = wire_autostart(&app);
+        let refresh_tweaks = wire_tweaks(&app);
 
         // Nav change: refresh the panel being shown.
         {
@@ -97,6 +99,7 @@ mod ui {
                     3 => app.global::<Services>().invoke_refresh(),
                     9 => refresh_fw(),
                     10 => refresh_auto(),
+                    11 => refresh_tweaks(),
                     _ => {}
                 }
             });
@@ -687,5 +690,102 @@ mod ui {
             });
         }
         refresh
+    }
+
+    /// Rebuild the Tweaks list from the current desktop's tweaks + applied state,
+    /// honouring the search box and category chip.
+    fn fill_tweaks(app: &AppWindow, applied: &Arc<Mutex<Vec<bool>>>) {
+        let g = app.global::<Tweaks>();
+        let q = g.get_filter_text().to_lowercase();
+        let cat = match g.get_category() {
+            1 => Some("Interface"),
+            2 => Some("Performance"),
+            3 => Some("Privacy"),
+            _ => None,
+        };
+        let states = applied.lock().unwrap();
+        let rows: Vec<TweakRow> = tweaks::for_current()
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| cat.is_none_or(|c| t.category == c))
+            .filter(|(_, t)| {
+                q.is_empty()
+                    || t.name.to_lowercase().contains(&q)
+                    || t.desc.to_lowercase().contains(&q)
+            })
+            .map(|(i, t)| TweakRow {
+                id: i as i32,
+                name: t.name.into(),
+                desc: t.desc.into(),
+                category: t.category.into(),
+                applied: states.get(i).copied().unwrap_or(false),
+                privileged: tweaks::privileged(t),
+            })
+            .collect();
+        let n = rows.len() as i32;
+        g.set_rows(Rc::new(VecModel::from(rows)).into());
+        g.set_count(n);
+    }
+
+    /// Desktop tweaks (gsettings / KConfig / xfconf / sysctl), DE-detected. Live
+    /// applied state is scanned off-thread; toggles run the config tool (pkexec
+    /// for sysctl) and rescan.
+    fn wire_tweaks(app: &AppWindow) -> Rc<dyn Fn()> {
+        let de = tweaks::detect();
+        app.global::<Tweaks>().set_de_name(de.label().into());
+        app.global::<Tweaks>()
+            .set_available(tweaks::tools_available(de));
+
+        let applied = Arc::new(Mutex::new(vec![false; tweaks::for_current().len()]));
+
+        let scan: Rc<dyn Fn()> = {
+            let weak = app.as_weak();
+            let applied = applied.clone();
+            Rc::new(move || {
+                let weak = weak.clone();
+                let applied = applied.clone();
+                std::thread::spawn(move || {
+                    let states: Vec<bool> = tweaks::for_current()
+                        .iter()
+                        .map(|t| tweaks::is_applied(t))
+                        .collect();
+                    let _ = weak.upgrade_in_event_loop(move |app| {
+                        *applied.lock().unwrap() = states;
+                        fill_tweaks(&app, &applied);
+                    });
+                });
+            })
+        };
+        scan();
+
+        {
+            let weak = app.as_weak();
+            let applied = applied.clone();
+            app.global::<Tweaks>().on_filter(move || {
+                if let Some(app) = weak.upgrade() {
+                    fill_tweaks(&app, &applied);
+                }
+            });
+        }
+        {
+            let scan = scan.clone();
+            app.global::<Tweaks>().on_toggle(move |id| {
+                let list = tweaks::for_current();
+                let Some(t) = list.get(id as usize) else {
+                    return;
+                };
+                let want = !tweaks::is_applied(t);
+                let argv = tweaks::apply_argv(t, want);
+                if tweaks::privileged(t) {
+                    let mut v = vec!["pkexec".to_string()];
+                    v.extend(argv);
+                    let _ = spawn_cmd(&v);
+                } else {
+                    let _ = Command::new(&argv[0]).args(&argv[1..]).status();
+                }
+                scan();
+            });
+        }
+        scan
     }
 }

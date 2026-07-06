@@ -27,6 +27,7 @@ pub mod procmon;
 pub mod quick;
 pub mod services;
 pub mod telemetry;
+pub mod tweaks;
 
 /// A privileged command the UI should run (typically via `pkexec`), plus a
 /// human-readable summary for the confirmation prompt. Nothing here executes on
