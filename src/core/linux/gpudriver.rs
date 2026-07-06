@@ -36,9 +36,15 @@ pub struct Gpu {
 
 fn vendor_of(text: &str) -> Vendor {
     let t = text.to_lowercase();
+    // Order matters and markers must be specific: bare "ati" would match
+    // "corpor-ati-on", so use "radeon" / "advanced micro devices" / "ati technologies".
     if t.contains("nvidia") {
         Vendor::Nvidia
-    } else if t.contains("amd") || t.contains("ati") || t.contains("advanced micro devices") {
+    } else if t.contains("amd")
+        || t.contains("radeon")
+        || t.contains("advanced micro devices")
+        || t.contains("ati technologies")
+    {
         Vendor::Amd
     } else if t.contains("intel") {
         Vendor::Intel
