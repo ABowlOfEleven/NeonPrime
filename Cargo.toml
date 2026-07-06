@@ -2,23 +2,27 @@
 name = "neonprime"
 version = "3.0.1"
 edition = "2021"
-description = "A holographic system control deck for Windows. One machine, three modes. It counts all the way to three."
+description = "A holographic system control deck. One machine, three modes. It counts all the way to three."
 authors = ["NeonPrime contributors"]
 license = "MIT"
 
+# Cross-platform dependencies (Windows + Linux).
 [dependencies]
 slint = "1"
 sysinfo = "0.33"
-nvml-wrapper = "0.10"
-dns-lookup = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 single-instance = "0.3"
 toml = "0.8"
+dns-lookup = "2"
+
+# Windows-only backend: registry, WMI, DXGI/PDH telemetry, NVML, shell.
+[target.'cfg(windows)'.dependencies]
+nvml-wrapper = "0.10"
 winreg = "0.52"
 wmi = "0.14"
 
-[dependencies.windows]
+[target.'cfg(windows)'.dependencies.windows]
 version = "0.58"
 features = [
     "Win32_Foundation",
@@ -32,6 +36,9 @@ features = [
 
 [build-dependencies]
 slint-build = "1"
+
+# Icon embedding is Windows-only, so its build dep is too.
+[target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 
 # Dev-only: rasterize SVG icons to PNG so they can be previewed during design.
