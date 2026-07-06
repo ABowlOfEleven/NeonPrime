@@ -1,0 +1,56 @@
+name: Bug report
+description: Something in NeonPrime is broken or behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For a **security vulnerability**, do not file a
+        public issue, report it privately (see SECURITY.md).
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows
+        - Linux (GUI)
+        - Linux (TUI)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: NeonPrime version
+      placeholder: "3.1.0"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS / distro + desktop
+      placeholder: "Windows 11 23H2  /  Fedora 41 KDE  /  Ubuntu 24.04 GNOME"
+  - type: input
+    id: panel
+    attributes:
+      label: Which panel or feature
+      placeholder: "Tweaks, Graphics, Services, ..."
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the ... panel
+        2. Click ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs. actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Logs, screenshots, or notes (optional)
