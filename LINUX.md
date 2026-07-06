@@ -10,13 +10,13 @@ native Linux release.
 | --- | --- |
 | Cross-platform compile (one source tree) | Done. The crate and Linux backend build on Linux; the Windows build is unchanged. |
 | Linux system backend (`src/core/linux`) | Done. Telemetry, processes, network, systemd, packages, DNS, tweaks, cleanup, power, firewall, autostart, debloat, restore, quick, app catalog. Unit-tested. |
-| Linux desktop UI (`neonprime-linux`) | Done. Slint window, fourteen panels; verified on Linux CI. |
+| Linux desktop UI (`neonprime-linux`) | Done. Slint window, sixteen panels; verified on Linux CI. |
 | Linux terminal UI (`neonprime-tui`) | Done. Headless ratatui UI over the same backend; verified on Linux CI. |
 | Packaging (AppImage, tarball, deb, rpm) | Builds and ships both binaries (`neonprime` GUI + `neonprime-tui`). |
 
 The GUI is `ui/linux.slint` + `src/bin/neonprime-linux.rs`, sharing the
-holographic look of the Windows deck. It has fourteen panels covering every
-Windows feature with a real Linux analog:
+holographic look of the Windows deck. It has sixteen panels covering every
+Windows feature with a real Linux analog, plus Linux-native ones:
 
 - Dashboard: live CPU / RAM / CPU-temp meters, a CPU sparkline, and specs.
 - Tweaks: desktop-environment aware (gsettings / KConfig / xfconf) + sysctl,
@@ -35,6 +35,10 @@ Windows feature with a real Linux analog:
 - Restore Points: create Timeshift / Snapper snapshots, open the tool GUI.
 - Quick Actions: flush DNS, clear cache, empty Trash, drop memory caches,
   remove orphaned packages, trim SSDs, enable Flathub.
+- Graphics: detect GPUs, install driver/userspace per vendor, and hybrid-GPU
+  game setup (dGPU launch options, switcheroo-control, GameMode/MangoHud/
+  Gamescope).
+- Servers: install + enable OpenSSH and Samba.
 
 The TUI (`neonprime-tui`) is a headless / SSH-friendly ratatui front end over
 the same backend, covering the same action panels plus a live Dashboard. It
@@ -90,10 +94,13 @@ broker rather than mutating the system inline.
 | `quick` | one-shot maintenance commands | Quick Actions |
 | `firewall` | ufw (`/etc/ufw/ufw.conf` + `pkexec ufw`) | Windows Firewall |
 | `autostart` | XDG `~/.config/autostart` + `/etc/xdg/autostart` | Startup |
-| `tweaks` | gsettings / KConfig / xfconf / sysctl | Tweaks + Privacy |
+| `tweaks` | gsettings / KConfig / xfconf / sysctl | Tweaks + Privacy + Security |
 | `debloat` | dpkg/rpm/pacman probe + `pkexec` remove | Debloat |
 | `restore` | Timeshift / Snapper | Restore Points |
 | `apps` | per-manager names + Flathub ids | Install catalog |
+| `gpudriver` | `lspci` + per-vendor driver install | (GPU drivers) |
+| `gaming` | PRIME offload + switcheroo-control | System Modes / Game |
+| `servers` | OpenSSH + Samba via systemd | (Linux-native) |
 
 ## Building and packaging locally
 

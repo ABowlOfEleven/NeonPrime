@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +29,7 @@ jobs:
         id: ver
         shell: pwsh
         run: |
-          $v = if ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}' -replace '^v', '' } else { '3.0.0' }
+          $v = if ('${{ github.ref_type }}' -eq 'tag') { '${{ github.ref_name }}' -replace '^v', '' } else { '3.1.0' }
           "version=$v" >> $env:GITHUB_OUTPUT
 
       - name: Build installer (MSI + staged payload)
@@ -40,7 +40,7 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path dist/* -DestinationPath "NeonPrime-${{ steps.ver.outputs.version }}-portable.zip" -Force
 
-      - name: Publish release
+      - name: Publish Windows artifacts
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -48,3 +48,50 @@ jobs:
             NeonPrime-*-portable.zip
           generate_release_notes: true
           fail_on_unmatched_files: true
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install build + packaging deps
+        run: |
+          cargo install cargo-deb cargo-generate-rpm --locked
+          sudo apt-get update
+          sudo apt-get install -y librsvg2-bin libfontconfig-dev libxcb1-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
+
+      - name: Resolve version
+        id: ver
+        run: echo "version=$(grep -m1 '^version' Cargo.toml | cut -d'\"' -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: Build release binaries (GUI + TUI)
+        run: cargo build --release --bin neonprime-linux --bin neonprime-tui
+
+      - name: Tarball
+        run: bash packaging/linux/build-tarball.sh "${{ steps.ver.outputs.version }}"
+
+      - name: Deb
+        run: cargo deb --no-build
+
+      - name: Rpm
+        run: cargo generate-rpm
+
+      # AppImage can be flaky in CI (appimagetool/FUSE); don't block the release.
+      - name: AppImage
+        continue-on-error: true
+        run: bash packaging/linux/build-appimage.sh "${{ steps.ver.outputs.version }}"
+
+      - name: Publish Linux artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            NeonPrime-*-linux-*.tar.gz
+            NeonPrime-*-*.AppImage
+            target/debian/*.deb
+            target/generate-rpm/*.rpm
+          fail_on_unmatched_files: false

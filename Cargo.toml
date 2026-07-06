@@ -1,6 +1,6 @@
 [package]
 name = "neonprime"
-version = "3.0.1"
+version = "3.1.0"
 edition = "2021"
 description = "A holographic system control deck. One machine, three modes. It counts all the way to three."
 authors = ["NeonPrime contributors"]
