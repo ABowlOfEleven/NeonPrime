@@ -1,0 +1,1993 @@
+// NeonPrime — Linux UI.
+//
+// Shares the holographic visual language of the Windows deck but drives the
+// Linux backend (crate::core::linux). Panels: Dashboard, Processes, Network,
+// Services, Packages, DNS. Kept deliberately self-contained; shared components
+// will be factored out as the two UIs converge.
+
+import { ListView } from "std-widgets.slint";
+
+export global Theme {
+    out property <color> bg: #061119;
+    out property <color> divider: #123043;
+    out property <color> track: #0e2230;
+    out property <color> accent: #34d2ff;
+    out property <color> accent-soft: #8ae9ff;
+    out property <color> ember: #ce8a1f;
+    out property <color> ember-soft: #e6ae45;
+    out property <color> text-dim: #6b90a4;
+    out property <color> text-body: #a9c6d6;
+    out property <color> ok: #34d2ff;
+    out property <color> warn: #e24b4a;
+}
+
+// ── Data globals (set from Rust) ────────────────────────────────────────────
+export global Sys {
+    in property <float> cpu-ratio: 0;
+    in property <string> cpu-text: "—";
+    in property <float> ram-ratio: 0;
+    in property <string> ram-text: "—";
+    in property <float> temp-ratio: 0;
+    in property <string> temp-text: "—";
+    in property <bool> temp-warn: false;
+    in property <string> load-text: "—";
+    in property <string> spec-os: "—";
+    in property <string> spec-kernel: "—";
+    in property <string> spec-cpu: "—";
+    in property <string> spec-ram: "—";
+    in property <string> spec-uptime: "—";
+    in property <[float]> cpu-history;
+}
+
+export struct ProcRow {
+    pid: int,
+    name: string,
+    cpu: string,
+    mem: string,
+}
+
+export global Procs {
+    in property <[ProcRow]> rows;
+    in property <int> count;
+    in-out property <string> filter-text;
+    in-out property <int> sort-key: 0; // 0 cpu, 1 mem, 2 name
+    callback refresh();
+    callback reapply();
+    callback kill(int);
+}
+
+export struct NetRow {
+    proc-name: string,
+    pid: int,
+    remote: string,
+    host: string,
+    state: string,
+}
+
+export global Network {
+    in property <[NetRow]> rows;
+    in property <int> count;
+    callback refresh();
+}
+
+export struct SvcRow {
+    name: string,
+    description: string,
+    running: bool,
+    enabled: bool,
+}
+
+export global Services {
+    in property <[SvcRow]> rows;
+    in-out property <string> filter-text;
+    in property <bool> scanning: true;
+    callback refresh();
+    callback filter();
+    callback start(string);
+    callback stop(string);
+    callback enable(string);
+    callback disable(string);
+}
+
+export struct PkgMgrItem {
+    id: int,
+    label: string,
+}
+
+export struct AppRow {
+    name: string,
+    desc: string,
+    category: string,
+    id: string,       // package id for the selected manager
+    available: bool,  // installable with the selected manager
+}
+
+export global Packages {
+    in property <[PkgMgrItem]> managers;
+    in-out property <int> selected: 0;
+    in-out property <string> query;
+    in property <string> status: "";
+    in property <[AppRow]> catalog;
+    in property <int> catalog-count;
+    in-out property <int> category: 0; // 0 all, else index into the category chips
+    callback install(string);
+    callback remove(string);
+    callback update-all();
+    callback select(int);
+    callback filter();
+}
+
+export struct DnsProv {
+    id: int,
+    name: string,
+}
+
+export global Dns {
+    in property <[DnsProv]> providers;
+    in property <string> link: "—";
+    callback set(int);
+}
+
+export struct CleanRow {
+    id: int,
+    name: string,
+    desc: string,
+    size: string,
+    frac: float,
+    elevated: bool,
+}
+
+export global Cleanup {
+    in property <[CleanRow]> rows;
+    in property <bool> scanning: true;
+    in property <string> total;
+    callback clean(int);
+    callback rescan();
+}
+
+export struct PowerProfile {
+    id: int,
+    name: string,
+}
+
+export global Power {
+    in property <[PowerProfile]> profiles;
+    in property <int> active: -1;
+    in property <bool> available: false;
+    callback set(int);
+}
+
+export struct QuickItem {
+    id: int,
+    name: string,
+    desc: string,
+    privileged: bool,
+}
+
+export global Quick {
+    in property <[QuickItem]> actions;
+    in property <string> status;
+    callback run(int);
+}
+
+export global Firewall {
+    in property <bool> available: false;
+    in property <int> enabled: -1; // -1 unknown, 0 off, 1 on
+    callback enable();
+    callback disable();
+    callback reset();
+}
+
+export struct AutostartRow {
+    name: string,
+    file: string,
+    enabled: bool,
+    system: bool,
+}
+
+export global Autostart {
+    in property <[AutostartRow]> rows;
+    callback refresh();
+    callback toggle(string, bool);
+}
+
+export struct TweakRow {
+    id: int,
+    name: string,
+    desc: string,
+    category: string,
+    warn: string, // caveat / what-could-break (empty = none)
+    applied: bool,
+    privileged: bool,
+}
+
+export global Tweaks {
+    in property <[TweakRow]> rows;
+    in property <int> count;
+    in property <bool> available: true;
+    in property <string> de-name: "";
+    in-out property <string> filter-text;
+    in-out property <int> category: 0; // 0 all, 1 Interface, 2 Performance, 3 Privacy
+    callback filter();
+    callback toggle(int);
+}
+
+export struct BloatRow {
+    id: int,
+    name: string,
+    desc: string,
+    installed: bool,
+    removable: bool,
+}
+
+export global Debloat {
+    in property <[BloatRow]> rows;
+    in property <bool> scanning: true;
+    callback refresh();
+    callback remove(int);
+}
+
+export global Restore {
+    in property <string> tool: "none";
+    in property <bool> available: false;
+    in property <bool> has-gui: false;
+    in-out property <string> comment;
+    callback create();
+    callback browse();
+}
+
+export struct GpuItem {
+    vendor: string,
+    name: string,
+}
+
+export global Gpu {
+    in property <[GpuItem]> gpus;
+    in property <bool> nvidia-present;
+    in property <bool> amd-present;
+    in property <bool> intel-present;
+    in property <bool> nvidia-loaded;
+    in property <bool> hybrid;
+    in property <bool> switcheroo-active;
+    in property <string> launch-options;
+    in property <string> status;
+    callback install-driver(int); // 0 nvidia, 1 amd, 2 intel
+    callback install-tools();
+    callback enable-switcheroo();
+    callback refresh();
+}
+
+export struct ServerRow {
+    id: int,
+    name: string,
+    desc: string,
+    installed: bool,
+    running: bool,
+    enabled: bool,
+}
+
+export global Servers {
+    in property <[ServerRow]> rows;
+    in property <bool> scanning: true;
+    callback refresh();
+    callback enable(int);
+    callback disable(int);
+}
+
+export global Nav {
+    in-out property <int> page: 0;
+    callback changed(int);
+}
+
+// ── Base components ─────────────────────────────────────────────────────────
+component PushButton inherits Rectangle {
+    in property <string> label;
+    in property <length> w: 90px;
+    in property <bool> danger: false;
+    callback clicked;
+    width: root.w;
+    height: 26px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: root.danger ? Theme.warn : Theme.accent.with-alpha(0.5);
+    background: touch.pressed
+        ? (root.danger ? Theme.warn : Theme.accent).with-alpha(0.25)
+        : (touch.has-hover ? (root.danger ? Theme.warn : Theme.accent).with-alpha(0.14) : transparent);
+    Text {
+        text: root.label;
+        color: root.danger ? Theme.ember-soft : Theme.accent-soft;
+        font-size: 11px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component PanelHeader inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> hint;
+    padding-left: 20px;
+    padding-right: 20px;
+    spacing: 12px;
+    VerticalLayout {
+        alignment: center;
+        horizontal-stretch: 1;
+        spacing: 2px;
+        Text {
+            text: root.title;
+            color: Theme.accent-soft;
+            font-size: 16px;
+            letter-spacing: 1px;
+        }
+        Text {
+            text: root.hint;
+            color: Theme.text-dim;
+            font-size: 11px;
+        }
+    }
+    @children
+}
+
+component EmptyState inherits VerticalLayout {
+    in property <string> text;
+    alignment: center;
+    Text {
+        text: root.text;
+        color: Theme.text-dim;
+        font-size: 12px;
+        horizontal-alignment: center;
+    }
+}
+
+component FilterChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked;
+    height: 22px;
+    width: txt.preferred-width + 20px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: root.active ? Theme.accent : Theme.divider;
+    background: (root.active ? Theme.accent : Theme.text-dim).with-alpha(root.active ? 0.16 : 0.05);
+    txt := Text {
+        text: root.label;
+        color: root.active ? Theme.accent-soft : Theme.text-dim;
+        font-size: 10px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component Meter inherits VerticalLayout {
+    in property <string> label;
+    in property <string> value;
+    in property <float> ratio;
+    in property <color> tint: Theme.accent;
+    spacing: 5px;
+    HorizontalLayout {
+        Text {
+            text: root.label;
+            color: Theme.text-dim;
+            font-size: 11px;
+            horizontal-stretch: 1;
+        }
+        Text {
+            text: root.value;
+            color: root.tint;
+            font-size: 12px;
+        }
+    }
+    Rectangle {
+        height: 8px;
+        border-radius: 4px;
+        background: Theme.track;
+        Rectangle {
+            x: 0;
+            width: parent.width * clamp(root.ratio, 0.0, 1.0);
+            height: parent.height;
+            border-radius: 4px;
+            background: root.tint;
+        }
+    }
+}
+
+component SearchBox inherits Rectangle {
+    in-out property <string> text <=> input.text;
+    in property <string> placeholder: "Filter…";
+    callback edited;
+    height: 32px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: Theme.divider;
+    background: Theme.track;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        input := TextInput {
+            color: Theme.text-body;
+            font-size: 12px;
+            vertical-alignment: center;
+            single-line: true;
+            horizontal-stretch: 1;
+            edited => {
+                root.edited();
+            }
+        }
+    }
+    if root.text == "": Text {
+        x: 13px;
+        text: root.placeholder;
+        color: Theme.text-dim;
+        font-size: 12px;
+        vertical-alignment: center;
+    }
+}
+
+// ── Navigation ──────────────────────────────────────────────────────────────
+component NavItem inherits Rectangle {
+    in property <string> label;
+    in property <int> page;
+    height: 34px;
+    property <bool> sel: Nav.page == root.page;
+    background: sel ? Theme.accent.with-alpha(0.14) : (touch.has-hover ? Theme.accent.with-alpha(0.07) : transparent);
+    Rectangle {
+        x: 0;
+        width: 3px;
+        height: parent.height;
+        background: sel ? Theme.accent : transparent;
+    }
+    HorizontalLayout {
+        padding-left: 18px;
+        alignment: start;
+        Text {
+            text: root.label;
+            color: sel ? Theme.accent-soft : Theme.text-body;
+            font-size: 12px;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea {
+        clicked => {
+            Nav.page = root.page;
+            Nav.changed(root.page);
+        }
+    }
+}
+
+// ── Panels ──────────────────────────────────────────────────────────────────
+component DashboardView inherits VerticalLayout {
+    padding: 20px;
+    spacing: 16px;
+    Text {
+        text: "SYSTEM OVERVIEW";
+        color: Theme.accent-soft;
+        font-size: 17px;
+        letter-spacing: 1px;
+    }
+    // Live meters
+    HorizontalLayout {
+        spacing: 20px;
+        Meter {
+            label: "CPU";
+            value: Sys.cpu-text;
+            ratio: Sys.cpu-ratio;
+            tint: Theme.accent;
+            horizontal-stretch: 1;
+        }
+        Meter {
+            label: "MEMORY";
+            value: Sys.ram-text;
+            ratio: Sys.ram-ratio;
+            tint: Theme.accent;
+            horizontal-stretch: 1;
+        }
+        Meter {
+            label: "CPU TEMP";
+            value: Sys.temp-text;
+            ratio: Sys.temp-ratio;
+            tint: Sys.temp-warn ? Theme.warn : Theme.ember-soft;
+            horizontal-stretch: 1;
+        }
+    }
+    // CPU history sparkline (bar histogram, layout-driven, newest on the right).
+    Rectangle {
+        height: 60px;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: Theme.divider;
+        background: Theme.track;
+        clip: true;
+        HorizontalLayout {
+            padding: 6px;
+            spacing: 1px;
+            for v in Sys.cpu-history: Rectangle {
+                bar := Rectangle {
+                    width: parent.width;
+                    height: max(1px, parent.height * clamp(v, 0.0, 1.0));
+                    y: parent.height - self.height;
+                    border-radius: 1px;
+                    background: Theme.accent.with-alpha(0.8);
+                }
+            }
+        }
+    }
+    // Specs
+    Rectangle {
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: Theme.divider;
+        background: Theme.track.with-alpha(0.5);
+        VerticalLayout {
+            padding: 14px;
+            spacing: 6px;
+            HorizontalLayout {
+                Text { text: "OS"; color: Theme.text-dim; font-size: 11px; width: 90px; }
+                Text { text: Sys.spec-os; color: Theme.text-body; font-size: 11px; }
+            }
+            HorizontalLayout {
+                Text { text: "KERNEL"; color: Theme.text-dim; font-size: 11px; width: 90px; }
+                Text { text: Sys.spec-kernel; color: Theme.text-body; font-size: 11px; }
+            }
+            HorizontalLayout {
+                Text { text: "CPU"; color: Theme.text-dim; font-size: 11px; width: 90px; }
+                Text { text: Sys.spec-cpu; color: Theme.text-body; font-size: 11px; }
+            }
+            HorizontalLayout {
+                Text { text: "MEMORY"; color: Theme.text-dim; font-size: 11px; width: 90px; }
+                Text { text: Sys.spec-ram; color: Theme.text-body; font-size: 11px; }
+            }
+            HorizontalLayout {
+                Text { text: "LOAD / UPTIME"; color: Theme.text-dim; font-size: 11px; width: 90px; }
+                Text { text: Sys.load-text + "  ·  " + Sys.spec-uptime; color: Theme.text-body; font-size: 11px; }
+            }
+        }
+    }
+    Rectangle { vertical-stretch: 1; }
+}
+
+component SortHeader inherits Rectangle {
+    in property <string> label;
+    in property <int> key;
+    in property <length> w: 56px;
+    width: root.w;
+    height: 16px;
+    TouchArea {
+        clicked => {
+            Procs.sort-key = root.key;
+            Procs.reapply();
+        }
+    }
+    Text {
+        width: 100%;
+        text: root.label;
+        color: Procs.sort-key == root.key ? Theme.accent-soft : Theme.text-dim;
+        font-size: 10px;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+}
+
+component ProcessesView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "PROCESSES";
+        hint: Procs.count + " shown";
+        PushButton {
+            label: "REFRESH";
+            clicked => {
+                Procs.refresh();
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        SearchBox {
+            placeholder: "Filter by process name…";
+            text <=> Procs.filter-text;
+            edited => {
+                Procs.reapply();
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 8px;
+        Rectangle {
+            horizontal-stretch: 1;
+            TouchArea {
+                clicked => {
+                    Procs.sort-key = 2;
+                    Procs.reapply();
+                }
+            }
+            Text {
+                text: "PROCESS";
+                color: Procs.sort-key == 2 ? Theme.accent-soft : Theme.text-dim;
+                font-size: 10px;
+                vertical-alignment: center;
+            }
+        }
+        SortHeader { label: "CPU"; key: 0; w: 56px; }
+        SortHeader { label: "MEMORY"; key: 1; w: 72px; }
+        Rectangle { width: 58px; }
+    }
+    if Procs.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "Gathering process telemetry…";
+    }
+    if Procs.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for p in Procs.rows: Rectangle {
+            height: 40px;
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                spacing: 8px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    Text {
+                        text: p.name;
+                        color: Theme.text-body;
+                        font-size: 12px;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: "pid " + p.pid;
+                        color: Theme.text-dim;
+                        font-size: 10px;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    width: 56px;
+                    Text { text: p.cpu; color: Theme.accent-soft; font-size: 11px; horizontal-alignment: right; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    width: 72px;
+                    Text { text: p.mem; color: Theme.text-body; font-size: 11px; horizontal-alignment: right; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    PushButton {
+                        w: 50px;
+                        danger: true;
+                        label: "KILL";
+                        clicked => {
+                            Procs.kill(p.pid);
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                x: 0;
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.divider;
+            }
+        }
+    }
+}
+
+component NetworkView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "NETWORK";
+        hint: Network.count + " outbound connection(s)";
+        PushButton {
+            label: "REFRESH";
+            clicked => {
+                Network.refresh();
+            }
+        }
+    }
+    if Network.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No active outbound connections.";
+    }
+    if Network.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for c in Network.rows: Rectangle {
+            height: 48px;
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                spacing: 14px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    Text {
+                        text: c.proc-name + "  ·  pid " + c.pid;
+                        color: Theme.text-body;
+                        font-size: 12px;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: c.host != "" ? c.remote + "  ·  " + c.host : c.remote;
+                        color: Theme.text-dim;
+                        font-size: 10px;
+                        overflow: elide;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 96px;
+                        height: 18px;
+                        border-radius: 5px;
+                        border-width: 1px;
+                        border-color: c.state == "ESTABLISHED" ? Theme.accent : Theme.divider;
+                        background: (c.state == "ESTABLISHED" ? Theme.accent : Theme.text-dim).with-alpha(0.1);
+                        Text {
+                            text: c.state;
+                            color: c.state == "ESTABLISHED" ? Theme.accent-soft : Theme.text-dim;
+                            font-size: 10px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                x: 0;
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.divider;
+            }
+        }
+    }
+}
+
+component ServicesView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "SERVICES";
+        hint: Services.scanning ? "querying systemd…" : Services.rows.length + " unit(s)";
+        PushButton {
+            label: "REFRESH";
+            clicked => {
+                Services.refresh();
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        SearchBox {
+            placeholder: "Filter services…";
+            text <=> Services.filter-text;
+            edited => {
+                Services.filter();
+            }
+        }
+    }
+    if Services.scanning: EmptyState {
+        vertical-stretch: 1;
+        text: "Querying systemd…";
+    }
+    if !Services.scanning && Services.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No matching services.";
+    }
+    if !Services.scanning && Services.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for s in Services.rows: Rectangle {
+            height: 56px;
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    Text {
+                        text: s.description == "" ? s.name : s.description;
+                        color: Theme.text-body;
+                        font-size: 12px;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: s.name;
+                        color: Theme.text-dim;
+                        font-size: 10px;
+                        overflow: elide;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    HorizontalLayout {
+                        spacing: 4px;
+                        FilterChip {
+                            label: s.enabled ? "ENABLED" : "ENABLE";
+                            active: s.enabled;
+                            clicked => {
+                                s.enabled ? Services.disable(s.name) : Services.enable(s.name);
+                            }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 72px;
+                        height: 18px;
+                        border-radius: 5px;
+                        border-width: 1px;
+                        border-color: s.running ? Theme.accent : Theme.divider;
+                        background: (s.running ? Theme.accent : Theme.text-dim).with-alpha(0.1);
+                        Text {
+                            text: s.running ? "RUNNING" : "STOPPED";
+                            color: s.running ? Theme.accent-soft : Theme.text-dim;
+                            font-size: 10px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    PushButton {
+                        w: 60px;
+                        danger: s.running;
+                        label: s.running ? "STOP" : "START";
+                        clicked => {
+                            s.running ? Services.stop(s.name) : Services.start(s.name);
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                x: 0;
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.divider;
+            }
+        }
+    }
+}
+
+component PackagesView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 12px;
+    PanelHeader {
+        title: "PACKAGES";
+        hint: Packages.managers.length + " manager(s) detected";
+        PushButton {
+            w: 100px;
+            label: "UPDATE ALL";
+            clicked => {
+                Packages.update-all();
+            }
+        }
+    }
+    // Manager selector
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 7px;
+        alignment: start;
+        for m[i] in Packages.managers: FilterChip {
+            label: m.label;
+            active: Packages.selected == i;
+            clicked => {
+                Packages.select(i);
+            }
+        }
+        Rectangle { horizontal-stretch: 1; }
+    }
+    if Packages.managers.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No supported package manager found\n(apt, dnf, pacman, zypper, flatpak).";
+    }
+    if Packages.managers.length > 0: VerticalLayout {
+        vertical-stretch: 1;
+        spacing: 10px;
+        // Manual install/remove by exact name or id.
+        HorizontalLayout {
+            padding-left: 20px;
+            padding-right: 20px;
+            spacing: 10px;
+            SearchBox {
+                placeholder: "Search the catalog, or type a package name/id…";
+                text <=> Packages.query;
+                horizontal-stretch: 1;
+                edited => {
+                    Packages.filter();
+                }
+            }
+            PushButton {
+                w: 84px;
+                label: "INSTALL";
+                clicked => {
+                    Packages.install(Packages.query);
+                }
+            }
+            PushButton {
+                w: 84px;
+                danger: true;
+                label: "REMOVE";
+                clicked => {
+                    Packages.remove(Packages.query);
+                }
+            }
+        }
+        // Category chips for the curated catalog.
+        HorizontalLayout {
+            padding-left: 20px;
+            padding-right: 20px;
+            spacing: 6px;
+            alignment: start;
+            FilterChip { label: "ALL"; active: Packages.category == 0; clicked => { Packages.category = 0; Packages.filter(); } }
+            FilterChip { label: "WEB"; active: Packages.category == 1; clicked => { Packages.category = 1; Packages.filter(); } }
+            FilterChip { label: "DEV"; active: Packages.category == 2; clicked => { Packages.category = 2; Packages.filter(); } }
+            FilterChip { label: "MEDIA"; active: Packages.category == 3; clicked => { Packages.category = 3; Packages.filter(); } }
+            FilterChip { label: "CHAT"; active: Packages.category == 4; clicked => { Packages.category = 4; Packages.filter(); } }
+            FilterChip { label: "UTILS"; active: Packages.category == 5; clicked => { Packages.category = 5; Packages.filter(); } }
+            FilterChip { label: "GAMES"; active: Packages.category == 6; clicked => { Packages.category = 6; Packages.filter(); } }
+            Rectangle { horizontal-stretch: 1; }
+        }
+        if Packages.status != "": Text {
+            x: 20px;
+            text: Packages.status;
+            color: Theme.text-dim;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
+        // Curated app catalog.
+        ListView {
+            vertical-stretch: 1;
+            for a in Packages.catalog: Rectangle {
+                height: 50px;
+                HorizontalLayout {
+                    padding-left: 18px;
+                    padding-right: 18px;
+                    spacing: 10px;
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text {
+                            text: a.name;
+                            color: Theme.text-body;
+                            font-size: 13px;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: a.desc;
+                            color: Theme.text-dim;
+                            font-size: 10px;
+                            overflow: elide;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: a.category;
+                            color: Theme.text-dim;
+                            font-size: 9px;
+                            horizontal-alignment: right;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        width: 84px;
+                        if a.available: PushButton {
+                            w: 84px;
+                            label: "INSTALL";
+                            clicked => {
+                                Packages.install(a.id);
+                            }
+                        }
+                        if !a.available: Text {
+                            text: "n/a here";
+                            color: Theme.text-dim;
+                            font-size: 10px;
+                            horizontal-alignment: right;
+                        }
+                    }
+                }
+                Rectangle {
+                    x: 0;
+                    y: parent.height - 1px;
+                    width: parent.width;
+                    height: 1px;
+                    background: Theme.divider;
+                }
+            }
+        }
+    }
+}
+
+component DnsView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 14px;
+    PanelHeader {
+        title: "DNS";
+        hint: "link: " + Dns.link;
+    }
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 8px;
+        alignment: start;
+        for p in Dns.providers: PushButton {
+            w: 120px;
+            label: p.name;
+            clicked => {
+                Dns.set(p.id);
+            }
+        }
+    }
+    Text {
+        x: 20px;
+        text: "Applies to the default-route link via resolvectl (needs pkexec).";
+        color: Theme.text-dim;
+        font-size: 11px;
+    }
+    Rectangle { vertical-stretch: 1; }
+}
+
+component CleanupRowView inherits Rectangle {
+    in property <CleanRow> target;
+    height: 56px;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: root.target.name;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.target.elevated ? "· ROOT" : "";
+                    color: Theme.ember-soft;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: root.target.desc;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+            Rectangle {
+                height: 3px;
+                border-radius: 1.5px;
+                background: Theme.track;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * max(root.target.frac, 0.0);
+                    height: parent.height;
+                    border-radius: 1.5px;
+                    background: Theme.accent.with-alpha(0.7);
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 74px;
+            Text {
+                text: root.target.size;
+                color: Theme.accent-soft;
+                font-size: 14px;
+                horizontal-alignment: right;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            PushButton {
+                w: 72px;
+                label: "CLEAN";
+                clicked => {
+                    Cleanup.clean(root.target.id);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component CleanupView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 12px;
+    PanelHeader {
+        title: "CLEANUP";
+        hint: Cleanup.scanning ? "scanning disk…" : Cleanup.total + " reclaimable";
+        PushButton {
+            label: "RESCAN";
+            clicked => {
+                Cleanup.rescan();
+            }
+        }
+    }
+    if Cleanup.scanning: EmptyState {
+        vertical-stretch: 1;
+        text: "Scanning disk usage…";
+    }
+    if !Cleanup.scanning: ListView {
+        vertical-stretch: 1;
+        for t in Cleanup.rows: CleanupRowView {
+            target: t;
+        }
+    }
+}
+
+component PowerView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 16px;
+    PanelHeader {
+        title: "POWER";
+        hint: Power.available ? "power-profiles-daemon" : "power-profiles-daemon not found";
+    }
+    if !Power.available: EmptyState {
+        vertical-stretch: 1;
+        text: "power-profiles-daemon is not available.\nInstall it for profile switching.";
+    }
+    if Power.available: VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 12px;
+        for p[i] in Power.profiles: Rectangle {
+            height: 52px;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Power.active == i ? Theme.accent : Theme.divider;
+            background: (Power.active == i ? Theme.accent : Theme.text-dim).with-alpha(Power.active == i ? 0.14 : 0.04);
+            HorizontalLayout {
+                padding-left: 16px;
+                padding-right: 16px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: p.name;
+                        color: Power.active == i ? Theme.accent-soft : Theme.text-body;
+                        font-size: 14px;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    if Power.active == i: Text {
+                        text: "ACTIVE";
+                        color: Theme.accent-soft;
+                        font-size: 11px;
+                    }
+                }
+            }
+            TouchArea {
+                clicked => {
+                    Power.set(p.id);
+                }
+            }
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+component QuickView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "QUICK ACTIONS";
+        hint: Quick.actions.length + " action(s)";
+    }
+    ListView {
+        vertical-stretch: 1;
+        for a in Quick.actions: Rectangle {
+            height: 56px;
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                spacing: 12px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+                        Text {
+                            text: a.name;
+                            color: Theme.text-body;
+                            font-size: 13px;
+                        }
+                        Text {
+                            text: a.privileged ? "· ROOT" : "";
+                            color: Theme.ember-soft;
+                            font-size: 10px;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Text {
+                        text: a.desc;
+                        color: Theme.text-dim;
+                        font-size: 10px;
+                        overflow: elide;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    PushButton {
+                        w: 64px;
+                        label: "RUN";
+                        clicked => {
+                            Quick.run(a.id);
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                x: 0;
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.divider;
+            }
+        }
+    }
+    if Quick.status != "": Text {
+        x: 20px;
+        text: Quick.status;
+        color: Theme.text-dim;
+        font-size: 11px;
+        wrap: word-wrap;
+    }
+}
+
+component FirewallView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 16px;
+    PanelHeader {
+        title: "FIREWALL";
+        hint: !Firewall.available ? "ufw not installed" : (Firewall.enabled == 1 ? "ufw active" : Firewall.enabled == 0 ? "ufw inactive" : "ufw (state unknown, needs root)");
+    }
+    if !Firewall.available: EmptyState {
+        vertical-stretch: 1;
+        text: "ufw (Uncomplicated Firewall) is not installed.";
+    }
+    if Firewall.available: VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 14px;
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: start;
+            Rectangle {
+                width: 96px;
+                height: 26px;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: Firewall.enabled == 1 ? Theme.accent : Theme.divider;
+                background: (Firewall.enabled == 1 ? Theme.accent : Theme.text-dim).with-alpha(0.12);
+                Text {
+                    text: Firewall.enabled == 1 ? "ACTIVE" : Firewall.enabled == 0 ? "INACTIVE" : "UNKNOWN";
+                    color: Firewall.enabled == 1 ? Theme.accent-soft : Theme.text-dim;
+                    font-size: 11px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+            PushButton {
+                w: 90px;
+                label: "ENABLE";
+                clicked => {
+                    Firewall.enable();
+                }
+            }
+            PushButton {
+                w: 90px;
+                danger: true;
+                label: "DISABLE";
+                clicked => {
+                    Firewall.disable();
+                }
+            }
+            PushButton {
+                w: 90px;
+                danger: true;
+                label: "RESET";
+                clicked => {
+                    Firewall.reset();
+                }
+            }
+        }
+        Text {
+            text: "Enable/disable/reset go through pkexec. Listing individual rules needs root; use `sudo ufw status numbered` in a terminal.";
+            color: Theme.text-dim;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+component AutostartView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "AUTOSTART";
+        hint: Autostart.rows.length + " entr(ies)";
+        PushButton {
+            label: "REFRESH";
+            clicked => {
+                Autostart.refresh();
+            }
+        }
+    }
+    if Autostart.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No autostart entries found.";
+    }
+    if Autostart.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for a in Autostart.rows: Rectangle {
+            height: 52px;
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+                        Text {
+                            text: a.name;
+                            color: Theme.text-body;
+                            font-size: 13px;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: a.system ? "· SYSTEM" : "";
+                            color: Theme.text-dim;
+                            font-size: 10px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    FilterChip {
+                        label: a.enabled ? "ENABLED" : "DISABLED";
+                        active: a.enabled;
+                        clicked => {
+                            Autostart.toggle(a.file, !a.enabled);
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                x: 0;
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.divider;
+            }
+        }
+    }
+}
+
+component Toggle inherits Rectangle {
+    in property <bool> on;
+    callback toggled;
+    width: 42px;
+    height: 22px;
+    border-radius: 11px;
+    border-width: 1px;
+    border-color: root.on ? Theme.accent : Theme.divider;
+    background: (root.on ? Theme.accent : Theme.text-dim).with-alpha(0.16);
+    Rectangle {
+        width: 16px;
+        height: 16px;
+        border-radius: 8px;
+        y: 2px;
+        x: root.on ? parent.width - self.width - 3px : 3px;
+        background: root.on ? Theme.accent-soft : Theme.text-dim;
+        animate x { duration: 120ms; easing: ease-out; }
+    }
+    TouchArea {
+        clicked => {
+            root.toggled();
+        }
+    }
+}
+
+component TweaksView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "TWEAKS";
+        hint: Tweaks.available ? Tweaks.de-name + " · " + Tweaks.count + " tweak(s)" : Tweaks.de-name + " · settings tool not found";
+    }
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        SearchBox {
+            placeholder: "Filter tweaks…";
+            text <=> Tweaks.filter-text;
+            edited => {
+                Tweaks.filter();
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 7px;
+        alignment: start;
+        FilterChip { label: "ALL"; active: Tweaks.category == 0; clicked => { Tweaks.category = 0; Tweaks.filter(); } }
+        FilterChip { label: "INTERFACE"; active: Tweaks.category == 1; clicked => { Tweaks.category = 1; Tweaks.filter(); } }
+        FilterChip { label: "PERFORMANCE"; active: Tweaks.category == 2; clicked => { Tweaks.category = 2; Tweaks.filter(); } }
+        FilterChip { label: "PRIVACY"; active: Tweaks.category == 3; clicked => { Tweaks.category = 3; Tweaks.filter(); } }
+        FilterChip { label: "SECURITY"; active: Tweaks.category == 4; clicked => { Tweaks.category = 4; Tweaks.filter(); } }
+        Rectangle { horizontal-stretch: 1; }
+    }
+    if Tweaks.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No tweaks match.";
+    }
+    if Tweaks.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for t in Tweaks.rows: Rectangle {
+            height: t.warn != "" ? 88px : 56px;
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                spacing: 12px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+                        Text {
+                            text: t.name;
+                            color: Theme.text-body;
+                            font-size: 13px;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: t.privileged ? "· ROOT" : "";
+                            color: Theme.ember-soft;
+                            font-size: 10px;
+                            vertical-alignment: center;
+                        }
+                    }
+                    Text {
+                        text: t.desc;
+                        color: Theme.text-dim;
+                        font-size: 10px;
+                        overflow: elide;
+                    }
+                    if t.warn != "": Text {
+                        text: "⚠ " + t.warn;
+                        color: Theme.ember-soft;
+                        font-size: 10px;
+                        wrap: word-wrap;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: t.category;
+                        color: Theme.text-dim;
+                        font-size: 9px;
+                        horizontal-alignment: right;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Toggle {
+                        on: t.applied;
+                        toggled => {
+                            Tweaks.toggle(t.id);
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                x: 0;
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.divider;
+            }
+        }
+    }
+}
+
+component DebloatView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "DEBLOAT";
+        hint: Debloat.scanning ? "checking installed packages…" : "remove preinstalled cruft";
+        PushButton {
+            label: "REFRESH";
+            clicked => {
+                Debloat.refresh();
+            }
+        }
+    }
+    if Debloat.scanning: EmptyState {
+        vertical-stretch: 1;
+        text: "Checking installed packages…";
+    }
+    if !Debloat.scanning: ListView {
+        vertical-stretch: 1;
+        for b in Debloat.rows: Rectangle {
+            height: 56px;
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    Text {
+                        text: b.name;
+                        color: Theme.text-body;
+                        font-size: 13px;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: b.desc;
+                        color: Theme.text-dim;
+                        font-size: 10px;
+                        overflow: elide;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 84px;
+                        height: 18px;
+                        border-radius: 5px;
+                        border-width: 1px;
+                        border-color: b.installed ? Theme.accent : Theme.divider;
+                        background: (b.installed ? Theme.accent : Theme.text-dim).with-alpha(0.1);
+                        Text {
+                            text: b.installed ? "INSTALLED" : "ABSENT";
+                            color: b.installed ? Theme.accent-soft : Theme.text-dim;
+                            font-size: 10px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    width: 72px;
+                    if b.installed && b.removable: PushButton {
+                        w: 72px;
+                        danger: true;
+                        label: "REMOVE";
+                        clicked => {
+                            Debloat.remove(b.id);
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                x: 0;
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.divider;
+            }
+        }
+    }
+}
+
+component RestoreView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 16px;
+    PanelHeader {
+        title: "RESTORE POINTS";
+        hint: Restore.available ? Restore.tool : "no snapshot tool found";
+    }
+    if !Restore.available: EmptyState {
+        vertical-stretch: 1;
+        text: "No snapshot tool found.\nInstall Timeshift or Snapper to create restore points.";
+    }
+    if Restore.available: VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 12px;
+        HorizontalLayout {
+            spacing: 10px;
+            SearchBox {
+                placeholder: "Snapshot comment…";
+                text <=> Restore.comment;
+                horizontal-stretch: 1;
+            }
+            PushButton {
+                w: 150px;
+                label: "CREATE SNAPSHOT";
+                clicked => {
+                    Restore.create();
+                }
+            }
+        }
+        if Restore.has-gui: PushButton {
+            w: 160px;
+            label: "OPEN SNAPSHOT TOOL";
+            clicked => {
+                Restore.browse();
+            }
+        }
+        Text {
+            text: "Creating a snapshot needs pkexec. Browsing and restoring use the tool's own app.";
+            color: Theme.text-dim;
+            font-size: 11px;
+            wrap: word-wrap;
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+component GraphicsView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 14px;
+    PanelHeader {
+        title: "GRAPHICS";
+        hint: Gpu.hybrid ? "hybrid graphics (iGPU + dGPU)" : Gpu.gpus.length + " GPU(s)";
+        PushButton {
+            label: "REFRESH";
+            clicked => {
+                Gpu.refresh();
+            }
+        }
+    }
+    VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 5px;
+        for g in Gpu.gpus: HorizontalLayout {
+            spacing: 8px;
+            Text {
+                text: g.vendor;
+                color: Theme.accent-soft;
+                font-size: 11px;
+                width: 64px;
+            }
+            Text {
+                text: g.name;
+                color: Theme.text-body;
+                font-size: 11px;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 8px;
+        alignment: start;
+        if Gpu.nvidia-present: PushButton {
+            w: 190px;
+            label: Gpu.nvidia-loaded ? "NVIDIA DRIVER LOADED" : "INSTALL NVIDIA DRIVER";
+            clicked => {
+                Gpu.install-driver(0);
+            }
+        }
+        if Gpu.amd-present: PushButton {
+            w: 160px;
+            label: "INSTALL AMD USERSPACE";
+            clicked => {
+                Gpu.install-driver(1);
+            }
+        }
+        if Gpu.intel-present: PushButton {
+            w: 160px;
+            label: "INSTALL INTEL USERSPACE";
+            clicked => {
+                Gpu.install-driver(2);
+            }
+        }
+        Rectangle { horizontal-stretch: 1; }
+    }
+    // Gaming / hybrid GPU
+    Rectangle {
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: Theme.divider;
+        background: Theme.track.with-alpha(0.5);
+        VerticalLayout {
+            padding: 14px;
+            spacing: 10px;
+            Text {
+                text: Gpu.hybrid ? "Run games on the discrete GPU" : "Gaming setup";
+                color: Theme.accent-soft;
+                font-size: 13px;
+            }
+            if Gpu.hybrid: Text {
+                text: "Paste into a game's Steam launch options (Properties → Launch Options):";
+                color: Theme.text-dim;
+                font-size: 10px;
+                wrap: word-wrap;
+            }
+            if Gpu.hybrid: Rectangle {
+                height: 30px;
+                border-radius: 6px;
+                border-width: 1px;
+                border-color: Theme.accent.with-alpha(0.4);
+                background: Theme.track;
+                HorizontalLayout {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    TextInput {
+                        text: Gpu.launch-options;
+                        read-only: true;
+                        color: Theme.accent-soft;
+                        font-size: 11px;
+                        vertical-alignment: center;
+                        single-line: true;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                PushButton {
+                    w: 170px;
+                    label: "INSTALL GAMING TOOLS";
+                    clicked => {
+                        Gpu.install-tools();
+                    }
+                }
+                PushButton {
+                    w: 210px;
+                    label: Gpu.switcheroo-active ? "GPU SWITCHING ENABLED" : "ENABLE PER-APP GPU SWITCHING";
+                    clicked => {
+                        Gpu.enable-switcheroo();
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+            Text {
+                text: "Per-app switching adds a right-click 'Run using dedicated graphics card' in KDE / GNOME / Cinnamon.";
+                color: Theme.text-dim;
+                font-size: 10px;
+                wrap: word-wrap;
+            }
+        }
+    }
+    if Gpu.status != "": Text {
+        x: 20px;
+        text: Gpu.status;
+        color: Theme.text-dim;
+        font-size: 11px;
+        wrap: word-wrap;
+    }
+    Rectangle { vertical-stretch: 1; }
+}
+
+component ServersView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "SERVERS";
+        hint: Servers.scanning ? "checking services…" : "SSH + Samba";
+        PushButton {
+            label: "REFRESH";
+            clicked => {
+                Servers.refresh();
+            }
+        }
+    }
+    if Servers.scanning: EmptyState {
+        vertical-stretch: 1;
+        text: "Checking services…";
+    }
+    if !Servers.scanning: ListView {
+        vertical-stretch: 1;
+        for s in Servers.rows: Rectangle {
+            height: 60px;
+            HorizontalLayout {
+                padding-left: 18px;
+                padding-right: 18px;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 2px;
+                    Text {
+                        text: s.name;
+                        color: Theme.text-body;
+                        font-size: 13px;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: s.desc;
+                        color: Theme.text-dim;
+                        font-size: 10px;
+                        overflow: elide;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 84px;
+                        height: 18px;
+                        border-radius: 5px;
+                        border-width: 1px;
+                        border-color: s.running ? Theme.accent : Theme.divider;
+                        background: (s.running ? Theme.accent : Theme.text-dim).with-alpha(0.1);
+                        Text {
+                            text: !s.installed ? "ABSENT" : (s.running ? "RUNNING" : "STOPPED");
+                            color: s.running ? Theme.accent-soft : Theme.text-dim;
+                            font-size: 10px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    if !(s.enabled && s.installed): PushButton {
+                        w: 130px;
+                        label: s.installed ? "ENABLE" : "INSTALL + ENABLE";
+                        clicked => {
+                            Servers.enable(s.id);
+                        }
+                    }
+                    if s.enabled && s.installed: PushButton {
+                        w: 90px;
+                        danger: true;
+                        label: "DISABLE";
+                        clicked => {
+                            Servers.disable(s.id);
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                x: 0;
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: Theme.divider;
+            }
+        }
+    }
+}
+
+// ── Root window ─────────────────────────────────────────────────────────────
+export component AppWindow inherits Window {
+    title: "NeonPrime";
+    preferred-width: 940px;
+    preferred-height: 640px;
+    min-width: 820px;
+    min-height: 560px;
+    background: Theme.bg;
+
+    HorizontalLayout {
+        // Sidebar
+        Rectangle {
+            width: 190px;
+            background: Theme.bg.darker(0.25);
+            VerticalLayout {
+                padding-top: 18px;
+                spacing: 2px;
+                HorizontalLayout {
+                    padding-left: 18px;
+                    padding-bottom: 12px;
+                    VerticalLayout {
+                        spacing: 2px;
+                        Text {
+                            text: "NEONPRIME";
+                            color: Theme.accent-soft;
+                            font-size: 15px;
+                            letter-spacing: 2px;
+                        }
+                        Text {
+                            text: "linux · v3.0";
+                            color: Theme.text-dim;
+                            font-size: 10px;
+                        }
+                    }
+                }
+                NavItem { label: "Dashboard"; page: 0; }
+                Text { text: "OPTIMIZE"; color: Theme.text-dim; font-size: 9px; letter-spacing: 1px; x: 18px; }
+                NavItem { label: "Tweaks"; page: 11; }
+                NavItem { label: "Debloat"; page: 12; }
+                Text { text: "MONITOR"; color: Theme.text-dim; font-size: 9px; letter-spacing: 1px; x: 18px; }
+                NavItem { label: "Processes"; page: 1; }
+                NavItem { label: "Network"; page: 2; }
+                Text { text: "SYSTEM"; color: Theme.text-dim; font-size: 9px; letter-spacing: 1px; x: 18px; }
+                NavItem { label: "Services"; page: 3; }
+                NavItem { label: "Packages"; page: 4; }
+                NavItem { label: "Graphics"; page: 14; }
+                NavItem { label: "Servers"; page: 15; }
+                NavItem { label: "DNS"; page: 5; }
+                NavItem { label: "Firewall"; page: 9; }
+                NavItem { label: "Power"; page: 7; }
+                NavItem { label: "Autostart"; page: 10; }
+                Text { text: "MAINTENANCE"; color: Theme.text-dim; font-size: 9px; letter-spacing: 1px; x: 18px; }
+                NavItem { label: "Cleanup"; page: 6; }
+                NavItem { label: "Restore Points"; page: 13; }
+                NavItem { label: "Quick Actions"; page: 8; }
+                Rectangle { vertical-stretch: 1; }
+            }
+        }
+        // Content
+        Rectangle {
+            background: Theme.bg;
+            if Nav.page == 0: DashboardView {}
+            if Nav.page == 1: ProcessesView {}
+            if Nav.page == 2: NetworkView {}
+            if Nav.page == 3: ServicesView {}
+            if Nav.page == 4: PackagesView {}
+            if Nav.page == 5: DnsView {}
+            if Nav.page == 6: CleanupView {}
+            if Nav.page == 7: PowerView {}
+            if Nav.page == 8: QuickView {}
+            if Nav.page == 9: FirewallView {}
+            if Nav.page == 10: AutostartView {}
+            if Nav.page == 11: TweaksView {}
+            if Nav.page == 12: DebloatView {}
+            if Nav.page == 13: RestoreView {}
+            if Nav.page == 14: GraphicsView {}
+            if Nav.page == 15: ServersView {}
+        }
+    }
+}

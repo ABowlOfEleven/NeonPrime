@@ -1,15 +1,15 @@
 # NeonPrime
 
 [![CI](https://github.com/ABowlOfEleven/NeonPrime/actions/workflows/ci.yml/badge.svg)](https://github.com/ABowlOfEleven/NeonPrime/actions/workflows/ci.yml)
-![Platform](https://img.shields.io/badge/platform-Windows%2011-0a84ff)
+![Platform](https://img.shields.io/badge/platform-Windows%2011%20%C2%B7%20Linux-0a84ff)
 ![Built with](https://img.shields.io/badge/built%20with-Rust%20%2B%20Slint-CE8A1F)
 ![License](https://img.shields.io/badge/license-MIT-34D2FF)
 
 > One machine. Three modes. It counts all the way to three.
 
-A holographic system control deck for Windows. Think [WinUtil](https://github.com/ChrisTitusTech/winutil), but more powerful and actually beautiful: debloat it, tune it, watch it, and reshape it from a single cyan-and-ember HUD.
+A holographic system control deck for **Windows and Linux**. Think [WinUtil](https://github.com/ChrisTitusTech/winutil) and [linutil](https://github.com/ChrisTitusTech/linutil), but more powerful and actually beautiful: debloat it, tune it, watch it, harden it, and reshape it from a single cyan-and-ember HUD. On Linux there is also a headless terminal UI for servers and SSH.
 
-Built in **Rust**, drawn in **Slint**.
+Built in **Rust**, drawn in **Slint** (with a **ratatui** terminal UI on Linux).
 
 <div align="center">
   <em>Cyan reports. Ember warns. Everything reverts.</em>
@@ -21,10 +21,15 @@ Built in **Rust**, drawn in **Slint**.
 
 Grab the latest build from **[Releases](https://github.com/ABowlOfEleven/NeonPrime/releases)**:
 
-| File | What it is |
-|------|------------|
-| `NeonPrime-x.y.z-Setup.msi` | Installer. Drops the app, the elevated broker, and the bundled sensor sidecar into `Program Files`. No prerequisites. |
-| `NeonPrime-x.y.z-portable.zip` | Unzip and run `neonprime.exe`. |
+| File | Platform | What it is |
+|------|----------|------------|
+| `NeonPrime-x.y.z-Setup.msi` | Windows | Installer. Drops the app, the elevated broker, and the bundled sensor sidecar into `Program Files`. No prerequisites. |
+| `NeonPrime-x.y.z-portable.zip` | Windows | Unzip and run `neonprime.exe`. |
+| `NeonPrime-x.y.z-x86_64.AppImage` | Linux | Portable. `chmod +x` and run. The GUI. |
+| `NeonPrime-x.y.z-linux-x86_64.tar.gz` | Linux | Portable tarball (`neonprime` GUI + `neonprime-tui`). |
+| `neonprime_x.y.z_amd64.deb` / `.rpm` | Linux | Native packages. Installs `neonprime` and `neonprime-tui`. |
+
+> The Linux binaries are a preview: they compile and pass CI on every push, but they have not yet been through extensive real-hardware testing. Feedback welcome.
 
 ## Why
 
@@ -61,7 +66,7 @@ Every mode is a reversible bundle. Click the active one again to turn it back of
 
 **Optimize**
 
-- **Privacy Shield:** a live hardening-score gauge that reads your real registry and service state across 11 checks, and hardens any exposed item in one click (all reversible).
+- **Privacy & hardening score:** a live gauge that reads your real registry and service state and hardens any exposed item in one click (all reversible). Beyond telemetry, it includes real security hardening, each with a plain warning about what it does and what could break: disable SMBv1, block AutoRun, require SmartScreen, disable LLMNR, stop WDigest credential caching, Defender PUA protection, disable Windows Script Host, no LM hash, block inbound RDP, disable Remote Assistance.
 - **Tweaks & debloat:** 29 reversible tweaks across Interface, Privacy, and Performance, with live search, category filters, and a one-click Essential Tweaks preset.
 - **Debloat:** remove preinstalled UWP apps (Copilot, Xbox Game Bar, and friends) per-user with live installed/removed state, plus one-click telemetry scheduled-task disabling.
 - **Cleanup:** scan reclaimable space (temp, Recycle Bin, thumbnails, system and update caches) and clear it per target.
@@ -89,6 +94,20 @@ Every mode is a reversible bundle. Click the active one again to turn it back of
 
 ---
 
+## On Linux
+
+The same holographic deck, distro-agnostic, in two front ends over one native backend (no bundled shell scripts):
+
+- **`neonprime` (GUI):** a Slint window with sixteen panels grouped Monitor / Optimize / System / Maintenance:
+  - **Dashboard** (CPU / RAM / temp / load, CPU sparkline, specs), **Processes** (sort + filter + kill), **Network** (outbound connections with reverse-DNS).
+  - **Tweaks:** desktop-environment aware, so it drives GNOME `gsettings`, KDE `kwriteconfig`, or XFCE `xfconf-query` as appropriate, plus `sysctl`, across Interface / Performance / Privacy / **Security** (kernel hardening: kptr/dmesg/ptrace restrict, SYN cookies, reverse-path filter, and more, each with a warning).
+  - **Debloat** (remove snaps + preinstalled apps), **Packages** (apt / dnf / pacman / zypper / flatpak, with a curated app catalog), **Services** (systemd), **Firewall** (ufw), **DNS** (resolvectl), **Power** (power-profiles-daemon), **Autostart** (XDG), **Cleanup**, **Restore Points** (Timeshift / Snapper), **Quick Actions**.
+  - **Graphics:** detect your GPUs and install the right driver/userspace; hybrid (iGPU + dGPU) laptops/desktops are auto-detected and get the correct dGPU launch options for Steam (NVIDIA PRIME render-offload or `DRI_PRIME=1`), one-click `switcheroo-control` for per-app "Run using dedicated graphics card", and one-click GameMode / MangoHud / Gamescope (or the CachyOS gaming meta).
+  - **Servers:** install + enable OpenSSH and Samba.
+- **`neonprime-tui` (headless):** a `ratatui` terminal UI over the same backend, for servers and SSH sessions. No display or GUI libraries needed at runtime. Privileged actions run through `sudo` (in-terminal prompt) instead of the GUI's `pkexec`. Enable SSH and set up the GPU over an existing SSH connection.
+
+Privileged actions never run inline: the GUI hands them to `pkexec` and the TUI to `sudo`, the Linux analog of the Windows elevated broker. See [LINUX.md](LINUX.md) for the full architecture and status.
+
 ## Aesthetic: "holographic glass, calm until it isn't"
 
 | Role | Token |
@@ -113,10 +132,17 @@ Rollback, modes, and config export are all the same primitive: a **reversible, d
 ## Build from source
 
 ```sh
-cargo run             # debug build
-cargo run --release   # optimized build
-cargo test            # 47 unit + integration tests
+# Windows (the desktop deck)
+cargo run --release
+
+# Linux (GUI or headless TUI)
+cargo run --release --bin neonprime-linux
+cargo run --release --bin neonprime-tui
+
+cargo test --all      # 50 unit + integration tests
 ```
+
+One source tree, split by `cfg`: the Windows backend is gated to `cfg(windows)`, the Linux backend to `cfg(target_os = "linux")`, and each platform compiles its own Slint UI (`ui/app.slint` vs `ui/linux.slint`). Building the Linux GUI needs Slint's usual deps (`fontconfig`, `xcb`, `xkbcommon`).
 
 ### Installer (MSI)
 
@@ -144,7 +170,11 @@ Build a self-contained sidecar (bundles the .NET runtime, nothing to install on 
 
 ## Status
 
-16 panels (Dashboard, Network, Processes, Tweaks, Privacy, Debloat, Cleanup, Startup, Install, Features, MicroWin, Modes, Services, Actions, Config, History) grouped into Monitor / Optimize / Software / System in a scrollable sidebar. Elevated work runs off the UI thread, so a UAC prompt never freezes the window. 47 tests pass, with CI on every push.
+**Windows:** 16 panels (Dashboard, Network, Processes, Tweaks, Privacy, Debloat, Cleanup, Startup, Install, Features, MicroWin, Modes, Services, Actions, Config, History) grouped Monitor / Optimize / Software / System. Elevated work runs off the UI thread, so a UAC prompt never freezes the window.
+
+**Linux:** a 16-panel GUI plus a headless TUI over the same backend. Compiles and passes CI (fmt / clippy / test) on every push; runtime testing on real hardware is ongoing.
+
+50 tests pass, with a Windows + Linux CI matrix on every push.
 
 **Notes and caveats:**
 
@@ -155,7 +185,9 @@ Build a self-contained sidecar (bundles the .NET runtime, nothing to install on 
 
 ## Stack
 
-`rust` · `slint` · `sysinfo` · `nvml-wrapper` · `windows` (DXGI / PDH) · `wmi` · `winreg` · `serde` + `toml`
+`rust` · `slint` · `sysinfo` · `dns-lookup` · shared, then per platform:
+- **Windows:** `nvml-wrapper` · `windows` (DXGI / PDH) · `wmi` · `winreg` · `serde` + `toml`
+- **Linux:** `ratatui` + `crossterm` (TUI) · `/proc` + `/sys` + `systemctl` / `gsettings` / `resolvectl` / `pkexec`
 
 ## Credits
 

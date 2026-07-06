@@ -19,6 +19,7 @@ pub enum Category {
     Interface,
     Privacy,
     Performance,
+    Security,
 }
 
 impl Category {
@@ -28,6 +29,7 @@ impl Category {
             Category::Interface => "INTERFACE",
             Category::Privacy => "PRIVACY",
             Category::Performance => "PERFORMANCE",
+            Category::Security => "SECURITY",
         }
     }
 }
@@ -48,6 +50,9 @@ pub struct Tweak {
     pub name: &'static str,
     pub desc: &'static str,
     pub category: Category,
+    /// A caveat shown prominently for this toggle (empty = none). Used on the
+    /// security hardening tweaks to explain what could break.
+    pub warn: &'static str,
     /// Actions that enable the tweak.
     pub on: Vec<Action>,
     /// Actions that restore the Windows default.
@@ -59,6 +64,12 @@ impl Tweak {
     /// True if any action requires the elevated broker (HKLM).
     pub fn needs_elevation(&self) -> bool {
         self.on.iter().chain(&self.off).any(|a| a.needs_elevation())
+    }
+
+    /// Attach a warning/caveat (builder style).
+    pub fn warned(mut self, warn: &'static str) -> Self {
+        self.warn = warn;
+        self
     }
 
     /// Read live state and report whether the tweak is currently applied.
@@ -115,6 +126,7 @@ fn dw(
         name,
         desc,
         category,
+        warn: "",
         on: vec![set(hive, path, key, RegValue::Dword(on_val))],
         off: vec![set(hive, path, key, RegValue::Dword(off_val))],
         probe: Probe {
@@ -142,6 +154,7 @@ fn dw_del(
         name,
         desc,
         category,
+        warn: "",
         on: vec![set(hive, path, key, RegValue::Dword(on_val))],
         off: vec![del(hive, path, key)],
         probe: Probe {
@@ -203,6 +216,7 @@ pub fn catalog() -> Vec<Tweak> {
             name: "Classic right-click menu",
             desc: "Restore the full Windows 10 context menu (Windows 11). Needs an Explorer restart.",
             category: Interface,
+            warn: "",
             on: vec![set(Hkcu, CLSID_CTX, "", RegValue::Sz(String::new()))],
             off: vec![del(Hkcu, CLSID_CTX, "")],
             probe: Probe { hive: Hkcu, path: CLSID_CTX.into(), name: String::new(), applied: Some(RegValue::Sz(String::new())) },
@@ -231,6 +245,7 @@ pub fn catalog() -> Vec<Tweak> {
             name: "Faster menu animations",
             desc: "Drop the menu show delay from 400ms to 0 for a snappier shell.",
             category: Performance,
+            warn: "",
             on: vec![set(Hkcu, DESKTOP, "MenuShowDelay", RegValue::Sz("0".into()))],
             off: vec![set(Hkcu, DESKTOP, "MenuShowDelay", RegValue::Sz("400".into()))],
             probe: Probe { hive: Hkcu, path: DESKTOP.into(), name: "MenuShowDelay".into(), applied: Some(RegValue::Sz("0".into())) },
@@ -269,6 +284,49 @@ pub fn catalog() -> Vec<Tweak> {
         dw("svc-fax", "Disable Fax service",
             "Stop the Fax service (rarely needed).",
             Performance, Hklm, "SYSTEM\\CurrentControlSet\\Services\\Fax", "Start", 4, 3),
+
+        // ── Security hardening (HKLM, elevated). Real hardening, not just
+        //    telemetry. Each carries a warning about what it does / could break. ─
+        dw("harden-smb1", "Disable SMBv1 (legacy file sharing)",
+            "Turns off the obsolete SMBv1 protocol on the file server.",
+            Security, Hklm, "SYSTEM\\CurrentControlSet\\Services\\LanmanServer\\Parameters", "SMB1", 0, 1)
+            .warned("SMBv1 is how WannaCry/NotPetya spread. Safe to disable unless you connect to very old NAS boxes or Windows XP shares."),
+        dw_del("harden-autorun", "Block AutoRun / AutoPlay",
+            "Stops programs auto-executing from USB drives, CDs, and network shares.",
+            Security, Hklm, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer", "NoDriveTypeAutoRun", 255)
+            .warned("Closes a classic USB-malware path. You still open removable drives manually; nothing important breaks."),
+        dw_del("harden-smartscreen", "Require SmartScreen for apps",
+            "Warns before running unrecognized downloaded programs.",
+            Security, Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows\\System", "EnableSmartScreen", 1)
+            .warned("Adds a prompt for unknown executables. Slightly more friction installing niche or unsigned apps."),
+        dw_del("harden-llmnr", "Disable LLMNR name resolution",
+            "Turns off Link-Local Multicast Name Resolution.",
+            Security, Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows NT\\DNSClient", "EnableMulticast", 0)
+            .warned("LLMNR is routinely abused to steal credentials on untrusted LANs (Responder attacks). Safe at home; may slightly slow local hostname lookups on networks without proper DNS."),
+        dw_del("harden-wdigest", "Stop caching passwords in memory",
+            "Disables WDigest clear-text credential caching.",
+            Security, Hklm, "SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest", "UseLogonCredential", 0)
+            .warned("Blocks tools like mimikatz from scraping your plain-text password out of RAM. No downside on modern Windows."),
+        dw_del("harden-pua", "Block potentially unwanted apps",
+            "Enables Microsoft Defender PUA protection (adware / bundleware).",
+            Security, Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows Defender", "PUAProtection", 1)
+            .warned("Defender blocks bundled adware and 'optional offers'. Rarely, an aggressive freeware installer gets flagged."),
+        dw_del("harden-wsh", "Disable Windows Script Host",
+            "Blocks .vbs / .js scripts from running via wscript / cscript.",
+            Security, Hklm, "SOFTWARE\\Microsoft\\Windows Script Host\\Settings", "Enabled", 0)
+            .warned("Shuts a common script-malware path. Some legacy app installers and admin scripts rely on WSH and will stop working, leave this OFF if you use .vbs/.js scripts."),
+        dw("harden-nolmhash", "Don't store weak LM password hashes",
+            "Stops Windows storing the legacy, easily-cracked LM hash of your password.",
+            Security, Hklm, "SYSTEM\\CurrentControlSet\\Control\\Lsa", "NoLMHash", 1, 0)
+            .warned("No downside unless you authenticate to pre-Windows-2000 systems (essentially never)."),
+        dw("harden-no-rdp", "Block incoming Remote Desktop",
+            "Denies inbound RDP connections to this PC.",
+            Security, Hklm, "SYSTEM\\CurrentControlSet\\Control\\Terminal Server", "fDenyTSConnections", 1, 0)
+            .warned("If you connect to this machine via Remote Desktop, this locks that out. Leave OFF if you use RDP to reach this PC."),
+        dw("harden-no-remote-assist", "Disable Remote Assistance",
+            "Turns off the Windows Remote Assistance invitation feature.",
+            Security, Hklm, "SYSTEM\\CurrentControlSet\\Control\\Remote Assistance", "fAllowToGetHelp", 0, 1)
+            .warned("Removes a rarely-used remote-help channel. Only matters if you actually use Windows Remote Assistance."),
     ]
 }
 

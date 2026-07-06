@@ -1,23 +1,33 @@
 [package]
 name = "neonprime"
-version = "3.0.1"
+version = "3.1.0"
 edition = "2021"
-description = "A holographic system control deck for Windows. One machine, three modes. It counts all the way to three."
+description = "A holographic system control deck. One machine, three modes. It counts all the way to three."
 authors = ["NeonPrime contributors"]
 license = "MIT"
 
+# Cross-platform dependencies (Windows + Linux).
 [dependencies]
 slint = "1"
 sysinfo = "0.33"
+dns-lookup = "2"
+
+# Linux-only: the terminal UI (headless/SSH-friendly, no display needed).
+[target.'cfg(target_os = "linux")'.dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Windows-only backend: registry, WMI, DXGI/PDH telemetry, NVML, shell.
+[target.'cfg(windows)'.dependencies]
 nvml-wrapper = "0.10"
+winreg = "0.52"
+wmi = "0.14"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 single-instance = "0.3"
 toml = "0.8"
-winreg = "0.52"
-wmi = "0.14"
 
-[dependencies.windows]
+[target.'cfg(windows)'.dependencies.windows]
 version = "0.58"
 features = [
     "Win32_Foundation",
@@ -31,8 +41,36 @@ features = [
 
 [build-dependencies]
 slint-build = "1"
+
+# Icon embedding is Windows-only, so its build dep is too.
+[target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 
 # Dev-only: rasterize SVG icons to PNG so they can be previewed during design.
 [dev-dependencies]
 resvg = "0.47"
+
+# ── Linux packaging ─────────────────────────────────────────────────────────
+# `cargo deb` (cargo-deb) reads this to build a .deb.
+[package.metadata.deb]
+maintainer = "NeonPrime contributors"
+copyright = "2026, NeonPrime contributors"
+license-file = ["LICENSE", "0"]
+extended-description = "NeonPrime is a holographic system control deck: live telemetry, process and service management, package installs, and network/DNS controls in one keyboard-driven HUD."
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/neonprime-linux", "usr/bin/neonprime", "755"],
+    ["target/release/neonprime-tui", "usr/bin/neonprime-tui", "755"],
+    ["packaging/linux/neonprime.desktop", "usr/share/applications/", "644"],
+    ["assets/app-icon.svg", "usr/share/icons/hicolor/scalable/apps/neonprime.svg", "644"],
+]
+
+# `cargo generate-rpm` (cargo-generate-rpm) reads this to build a .rpm.
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/neonprime-linux", dest = "/usr/bin/neonprime", mode = "755" },
+    { source = "target/release/neonprime-tui", dest = "/usr/bin/neonprime-tui", mode = "755" },
+    { source = "packaging/linux/neonprime.desktop", dest = "/usr/share/applications/neonprime.desktop", mode = "644" },
+    { source = "assets/app-icon.svg", dest = "/usr/share/icons/hicolor/scalable/apps/neonprime.svg", mode = "644" },
+]

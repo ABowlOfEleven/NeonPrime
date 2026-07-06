@@ -1,6 +1,10 @@
 //! End-to-end test of the broker IPC + action engine, without elevation.
 //! Exercises the full path: spawn broker → handshake → apply → verify → revert.
 //! Targets the self-owned benign `HKCU\Software\NeonPrime\Test` key only.
+//!
+//! Windows-only: the broker, registry ops, and action engine are the Windows
+//! backend. On other targets this file compiles to zero tests.
+#![cfg(windows)]
 
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};

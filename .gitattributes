@@ -1,0 +1,4 @@
+# Keep Linux-executed files LF so shebangs and shell scripts work on checkout.
+*.sh text eol=lf
+AppRun text eol=lf
+*.desktop text eol=lf
