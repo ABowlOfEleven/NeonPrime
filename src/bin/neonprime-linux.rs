@@ -10,8 +10,12 @@ fn main() {
 }
 
 #[cfg(target_os = "linux")]
-fn main() -> Result<(), slint::PlatformError> {
-    ui::run()
+fn main() {
+    if let Err(e) = ui::run() {
+        eprintln!("NeonPrime GUI could not start: {e}");
+        eprintln!("On a headless system (no display), use the terminal UI: neonprime-tui");
+        std::process::exit(1);
+    }
 }
 
 #[cfg(target_os = "linux")]

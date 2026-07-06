@@ -8,13 +8,14 @@ ARCH="$(uname -m)"
 NAME="NeonPrime-${VERSION}-linux-${ARCH}"
 STAGE="target/pkg/${NAME}"
 
-echo ">> Building release binary"
-cargo build --release --bin neonprime-linux
+echo ">> Building release binaries (GUI + TUI)"
+cargo build --release --bin neonprime-linux --bin neonprime-tui
 
 echo ">> Staging ${STAGE}"
 rm -rf "${STAGE}"
 mkdir -p "${STAGE}"
 cp target/release/neonprime-linux "${STAGE}/neonprime"
+cp target/release/neonprime-tui "${STAGE}/neonprime-tui"
 cp packaging/linux/neonprime.desktop "${STAGE}/"
 cp assets/app-icon.svg "${STAGE}/neonprime.svg"
 cp README.md LICENSE "${STAGE}/" 2>/dev/null || true
