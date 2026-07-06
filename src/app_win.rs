@@ -572,20 +572,34 @@ fn wire_installs(app: &AppWindow, notify: &Notify) {
         });
     }
 
-    let cat = catalog.clone();
-    let notify = notify.clone();
     let notify2 = notify.clone();
-    app.global::<Installer>().on_install(move |id| {
-        if let Some(a) = cat.get(id as usize) {
-            match Command::new("winget")
-                .args(installs::install_args(&a.id))
-                .spawn()
-            {
-                Ok(_) => notify("info", &format!("Installing {} via winget…", a.name)),
-                Err(e) => notify("error", &format!("Couldn't start winget: {e}")),
+    {
+        // Install in a visible, elevated console so the user sees winget's
+        // progress and machine-scope packages can elevate (winget spawned hidden
+        // and unelevated from the GUI would silently do nothing).
+        let cat = catalog.clone();
+        let notify = notify.clone();
+        app.global::<Installer>().on_install(move |id| {
+            if let Some(a) = cat.get(id as usize) {
+                match launch_elevated_ps(&installs::install_cmd(&a.id), true) {
+                    Ok(()) => notify("info", &format!("Installing {} (approve UAC)…", a.name)),
+                    Err(e) => notify("error", &format!("Couldn't start winget: {e}")),
+                }
             }
-        }
-    });
+        });
+    }
+    {
+        let cat = catalog.clone();
+        let notify = notify.clone();
+        app.global::<Installer>().on_remove(move |id| {
+            if let Some(a) = cat.get(id as usize) {
+                match launch_elevated_ps(&installs::uninstall_cmd(&a.id), true) {
+                    Ok(()) => notify("info", &format!("Removing {} (approve UAC)…", a.name)),
+                    Err(e) => notify("error", &format!("Couldn't start winget: {e}")),
+                }
+            }
+        });
+    }
 
     {
         let notify = notify2.clone();
@@ -859,11 +873,13 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
             script.pop();
             script.push("profile");
             script.push("install-profile.ps1");
-            match Command::new("powershell")
-                .args(["-NoExit", "-ExecutionPolicy", "Bypass", "-File", &script.to_string_lossy()])
-                .spawn()
-            {
-                Ok(_) => notify("info", "Installing PowerShell profile — see the new window."),
+            // Elevated + visible: winget prereqs (PowerShell 7, Nerd Font) need
+            // admin, and the script unblocks the profile in Program Files.
+            match launch_elevated_file(&script) {
+                Ok(()) => notify(
+                    "info",
+                    "Installing PowerShell profile (approve UAC), see the new window.",
+                ),
                 Err(e) => notify("error", &format!("Couldn't start installer: {e}")),
             }
             return;
@@ -2215,6 +2231,8 @@ fn main() -> Result<(), slint::PlatformError> {
         .set_cards(Rc::new(VecModel::from(cards)).into());
     refresh_modes(&app, &modes_catalog);
 
+    app.global::<Build>()
+        .set_version(env!("CARGO_PKG_VERSION").into());
     wire_theme(&app);
     let _tweak_pump = wire_tweaks(
         &app,

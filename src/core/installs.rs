@@ -1,6 +1,7 @@
 //! The app install catalog, imported from WinUtil's curated application list
-//! (MIT-licensed). Installing shells out to `winget install --id <id> -e`.
-//! Uninstall/rollback is out of scope — installs are not reversible actions.
+//! (MIT-licensed). Installing shells out to `winget install --id <id> -e` and
+//! removing to `winget uninstall --id <id> -e`, both in a visible elevated
+//! console so winget can show progress and elevate for machine-scope packages.
 
 use std::collections::BTreeMap;
 
@@ -57,6 +58,17 @@ pub fn install_args(id: &str) -> Vec<String> {
         "--accept-source-agreements".into(),
         "--accept-package-agreements".into(),
     ]
+}
+
+/// A `winget` command line (as a single string) to install `id`, for running in
+/// a console. Winget ids are safe tokens (letters, digits, dots, hyphens).
+pub fn install_cmd(id: &str) -> String {
+    format!("winget install --id {id} -e --accept-source-agreements --accept-package-agreements")
+}
+
+/// A `winget` command line to uninstall `id`.
+pub fn uninstall_cmd(id: &str) -> String {
+    format!("winget uninstall --id {id} -e")
 }
 
 #[cfg(test)]

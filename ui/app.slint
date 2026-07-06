@@ -108,8 +108,14 @@ export global Installer {
     in-out property <string> filter-text;
     in property <int> count;
     callback install(int);
+    callback remove(int);
     callback filter();
     callback update-all();
+}
+
+// Build/version info, set from Rust (CARGO_PKG_VERSION).
+export global Build {
+    in property <string> version: "0.0.0";
 }
 
 export struct ModeCard {
@@ -843,10 +849,22 @@ component AppRowView inherits Rectangle {
         }
         VerticalLayout {
             alignment: center;
-            PushButton {
-                label: "INSTALL";
-                clicked => {
-                    Installer.install(root.app.id);
+            HorizontalLayout {
+                spacing: 6px;
+                PushButton {
+                    w: 74px;
+                    label: "INSTALL";
+                    clicked => {
+                        Installer.install(root.app.id);
+                    }
+                }
+                PushButton {
+                    w: 74px;
+                    danger: true;
+                    label: "REMOVE";
+                    clicked => {
+                        Installer.remove(root.app.id);
+                    }
                 }
             }
         }
@@ -2682,7 +2700,7 @@ export component AppWindow inherits Window {
                 VerticalLayout {
                     alignment: center;
                     Text {
-                        text: Theme.tagline;
+                        text: (Theme.hev ? "HEV · v" : "v") + Build.version;
                         color: Theme.text-dim;
                         font-size: 11px;
                     }

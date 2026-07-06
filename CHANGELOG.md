@@ -2,6 +2,24 @@
 
 All notable changes to NeonPrime. Dates are UTC.
 
+## 3.1.1 — 2026-07-06
+
+Windows bug fixes reported from driving 3.1.0.
+
+### Fixed
+
+- **Version display** now shows the real build version (from `CARGO_PKG_VERSION`)
+  instead of a hardcoded string, so it tracks each release.
+- **App install** ran `winget` hidden and unelevated (the GUI has no console), so
+  installs silently did nothing for machine-scope packages. It now runs in a
+  visible, elevated console so you see progress and can approve UAC.
+- **App removal**: the Install panel now has a Remove button
+  (`winget uninstall`), which it previously lacked.
+- **PowerShell profile installer**: now runs elevated, sets the CurrentUser
+  execution policy to RemoteSigned (so the installed profile actually loads
+  instead of being blocked), unblocks the profile file, targets PowerShell 7
+  first, and installs the modules in PowerShell 7's scope as well as 5.1's.
+
 ## 3.1.0 — 2026-07-06
 
 The cross-platform release: NeonPrime now runs on Linux too, as both a GUI and a
