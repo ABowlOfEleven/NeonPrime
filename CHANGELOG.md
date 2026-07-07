@@ -2,9 +2,12 @@
 
 All notable changes to NeonPrime. Dates are UTC.
 
-## 3.1.1 — 2026-07-06
+## 3.1.1 — 2026-07-07
 
-Windows bug fixes reported from driving 3.1.0.
+Windows bug fixes from driving 3.1.0, plus a big push toward WinUtil parity: the
+PowerShell profile, ~40 more reversible tweaks and features, first-launch state
+indicators on Install / Features / Startup, and the author's own Rust projects in
+the app catalog.
 
 ### Fixed
 
