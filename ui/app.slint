@@ -2987,7 +2987,7 @@ export component AppWindow inherits Window {
 
         // ── Status bar ─────────────────────────────────────────────
         Rectangle {
-            height: 32px;
+            height: 28px;
             Rectangle {
                 x: 0;
                 y: 0;
@@ -2995,33 +2995,45 @@ export component AppWindow inherits Window {
                 height: 1px;
                 background: Theme.divider;
             }
+            // Align the footer content with the body: clear the 160px sidebar,
+            // then sit in the same centered column as the panels so the two ends
+            // aren't stranded in the window corners on a wide window.
             HorizontalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                Text {
-                    text: Sys.gpu-available ? "BROKER CONNECTED · GPU LINKED" : "BROKER CONNECTED · NO GPU";
-                    color: Theme.text-dim;
-                    vertical-alignment: center;
-                    font-size: 11px;
-                }
-                Rectangle { horizontal-stretch: 1; }
-                HorizontalLayout {
-                    spacing: 7px;
-                    alignment: end;
-                    VerticalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 6px;
-                            height: 6px;
-                            border-radius: 3px;
-                            background: Theme.accent;
+                Rectangle { width: 160px; }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14;
+                    HorizontalLayout {
+                        width: min(parent.width, parent.wide ? Theme.content-wide : Theme.content-max);
+                        x: (parent.width - self.width) / 2;
+                        Text {
+                            text: Sys.gpu-available ? "BROKER CONNECTED · GPU LINKED" : "BROKER CONNECTED · NO GPU";
+                            color: Theme.text-dim;
+                            vertical-alignment: center;
+                            font-size: 10px;
+                            letter-spacing: 0.3px;
                         }
-                    }
-                    Text {
-                        text: "NOMINAL";
-                        color: Theme.accent-soft;
-                        vertical-alignment: center;
-                        font-size: 11px;
+                        Rectangle { horizontal-stretch: 1; }
+                        HorizontalLayout {
+                            spacing: 7px;
+                            alignment: end;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 6px;
+                                    height: 6px;
+                                    border-radius: 3px;
+                                    background: Theme.accent;
+                                }
+                            }
+                            Text {
+                                text: "NOMINAL";
+                                color: Theme.accent-soft;
+                                vertical-alignment: center;
+                                font-size: 10px;
+                                letter-spacing: 0.3px;
+                            }
+                        }
                     }
                 }
             }
