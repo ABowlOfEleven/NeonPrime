@@ -139,6 +139,9 @@ fn dw(
 }
 
 /// A DWORD tweak whose default is "value absent", so `off` deletes it.
+// One positional arg per registry field keeps the catalog entries terse and
+// tabular; a params struct would bloat every call site for no real gain.
+#[allow(clippy::too_many_arguments)]
 fn dw_del(
     id: &'static str,
     name: &'static str,

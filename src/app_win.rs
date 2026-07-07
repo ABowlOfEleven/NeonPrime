@@ -827,13 +827,25 @@ fn launch_elevated_ps(script: &str, visible: bool) -> io::Result<()> {
 
 /// Launch a `.ps1` file elevated in a visible console (`-NoExit`, RunAs). Used
 /// for long scripts where nested -Command quoting would be fragile (MicroWin).
-fn launch_elevated_file(ps1: &Path) -> io::Result<()> {
+///
+/// `prefer_pwsh` opens the console in PowerShell 7 (`pwsh`) when it is installed,
+/// falling back to Windows PowerShell 5.1. The profile installer wants this so the
+/// window it leaves open is the modern shell the profile actually targets, rather
+/// than 5.1 (whose stock PSReadLine 2.0 lacks features the profile uses).
+fn launch_elevated_file(ps1: &Path, prefer_pwsh: bool) -> io::Result<()> {
     let path = ps1.to_string_lossy().replace('\'', "''");
     // The path element must carry literal double quotes: Start-Process joins the
     // -ArgumentList array with spaces WITHOUT re-quoting, so a bare path in
     // "Program Files" would reach powershell as `-File C:\Program` and fail.
     let inner = format!("'-NoExit','-ExecutionPolicy','Bypass','-File','\"{path}\"'");
-    let ps = format!("Start-Process -FilePath 'powershell' -ArgumentList {inner} -Verb RunAs");
+    let ps = if prefer_pwsh {
+        format!(
+            "$sh=if(Get-Command pwsh -ErrorAction SilentlyContinue){{'pwsh'}}else{{'powershell'}};\
+             Start-Process -FilePath $sh -ArgumentList {inner} -Verb RunAs"
+        )
+    } else {
+        format!("Start-Process -FilePath 'powershell' -ArgumentList {inner} -Verb RunAs")
+    };
     Command::new("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
         .spawn()
@@ -877,8 +889,9 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
             script.push("profile");
             script.push("install-profile.ps1");
             // Elevated + visible: winget prereqs (PowerShell 7, Nerd Font) need
-            // admin, and the script unblocks the profile in Program Files.
-            match launch_elevated_file(&script) {
+            // admin, and the script unblocks the profile in Program Files. Prefer
+            // pwsh so the console it leaves open is the shell the profile targets.
+            match launch_elevated_file(&script, true) {
                 Ok(()) => notify(
                     "info",
                     "Installing PowerShell profile (approve UAC), see the new window.",
@@ -1346,7 +1359,7 @@ fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
                 1 => procs.sort_by_key(|p| std::cmp::Reverse(p.mem)),
                 2 => procs.sort_by(|a, b| cmp_f(a.gpu, b.gpu)),
                 3 => procs.sort_by_key(|p| std::cmp::Reverse(p.vram)),
-                4 => procs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+                4 => procs.sort_by_key(|p| p.name.to_lowercase()),
                 _ => procs.sort_by(|a, b| cmp_f(a.cpu, b.cpu)),
             }
             procs.truncate(60);
@@ -1606,7 +1619,7 @@ fn wire_microwin(app: &AppWindow, notify: &Notify) {
                 notify("error", "Couldn't write the build script.");
                 return;
             }
-            match launch_elevated_file(&ps1) {
+            match launch_elevated_file(&ps1, false) {
                 Ok(()) => notify(
                     "info",
                     "MicroWin started — approve UAC; the build runs in the console (10+ min).",
@@ -2366,7 +2379,7 @@ fn main() -> Result<(), slint::PlatformError> {
             sys.set_gpu_history(spark_model(&gpu_hist));
             // Live-refresh Network / Processes (every 2s) only while visible.
             tick += 1;
-            if tick % 2 == 0 {
+            if tick.is_multiple_of(2) {
                 match app.global::<Nav>().get_page() {
                     11 => net_refresh(),
                     13 => proc_refresh(),
