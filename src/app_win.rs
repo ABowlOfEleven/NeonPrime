@@ -531,7 +531,7 @@ fn wire_modes(
 
 // ── Installs ────────────────────────────────────────────────────────
 
-fn wire_installs(app: &AppWindow, notify: &Notify) {
+fn wire_installs(app: &AppWindow, notify: &Notify) -> Timer {
     let catalog = Rc::new(installs::catalog());
     let rows: Vec<AppRow> = catalog
         .iter()
@@ -541,6 +541,8 @@ fn wire_installs(app: &AppWindow, notify: &Notify) {
             name: a.name.as_str().into(),
             desc: a.desc.as_str().into(),
             category: a.category.as_str().into(),
+            installed: false,
+            known: false,
         })
         .collect();
     let source = Rc::new(VecModel::from(rows));
@@ -572,20 +574,54 @@ fn wire_installs(app: &AppWindow, notify: &Notify) {
         });
     }
 
-    let cat = catalog.clone();
-    let notify = notify.clone();
     let notify2 = notify.clone();
-    app.global::<Installer>().on_install(move |id| {
-        if let Some(a) = cat.get(id as usize) {
-            match Command::new("winget")
-                .args(installs::install_args(&a.id))
-                .spawn()
-            {
-                Ok(_) => notify("info", &format!("Installing {} via winget…", a.name)),
+    {
+        // Install in a visible, elevated console so the user sees winget's
+        // progress and machine-scope packages can elevate (winget spawned hidden
+        // and unelevated from the GUI would silently do nothing).
+        let cat = catalog.clone();
+        let notify = notify.clone();
+        app.global::<Installer>().on_install(move |id| {
+            let Some(a) = cat.get(id as usize) else { return };
+            if a.repo.is_empty() {
+                match launch_elevated_ps(&installs::install_cmd(&a.id), true) {
+                    Ok(()) => notify("info", &format!("Installing {} (approve UAC)…", a.name)),
+                    Err(e) => notify("error", &format!("Couldn't start winget: {e}")),
+                }
+            } else {
+                // GitHub-release app: write the download + install script to a
+                // temp .ps1 and run it elevated (a file sidesteps -Command
+                // quoting for the multi-statement script).
+                let mut p = std::env::temp_dir();
+                p.push(format!("neonprime-install-{}.ps1", a.repo.replace('/', "-")));
+                match std::fs::write(&p, installs::github_install_script(&a.repo))
+                    .and_then(|()| launch_elevated_file(&p, false))
+                {
+                    Ok(()) => notify(
+                        "info",
+                        &format!("Installing {} from GitHub (approve UAC)…", a.name),
+                    ),
+                    Err(e) => notify("error", &format!("Couldn't start installer: {e}")),
+                }
+            }
+        });
+    }
+    {
+        let cat = catalog.clone();
+        let notify = notify.clone();
+        app.global::<Installer>().on_remove(move |id| {
+            let Some(a) = cat.get(id as usize) else { return };
+            let cmd = if a.repo.is_empty() {
+                installs::uninstall_cmd(&a.id)
+            } else {
+                installs::uninstall_named_cmd(&a.name)
+            };
+            match launch_elevated_ps(&cmd, true) {
+                Ok(()) => notify("info", &format!("Removing {} (approve UAC)…", a.name)),
                 Err(e) => notify("error", &format!("Couldn't start winget: {e}")),
             }
-        }
-    });
+        });
+    }
 
     {
         let notify = notify2.clone();
@@ -596,6 +632,70 @@ fn wire_installs(app: &AppWindow, notify: &Notify) {
             }
         });
     }
+
+    // Scan installed apps off-thread (`winget export` is slow), then flag each row
+    // installed / available. An empty scan result means winget failed or is
+    // missing, so we leave those rows "unknown" rather than falsely marking
+    // everything uninstalled.
+    app.global::<Installer>().set_scanning(true);
+    let (tx, rx) = mpsc::channel::<installs::Installed>();
+    let scan: Rc<dyn Fn()> = {
+        let tx = tx.clone();
+        Rc::new(move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(installs::scan_installed());
+            });
+        })
+    };
+    scan();
+
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        let source = source.clone();
+        app.global::<Installer>().on_recheck(move || {
+            for i in 0..source.row_count() {
+                if let Some(mut r) = source.row_data(i) {
+                    r.known = false;
+                    source.set_row_data(i, r);
+                }
+            }
+            if let Some(app) = weak.upgrade() {
+                app.global::<Installer>().set_scanning(true);
+            }
+            scan();
+        });
+    }
+
+    // Pump scan results onto the rows.
+    let weak = app.as_weak();
+    let catalog2 = catalog.clone();
+    let source2 = source.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(scan) = rx.try_recv() {
+            // If winget produced nothing (missing/errored), leave winget apps
+            // "unknown" rather than falsely marking them uninstalled; author apps
+            // resolve from Add/Remove Programs regardless.
+            let winget_ok = !scan.ids.is_empty();
+            for (i, a) in catalog2.iter().enumerate() {
+                if let Some(mut r) = source2.row_data(i) {
+                    if !a.id.is_empty() && !winget_ok {
+                        r.known = false;
+                    } else {
+                        r.installed = installs::is_installed(a, &scan);
+                        r.known = true;
+                    }
+                    source2.set_row_data(i, r);
+                }
+            }
+            if let Some(app) = weak.upgrade() {
+                app.global::<Installer>().set_scanning(false);
+            }
+        }
+    });
+    timer
 }
 
 // ── Config ──────────────────────────────────────────────────────────
@@ -813,10 +913,25 @@ fn launch_elevated_ps(script: &str, visible: bool) -> io::Result<()> {
 
 /// Launch a `.ps1` file elevated in a visible console (`-NoExit`, RunAs). Used
 /// for long scripts where nested -Command quoting would be fragile (MicroWin).
-fn launch_elevated_file(ps1: &Path) -> io::Result<()> {
+///
+/// `prefer_pwsh` opens the console in PowerShell 7 (`pwsh`) when it is installed,
+/// falling back to Windows PowerShell 5.1. The profile installer wants this so the
+/// window it leaves open is the modern shell the profile actually targets, rather
+/// than 5.1 (whose stock PSReadLine 2.0 lacks features the profile uses).
+fn launch_elevated_file(ps1: &Path, prefer_pwsh: bool) -> io::Result<()> {
     let path = ps1.to_string_lossy().replace('\'', "''");
-    let inner = format!("'-NoExit','-ExecutionPolicy','Bypass','-File','{path}'");
-    let ps = format!("Start-Process -FilePath 'powershell' -ArgumentList {inner} -Verb RunAs");
+    // The path element must carry literal double quotes: Start-Process joins the
+    // -ArgumentList array with spaces WITHOUT re-quoting, so a bare path in
+    // "Program Files" would reach powershell as `-File C:\Program` and fail.
+    let inner = format!("'-NoExit','-ExecutionPolicy','Bypass','-File','\"{path}\"'");
+    let ps = if prefer_pwsh {
+        format!(
+            "$sh=if(Get-Command pwsh -ErrorAction SilentlyContinue){{'pwsh'}}else{{'powershell'}};\
+             Start-Process -FilePath $sh -ArgumentList {inner} -Verb RunAs"
+        )
+    } else {
+        format!("Start-Process -FilePath 'powershell' -ArgumentList {inner} -Verb RunAs")
+    };
     Command::new("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
         .spawn()
@@ -859,12 +974,39 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
             script.pop();
             script.push("profile");
             script.push("install-profile.ps1");
+            // Elevated + visible: winget prereqs (PowerShell 7, Nerd Font) need
+            // admin, and the script unblocks the profile in Program Files. Prefer
+            // pwsh so the console it leaves open is the shell the profile targets.
+            match launch_elevated_file(&script, true) {
+                Ok(()) => notify(
+                    "info",
+                    "Installing PowerShell profile (approve UAC), see the new window.",
+                ),
+                Err(e) => notify("error", &format!("Couldn't start installer: {e}")),
+            }
+            return;
+        }
+
+        // Removing the profile only edits the user's own $PROFILE, so no
+        // elevation. A direct spawn passes the path as one argv, so a
+        // Program-Files space is not a problem (unlike the Start-Process path).
+        if a.id == "remove-ps-profile" {
+            let mut script = std::env::current_exe().unwrap_or_default();
+            script.pop();
+            script.push("profile");
+            script.push("uninstall-profile.ps1");
             match Command::new("powershell")
-                .args(["-NoExit", "-ExecutionPolicy", "Bypass", "-File", &script.to_string_lossy()])
+                .args([
+                    "-NoExit",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    &script.to_string_lossy(),
+                ])
                 .spawn()
             {
-                Ok(_) => notify("info", "Installing PowerShell profile — see the new window."),
-                Err(e) => notify("error", &format!("Couldn't start installer: {e}")),
+                Ok(_) => notify("info", "Removing PowerShell profile, see the new window."),
+                Err(e) => notify("error", &format!("Couldn't start remover: {e}")),
             }
             return;
         }
@@ -898,7 +1040,7 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
     });
 }
 
-fn wire_startup(app: &AppWindow, notify: &Notify) {
+fn wire_startup(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     let model: Rc<VecModel<StartupRow>> = Rc::new(VecModel::default());
 
     let rebuild = {
@@ -941,23 +1083,31 @@ fn wire_startup(app: &AppWindow, notify: &Notify) {
         }
         rebuild2();
     });
+
+    rebuild
 }
 
 /// Windows optional features: enable/disable via elevated DISM in a visible
-/// console. State isn't probed (DISM queries need elevation), so each row offers
-/// explicit Enable/Disable like WinUtil.
-fn wire_features(app: &AppWindow, notify: &Notify) {
-    let rows: Vec<FeatureRow> = features::catalog()
-        .iter()
-        .enumerate()
-        .map(|(i, f)| FeatureRow {
-            id: i as i32,
-            name: f.name.into(),
-            desc: f.desc.into(),
-        })
-        .collect();
-    app.global::<Features>()
-        .set_rows(Rc::new(VecModel::from(rows)).into());
+/// console. Enable/disable itself needs admin, but each row shows a best-effort
+/// current state detected UNELEVATED (file/registry probes), so the user isn't
+/// guessing. State refreshes when the panel is navigated to. Returns that
+/// refresh closure. DISM changes usually need a reboot, so the state reflects the
+/// last boot until then.
+fn wire_features(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
+    fn rows() -> Vec<FeatureRow> {
+        features::catalog()
+            .iter()
+            .enumerate()
+            .map(|(i, f)| FeatureRow {
+                id: i as i32,
+                name: f.name.into(),
+                desc: f.desc.into(),
+                state: features::detect_state(f.id).code(),
+            })
+            .collect()
+    }
+    let model: Rc<VecModel<FeatureRow>> = Rc::new(VecModel::from(rows()));
+    app.global::<Features>().set_rows(model.clone().into());
 
     let notify = notify.clone();
     app.global::<Features>().on_apply(move |id, enable| {
@@ -977,6 +1127,8 @@ fn wire_features(app: &AppWindow, notify: &Notify) {
             Err(e) => notify("error", &format!("{}: {e}", f.name)),
         }
     });
+
+    Rc::new(move || model.set_vec(rows()))
 }
 
 /// UWP debloat: probe installed packages off-thread (unelevated), remove per-user,
@@ -1303,7 +1455,7 @@ fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
                 1 => procs.sort_by_key(|p| std::cmp::Reverse(p.mem)),
                 2 => procs.sort_by(|a, b| cmp_f(a.gpu, b.gpu)),
                 3 => procs.sort_by_key(|p| std::cmp::Reverse(p.vram)),
-                4 => procs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())),
+                4 => procs.sort_by_key(|p| p.name.to_lowercase()),
                 _ => procs.sort_by(|a, b| cmp_f(a.cpu, b.cpu)),
             }
             procs.truncate(60);
@@ -1563,7 +1715,7 @@ fn wire_microwin(app: &AppWindow, notify: &Notify) {
                 notify("error", "Couldn't write the build script.");
                 return;
             }
-            match launch_elevated_file(&ps1) {
+            match launch_elevated_file(&ps1, false) {
                 Ok(()) => notify(
                     "info",
                     "MicroWin started — approve UAC; the build runs in the console (10+ min).",
@@ -2215,6 +2367,8 @@ fn main() -> Result<(), slint::PlatformError> {
         .set_cards(Rc::new(VecModel::from(cards)).into());
     refresh_modes(&app, &modes_catalog);
 
+    app.global::<Build>()
+        .set_version(env!("CARGO_PKG_VERSION").into());
     wire_theme(&app);
     let _tweak_pump = wire_tweaks(
         &app,
@@ -2225,10 +2379,10 @@ fn main() -> Result<(), slint::PlatformError> {
         &tweaks_model,
     );
     wire_modes(&app, &jrnl, &journal_path, &notify, &modes_catalog);
-    wire_installs(&app, &notify);
+    let _installs_pump = wire_installs(&app, &notify);
     wire_quick(&app, &notify);
-    wire_startup(&app, &notify);
-    wire_features(&app, &notify);
+    let startup_refresh = wire_startup(&app, &notify);
+    let features_refresh = wire_features(&app, &notify);
     let _debloat_pump = wire_debloat(&app, &notify);
     let _cleanup_pump = wire_cleanup(&app, &notify);
     let net_refresh = wire_network(&app, &notify);
@@ -2283,6 +2437,8 @@ fn main() -> Result<(), slint::PlatformError> {
         app.global::<Nav>().on_changed(move |page| match page {
             1 => refresh_tweaks(&tmodel, &tcat),
             3 => power_refresh(),
+            6 => startup_refresh(),
+            7 => features_refresh(),
             8 => privacy_refresh(),
             9 => history_refresh(),
             11 => net(),
@@ -2321,7 +2477,7 @@ fn main() -> Result<(), slint::PlatformError> {
             sys.set_gpu_history(spark_model(&gpu_hist));
             // Live-refresh Network / Processes (every 2s) only while visible.
             tick += 1;
-            if tick % 2 == 0 {
+            if tick.is_multiple_of(2) {
                 match app.global::<Nav>().get_page() {
                     11 => net_refresh(),
                     13 => proc_refresh(),

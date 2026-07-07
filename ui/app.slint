@@ -101,15 +101,25 @@ export struct AppRow {
     name: string,
     desc: string,
     category: string,
+    installed: bool,
+    known: bool, // false until the winget scan has reported for this row
 }
 
 export global Installer {
     in property <[AppRow]> rows;
     in-out property <string> filter-text;
     in property <int> count;
+    in property <bool> scanning: true; // winget install-state scan in progress
     callback install(int);
+    callback remove(int);
     callback filter();
     callback update-all();
+    callback recheck();
+}
+
+// Build/version info, set from Rust (CARGO_PKG_VERSION).
+export global Build {
+    in property <string> version: "0.0.0";
 }
 
 export struct ModeCard {
@@ -173,6 +183,7 @@ export struct FeatureRow {
     id: int,
     name: string,
     desc: string,
+    state: int, // 0 unknown, 1 enabled, 2 disabled
 }
 
 export global Features {
@@ -843,10 +854,34 @@ component AppRowView inherits Rectangle {
         }
         VerticalLayout {
             alignment: center;
-            PushButton {
-                label: "INSTALL";
-                clicked => {
-                    Installer.install(root.app.id);
+            Text {
+                text: root.app.known
+                    ? (root.app.installed ? "● INSTALLED" : "AVAILABLE")
+                    : (Installer.scanning ? "scanning…" : "—");
+                color: root.app.installed ? Theme.accent : Theme.text-dim;
+                font-size: 10px;
+                horizontal-alignment: right;
+                width: 84px;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: 6px;
+                PushButton {
+                    w: 74px;
+                    label: "INSTALL";
+                    clicked => {
+                        Installer.install(root.app.id);
+                    }
+                }
+                PushButton {
+                    w: 74px;
+                    danger: true;
+                    label: "REMOVE";
+                    clicked => {
+                        Installer.remove(root.app.id);
+                    }
                 }
             }
         }
@@ -866,7 +901,14 @@ component InstallView inherits VerticalLayout {
     spacing: 10px;
     PanelHeader {
         title: "INSTALL";
-        hint: "\{Installer.count} apps · winget";
+        hint: Installer.scanning ? "checking what's installed…" : "\{Installer.count} apps · winget";
+        PushButton {
+            w: 90px;
+            label: "RECHECK";
+            clicked => {
+                Installer.recheck();
+            }
+        }
         PushButton {
             w: 110px;
             label: "UPDATE ALL";
@@ -1468,6 +1510,16 @@ component StartupRowView inherits Rectangle {
         }
         VerticalLayout {
             alignment: center;
+            Text {
+                text: root.entry.enabled ? "● ON" : "OFF";
+                color: root.entry.enabled ? Theme.accent : Theme.text-dim;
+                font-size: 10px;
+                horizontal-alignment: right;
+                width: 44px;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
             Toggle {
                 on: root.entry.enabled;
                 a11y-label: root.entry.name;
@@ -1535,6 +1587,16 @@ component FeatureRowView inherits Rectangle {
                 color: Theme.text-dim;
                 font-size: 10px;
                 overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.entry.state == 1 ? "● ENABLED" : (root.entry.state == 2 ? "DISABLED" : "state: admin");
+                color: root.entry.state == 1 ? Theme.accent : Theme.text-dim;
+                font-size: 10px;
+                horizontal-alignment: right;
+                width: 84px;
             }
         }
         VerticalLayout {
@@ -2682,7 +2744,7 @@ export component AppWindow inherits Window {
                 VerticalLayout {
                     alignment: center;
                     Text {
-                        text: Theme.tagline;
+                        text: (Theme.hev ? "HEV · v" : "v") + Build.version;
                         color: Theme.text-dim;
                         font-size: 11px;
                     }

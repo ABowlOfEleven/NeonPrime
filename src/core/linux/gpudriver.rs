@@ -69,8 +69,8 @@ pub fn detect() -> Vec<Gpu> {
                 }
                 // Description follows the class label after ": ".
                 let name = line
-                    .splitn(2, ": ")
-                    .nth(1)
+                    .split_once(": ")
+                    .map(|x| x.1)
                     .unwrap_or(line)
                     .trim()
                     .to_string();

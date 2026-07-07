@@ -63,6 +63,127 @@ pub fn catalog() -> Vec<QuickAction> {
             danger: false,
             elevated: false,
         },
+        QuickAction {
+            id: "remove-ps-profile",
+            name: "Remove PowerShell profile",
+            desc: "Undo the NeonPrime profile: restore your previous $PROFILE from the backup, or reset it to the default.",
+            danger: true,
+            elevated: false,
+        },
+        // ── System configuration (WinUtil feature-tab parity) ────────
+        QuickAction {
+            id: "enable-ssh-server",
+            name: "Enable OpenSSH server",
+            desc: "Install and start the built-in OpenSSH server, set it to auto-start, and open TCP 22 in the firewall.",
+            danger: false,
+            elevated: true,
+        },
+        QuickAction {
+            id: "ntp-fix",
+            name: "Fix system clock (NTP resync)",
+            desc: "Point the time service at pool.ntp.org and force a resync — fixes a wrong or drifting clock.",
+            danger: false,
+            elevated: true,
+        },
+        QuickAction {
+            id: "registry-backup",
+            name: "Back up the registry",
+            desc: "Re-enable Windows' periodic registry backup and run it now (writes to RegBack).",
+            danger: false,
+            elevated: true,
+        },
+        QuickAction {
+            id: "legacy-recovery-enable",
+            name: "Enable legacy F8 boot menu",
+            desc: "Restore the old F8 'Advanced Boot Options' menu at startup.",
+            danger: false,
+            elevated: true,
+        },
+        QuickAction {
+            id: "legacy-recovery-disable",
+            name: "Disable legacy F8 boot menu",
+            desc: "Return to the modern (fast) boot behavior without the F8 menu.",
+            danger: false,
+            elevated: true,
+        },
+        QuickAction {
+            id: "autologin",
+            name: "Set up auto sign-in",
+            desc: "Open the Windows user-accounts dialog (netplwiz) to configure passwordless sign-in yourself.",
+            danger: false,
+            elevated: false,
+        },
+        // ── Open Windows settings (control-panel applets) ────────────
+        QuickAction {
+            id: "open-control-panel",
+            name: "Open Control Panel",
+            desc: "Launch the classic Control Panel.",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-computer-mgmt",
+            name: "Open Computer Management",
+            desc: "Disk Management, Event Viewer, local users, and services in one console.",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-network",
+            name: "Open Network Connections",
+            desc: "The classic network adapters panel (ncpa.cpl).",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-power",
+            name: "Open Power Options",
+            desc: "The classic power-plan control panel.",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-sound",
+            name: "Open Sound settings",
+            desc: "The classic playback/recording devices panel.",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-system",
+            name: "Open System Properties",
+            desc: "The classic System properties (sysdm.cpl).",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-region",
+            name: "Open Region settings",
+            desc: "The classic region and formats panel.",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-datetime",
+            name: "Open Date & Time",
+            desc: "The classic date, time, and time-zone panel.",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-printers",
+            name: "Open Printers",
+            desc: "Devices and Printers.",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-restore",
+            name: "Open System Restore",
+            desc: "Launch the System Restore wizard (rstrui).",
+            danger: false,
+            elevated: false,
+        },
     ]
 }
 
@@ -98,6 +219,68 @@ pub fn invocation(id: &str) -> Option<Invocation> {
             ],
             true,
         ),
+
+        // ── System configuration (elevated one-shots) ───────────────
+        // These run via `powershell -Command`; the elevated launcher joins the
+        // args back together, so scripts here use only double quotes (never
+        // single quotes) to avoid the -ArgumentList re-quoting pitfall.
+        "enable-ssh-server" => inv(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-Command",
+                "Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; \
+                 Set-Service -Name sshd -StartupType Automatic; Start-Service sshd; \
+                 New-NetFirewallRule -Name sshd-neonprime -DisplayName OpenSSH-Server \
+                 -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 \
+                 -ErrorAction SilentlyContinue",
+            ],
+            true,
+        ),
+        "ntp-fix" => inv(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-Command",
+                "w32tm /config /manualpeerlist:pool.ntp.org /syncfromflags:manual /update; \
+                 Stop-Service w32time -ErrorAction SilentlyContinue; Start-Service w32time; \
+                 w32tm /resync",
+            ],
+            true,
+        ),
+        "registry-backup" => inv(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-Command",
+                "reg add \"HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Configuration Manager\" \
+                 /v EnablePeriodicBackup /t REG_DWORD /d 1 /f; \
+                 schtasks /run /tn \"\\Microsoft\\Windows\\Registry\\RegIdleBackup\"",
+            ],
+            true,
+        ),
+        "legacy-recovery-enable" => {
+            inv("bcdedit", &["/set", "{default}", "bootmenupolicy", "legacy"], true)
+        }
+        "legacy-recovery-disable" => inv(
+            "bcdedit",
+            &["/set", "{default}", "bootmenupolicy", "standard"],
+            true,
+        ),
+        "autologin" => inv("netplwiz", &[], false),
+
+        // ── Open Windows settings (non-elevated launches) ────────────
+        "open-control-panel" => inv("control", &[], false),
+        "open-computer-mgmt" => inv("mmc", &["compmgmt.msc"], false),
+        "open-network" => inv("control", &["ncpa.cpl"], false),
+        "open-power" => inv("control", &["powercfg.cpl"], false),
+        "open-sound" => inv("control", &["mmsys.cpl"], false),
+        "open-system" => inv("control", &["sysdm.cpl"], false),
+        "open-region" => inv("control", &["intl.cpl"], false),
+        "open-datetime" => inv("control", &["timedate.cpl"], false),
+        "open-printers" => inv("control", &["printers"], false),
+        "open-restore" => inv("rstrui", &[], false),
+
         _ => return None,
     })
 }
@@ -109,8 +292,8 @@ mod tests {
     #[test]
     fn every_runnable_action_has_an_invocation() {
         for a in catalog() {
-            // The profile installer is launched specially by the UI (visible console).
-            if a.id == "install-ps-profile" {
+            // The profile install/remove are launched specially by the UI.
+            if a.id == "install-ps-profile" || a.id == "remove-ps-profile" {
                 continue;
             }
             let inv = invocation(a.id).expect("invocation");

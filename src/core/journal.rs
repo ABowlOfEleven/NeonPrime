@@ -145,8 +145,10 @@ mod tests {
 
     #[test]
     fn mark_reverted_excludes_from_active() {
-        let mut j = Journal::default();
-        j.next_id = 1;
+        let mut j = Journal {
+            next_id: 1,
+            ..Default::default()
+        };
         let (a, r) = sample();
         let id = j.record("x", a, r);
         assert_eq!(j.active().count(), 1);

@@ -56,6 +56,14 @@ pub fn list_string_values(hive: Hive, path: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// List the immediate subkey names under a key. Missing key → empty.
+pub fn list_subkeys(hive: Hive, path: &str) -> Vec<String> {
+    match root(hive).open_subkey(path) {
+        Ok(k) => k.enum_keys().filter_map(|r| r.ok()).collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
 /// Delete a value. Absent key or value is treated as success (idempotent).
 pub fn delete(hive: Hive, path: &str, name: &str) -> io::Result<()> {
     match root(hive).open_subkey_with_flags(path, KEY_SET_VALUE | KEY_QUERY_VALUE) {

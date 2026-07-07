@@ -126,6 +126,12 @@ pub struct ProcMonitor {
     gpu: GpuByPid,
 }
 
+impl Default for ProcMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProcMonitor {
     pub fn new() -> Self {
         let mut sys = System::new();

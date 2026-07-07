@@ -34,6 +34,8 @@ pub fn check_ids() -> &'static [&'static str] {
         "harden-nolmhash",
         "harden-no-rdp",
         "harden-no-remote-assist",
+        "disable-wpbt",
+        "block-razer-autoinstall",
     ]
 }
 

@@ -139,6 +139,9 @@ fn dw(
 }
 
 /// A DWORD tweak whose default is "value absent", so `off` deletes it.
+// One positional arg per registry field keeps the catalog entries terse and
+// tabular; a params struct would bloat every call site for no real gain.
+#[allow(clippy::too_many_arguments)]
 fn dw_del(
     id: &'static str,
     name: &'static str,
@@ -164,6 +167,44 @@ fn dw_del(
             applied: Some(RegValue::Dword(on_val)),
         },
     }
+}
+
+/// A single-string tweak whose `off` restores an explicit default string.
+#[allow(clippy::too_many_arguments)]
+fn sz(
+    id: &'static str,
+    name: &'static str,
+    desc: &'static str,
+    category: Category,
+    hive: Hive,
+    path: &'static str,
+    key: &'static str,
+    on_val: &'static str,
+    off_val: &'static str,
+) -> Tweak {
+    Tweak {
+        id,
+        name,
+        desc,
+        category,
+        warn: "",
+        on: vec![set(hive, path, key, RegValue::Sz(on_val.into()))],
+        off: vec![set(hive, path, key, RegValue::Sz(off_val.into()))],
+        probe: Probe {
+            hive,
+            path: path.into(),
+            name: key.into(),
+            applied: Some(RegValue::Sz(on_val.into())),
+        },
+    }
+}
+
+/// Terse `RegValue` constructors for the multi-action tweaks below.
+fn dv(v: u32) -> RegValue {
+    RegValue::Dword(v)
+}
+fn sv(v: &str) -> RegValue {
+    RegValue::Sz(v.into())
 }
 
 /// The full catalog. Index in this vec doubles as the UI row id.
@@ -327,8 +368,317 @@ pub fn catalog() -> Vec<Tweak> {
             "Turns off the Windows Remote Assistance invitation feature.",
             Security, Hklm, "SYSTEM\\CurrentControlSet\\Control\\Remote Assistance", "fAllowToGetHelp", 0, 1)
             .warned("Removes a rarely-used remote-help channel. Only matters if you actually use Windows Remote Assistance."),
+
+        // ══ WinUtil-parity tweaks (reversible registry only) ═════════════
+        // ── Interface ────────────────────────────────────────────────
+        dw_del("show-battery-percentage", "Show battery percentage",
+            "Show the exact battery percentage in the system tray.",
+            Interface, Hkcu, EXPLORER_ADV, "IsBatteryPercentageEnabled", 1),
+        dw_del("end-task-taskbar", "Add 'End Task' to taskbar right-click",
+            "Enable the developer option to kill an app straight from its taskbar button.",
+            Interface, Hkcu, "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\\TaskbarDeveloperSettings", "TaskbarEndTask", 1),
+        dw("always-show-scrollbars", "Always show scrollbars",
+            "Stop scrollbars from auto-hiding in modern apps.",
+            Interface, Hkcu, "Control Panel\\Accessibility", "DynamicScrollbars", 0, 1),
+        sz("numlock-on-startup", "Num Lock on at startup",
+            "Turn Num Lock on automatically when you sign in.",
+            Interface, Hkcu, "Control Panel\\Keyboard", "InitialKeyboardIndicators", "2", "0"),
+        dw("verbose-logon", "Verbose sign-in messages",
+            "Show detailed status messages during sign-in and shutdown (useful for diagnosing hangs).",
+            Interface, Hklm, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System", "VerboseStatus", 1, 0),
+        Tweak {
+            id: "detailed-bsod",
+            name: "Detailed blue-screen (BSoD)",
+            desc: "Show the technical stop-code parameters (and drop the sad-face) on a blue screen.",
+            category: Interface,
+            warn: "",
+            on: vec![
+                set(Hklm, CRASH, "DisplayParameters", dv(1)),
+                set(Hklm, CRASH, "DisableEmoticon", dv(1)),
+            ],
+            off: vec![
+                set(Hklm, CRASH, "DisplayParameters", dv(0)),
+                set(Hklm, CRASH, "DisableEmoticon", dv(0)),
+            ],
+            probe: Probe { hive: Hklm, path: CRASH.into(), name: "DisplayParameters".into(), applied: Some(dv(1)) },
+        },
+        Tweak {
+            id: "hide-home-gallery",
+            name: "Hide Home & Gallery in Explorer",
+            desc: "Remove the Home and Gallery entries from the File Explorer navigation pane.",
+            category: Interface,
+            warn: "",
+            on: vec![
+                set(Hkcu, "Software\\Classes\\CLSID\\{f874310e-b6b7-47dc-bc84-b9e6b38f5903}", "System.IsPinnedToNameSpaceTree", dv(0)),
+                set(Hkcu, "Software\\Classes\\CLSID\\{e88865ea-0e1c-4e20-9aa6-edcd0212c87c}", "System.IsPinnedToNameSpaceTree", dv(0)),
+            ],
+            off: vec![
+                del(Hkcu, "Software\\Classes\\CLSID\\{f874310e-b6b7-47dc-bc84-b9e6b38f5903}", "System.IsPinnedToNameSpaceTree"),
+                del(Hkcu, "Software\\Classes\\CLSID\\{e88865ea-0e1c-4e20-9aa6-edcd0212c87c}", "System.IsPinnedToNameSpaceTree"),
+            ],
+            probe: Probe { hive: Hkcu, path: "Software\\Classes\\CLSID\\{f874310e-b6b7-47dc-bc84-b9e6b38f5903}".into(), name: "System.IsPinnedToNameSpaceTree".into(), applied: Some(dv(0)) },
+        },
+        Tweak {
+            id: "hide-start-recommendations",
+            name: "Hide Start menu recommendations",
+            desc: "Remove the 'Recommended' section (recent files / suggested apps) from the Start menu.",
+            category: Interface,
+            warn: "",
+            on: vec![
+                set(Hklm, "SOFTWARE\\Microsoft\\PolicyManager\\current\\device\\Start", "HideRecommendedSection", dv(1)),
+                set(Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer", "HideRecommendedSection", dv(1)),
+            ],
+            off: vec![
+                set(Hklm, "SOFTWARE\\Microsoft\\PolicyManager\\current\\device\\Start", "HideRecommendedSection", dv(0)),
+                set(Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer", "HideRecommendedSection", dv(0)),
+            ],
+            probe: Probe { hive: Hklm, path: "SOFTWARE\\Policies\\Microsoft\\Windows\\Explorer".into(), name: "HideRecommendedSection".into(), applied: Some(dv(1)) },
+        },
+        dw("disable-login-blur", "Disable sign-in screen blur",
+            "Turn off the acrylic blur behind the sign-in screen for a sharper wallpaper.",
+            Interface, Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows\\System", "DisableAcrylicBackgroundOnLogon", 1, 0),
+        dw_del("disable-lockscreen", "Disable the lock screen",
+            "Go straight to the sign-in prompt instead of the lock-screen wallpaper.",
+            Interface, Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows\\Personalization", "NoLockScreen", 1),
+
+        // ── Privacy ──────────────────────────────────────────────────
+        Tweak {
+            id: "disable-activity-history",
+            name: "Disable Activity History / Timeline",
+            desc: "Stop Windows recording and uploading your activity timeline.",
+            category: Privacy,
+            warn: "",
+            on: vec![
+                set(Hklm, POLICY_SYSTEM, "EnableActivityFeed", dv(0)),
+                set(Hklm, POLICY_SYSTEM, "PublishUserActivities", dv(0)),
+                set(Hklm, POLICY_SYSTEM, "UploadUserActivities", dv(0)),
+            ],
+            off: vec![
+                del(Hklm, POLICY_SYSTEM, "EnableActivityFeed"),
+                del(Hklm, POLICY_SYSTEM, "PublishUserActivities"),
+                del(Hklm, POLICY_SYSTEM, "UploadUserActivities"),
+            ],
+            probe: Probe { hive: Hklm, path: POLICY_SYSTEM.into(), name: "EnableActivityFeed".into(), applied: Some(dv(0)) },
+        },
+        Tweak {
+            id: "disable-location",
+            name: "Disable location tracking",
+            desc: "Deny the system-wide location sensor and stop Maps auto-updates.",
+            category: Privacy,
+            warn: "",
+            on: vec![
+                set(Hklm, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\location", "Value", sv("Deny")),
+                set(Hklm, "SYSTEM\\Maps", "AutoUpdateEnabled", dv(0)),
+            ],
+            off: vec![
+                set(Hklm, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\location", "Value", sv("Allow")),
+                set(Hklm, "SYSTEM\\Maps", "AutoUpdateEnabled", dv(1)),
+            ],
+            probe: Probe { hive: Hklm, path: "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\location".into(), name: "Value".into(), applied: Some(sv("Deny")) },
+        },
+        dw_del("disable-delivery-optimization", "Disable Delivery Optimization",
+            "Stop Windows sharing update files peer-to-peer with other PCs.",
+            Privacy, Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows\\DeliveryOptimization", "DODownloadMode", 0),
+        dw("disable-background-apps", "Disable background apps",
+            "Stop UWP/Store apps from running in the background.",
+            Privacy, Hkcu, "Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications", "GlobalUserDisabled", 1, 0),
+        Tweak {
+            id: "disable-notifications",
+            name: "Disable notifications & action center",
+            desc: "Turn off toast notifications and the notification center.",
+            category: Privacy,
+            warn: "",
+            on: vec![
+                set(Hkcu, EXPLORER_POLICY_CU, "DisableNotificationCenter", dv(1)),
+                set(Hkcu, "Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications", "ToastEnabled", dv(0)),
+            ],
+            off: vec![
+                del(Hkcu, EXPLORER_POLICY_CU, "DisableNotificationCenter"),
+                set(Hkcu, "Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications", "ToastEnabled", dv(1)),
+            ],
+            probe: Probe { hive: Hkcu, path: "Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications".into(), name: "ToastEnabled".into(), applied: Some(dv(0)) },
+        },
+        dw_del("disable-notepad-ai", "Disable Notepad AI features",
+            "Turn off the Copilot/Rewrite AI features baked into Notepad.",
+            Privacy, Hklm, "SOFTWARE\\Policies\\WindowsNotepad", "DisableAIFeatures", 1),
+        Tweak {
+            id: "edge-debloat",
+            name: "Debloat Microsoft Edge",
+            desc: "Apply Edge enterprise policies that strip telemetry, shopping, rewards, feedback, and first-run nags. Does not remove Edge.",
+            category: Privacy,
+            warn: "",
+            on: EDGE_KEYS.iter().map(|(k, v)| set(Hklm, EDGE, k, dv(*v))).collect(),
+            off: EDGE_KEYS.iter().map(|(k, _)| del(Hklm, EDGE, k)).collect(),
+            probe: Probe { hive: Hklm, path: EDGE.into(), name: "PersonalizationReportingEnabled".into(), applied: Some(dv(0)) },
+        },
+        Tweak {
+            id: "brave-debloat",
+            name: "Debloat Brave browser",
+            desc: "Apply Brave enterprise policies that disable Rewards, Wallet, VPN, AI chat, news, and telemetry pings. Harmless if Brave is not installed.",
+            category: Privacy,
+            warn: "",
+            on: BRAVE_KEYS.iter().map(|(k, v)| set(Hklm, BRAVE, k, dv(*v))).collect(),
+            off: BRAVE_KEYS.iter().map(|(k, _)| del(Hklm, BRAVE, k)).collect(),
+            probe: Probe { hive: Hklm, path: BRAVE.into(), name: "BraveRewardsDisabled".into(), applied: Some(dv(1)) },
+        },
+
+        // ── Performance ──────────────────────────────────────────────
+        Tweak {
+            id: "visual-fx-performance",
+            name: "Adjust visuals for best performance",
+            desc: "Turn off animations, shadows, and window drag effects for a snappier desktop.",
+            category: Performance,
+            warn: "",
+            on: vec![
+                set(Hkcu, DESKTOP, "DragFullWindows", sv("0")),
+                set(Hkcu, "Control Panel\\Desktop\\WindowMetrics", "MinAnimate", sv("0")),
+                set(Hkcu, EXPLORER_ADV, "ListviewAlphaSelect", dv(0)),
+                set(Hkcu, EXPLORER_ADV, "ListviewShadow", dv(0)),
+                set(Hkcu, EXPLORER_ADV, "TaskbarAnimations", dv(0)),
+                set(Hkcu, "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects", "VisualFXSetting", dv(3)),
+                set(Hkcu, "Software\\Microsoft\\Windows\\DWM", "EnableAeroPeek", dv(0)),
+            ],
+            off: vec![
+                set(Hkcu, DESKTOP, "DragFullWindows", sv("1")),
+                set(Hkcu, "Control Panel\\Desktop\\WindowMetrics", "MinAnimate", sv("1")),
+                set(Hkcu, EXPLORER_ADV, "ListviewAlphaSelect", dv(1)),
+                set(Hkcu, EXPLORER_ADV, "ListviewShadow", dv(1)),
+                set(Hkcu, EXPLORER_ADV, "TaskbarAnimations", dv(1)),
+                set(Hkcu, "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects", "VisualFXSetting", dv(1)),
+                set(Hkcu, "Software\\Microsoft\\Windows\\DWM", "EnableAeroPeek", dv(1)),
+            ],
+            probe: Probe { hive: Hkcu, path: "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects".into(), name: "VisualFXSetting".into(), applied: Some(dv(3)) },
+        },
+        Tweak {
+            id: "game-mode",
+            name: "Enable Game Mode",
+            desc: "Let Windows prioritize the foreground game (auto Game Mode).",
+            category: Performance,
+            warn: "",
+            on: vec![
+                set(Hkcu, "Software\\Microsoft\\GameBar", "AllowAutoGameMode", dv(1)),
+                set(Hkcu, "Software\\Microsoft\\GameBar", "AutoGameModeEnabled", dv(1)),
+            ],
+            off: vec![
+                set(Hkcu, "Software\\Microsoft\\GameBar", "AllowAutoGameMode", dv(0)),
+                set(Hkcu, "Software\\Microsoft\\GameBar", "AutoGameModeEnabled", dv(0)),
+            ],
+            probe: Probe { hive: Hkcu, path: "Software\\Microsoft\\GameBar".into(), name: "AutoGameModeEnabled".into(), applied: Some(dv(1)) },
+        },
+        dw("disable-fullscreen-optimizations", "Disable fullscreen optimizations",
+            "Force exclusive fullscreen for games, which can lower input latency.",
+            Performance, Hkcu, "System\\GameConfigStore", "GameDVR_DXGIHonorFSEWindowsCompatible", 1, 0),
+        dw("disable-storage-sense", "Disable Storage Sense",
+            "Stop Windows from automatically deleting temp files and old downloads.",
+            Performance, Hkcu, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\StorageSense\\Parameters\\StoragePolicy", "01", 0, 1),
+        Tweak {
+            id: "disable-hibernation",
+            name: "Disable hibernation",
+            desc: "Turn off hibernation and reclaim the hiberfil.sys disk space.",
+            category: Performance,
+            warn: "For the full effect (deleting hiberfil.sys) also run `powercfg /hibernate off` once. Leave this OFF if you use Fast Startup or hibernate.",
+            on: vec![
+                set(Hklm, "System\\CurrentControlSet\\Control\\Session Manager\\Power", "HibernateEnabled", dv(0)),
+                set(Hklm, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings", "ShowHibernateOption", dv(0)),
+            ],
+            off: vec![
+                set(Hklm, "System\\CurrentControlSet\\Control\\Session Manager\\Power", "HibernateEnabled", dv(1)),
+                set(Hklm, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings", "ShowHibernateOption", dv(1)),
+            ],
+            probe: Probe { hive: Hklm, path: "System\\CurrentControlSet\\Control\\Session Manager\\Power".into(), name: "HibernateEnabled".into(), applied: Some(dv(0)) },
+        },
+        dw("utc-clock", "Set hardware clock to UTC",
+            "Store the system clock in UTC so it matches Linux on a dual-boot machine.",
+            Performance, Hklm, "SYSTEM\\CurrentControlSet\\Control\\TimeZoneInformation", "RealTimeIsUniversal", 1, 0)
+            .warned("Only useful for Linux dual-boot. On a Windows-only PC leave this OFF or the clock can drift by your timezone offset."),
+        dw("prefer-ipv4", "Prefer IPv4 over IPv6",
+            "Make Windows try IPv4 first, which can fix slow DNS on some networks.",
+            Performance, Hklm, "SYSTEM\\CurrentControlSet\\Services\\Tcpip6\\Parameters", "DisabledComponents", 32, 0)
+            .warned("Leaves IPv6 enabled but deprioritized. Safe on most home networks; do not use if your ISP or VPN is IPv6-only."),
+
+        // ── Security ─────────────────────────────────────────────────
+        dw_del("disable-wpbt", "Block firmware-injected software (WPBT)",
+            "Stop the Windows Platform Binary Table from letting your motherboard auto-run vendor software.",
+            Security, Hklm, "SYSTEM\\CurrentControlSet\\Control\\Session Manager", "DisableWpbtExecution", 1)
+            .warned("Closes a firmware-level auto-run channel abused by some OEMs (e.g. the Lenovo/Superfish class). No downside for normal use."),
+        Tweak {
+            id: "block-razer-autoinstall",
+            name: "Block automatic driver-software installs",
+            desc: "Stop Windows Update from auto-installing vendor bloat (like Razer Synapse) alongside device drivers.",
+            category: Security,
+            warn: "Windows will still install the core device driver; only the bundled vendor app is blocked. You can install that app manually if you want it.",
+            on: vec![
+                set(Hklm, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\DriverSearching", "SearchOrderConfig", dv(0)),
+                set(Hklm, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Device Installer", "DisableCoInstallers", dv(1)),
+            ],
+            off: vec![
+                set(Hklm, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\DriverSearching", "SearchOrderConfig", dv(1)),
+                set(Hklm, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Device Installer", "DisableCoInstallers", dv(0)),
+            ],
+            probe: Probe { hive: Hklm, path: "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Device Installer".into(), name: "DisableCoInstallers".into(), applied: Some(dv(1)) },
+        },
+        Tweak {
+            id: "rdp-unsigned-warning",
+            name: "Suppress unsigned-RDP-file warning",
+            desc: "Stop the 'publisher can't be identified' prompt when opening your own .rdp files.",
+            // Interface, not Security: this suppresses a safety prompt, so it does
+            // not belong in the hardening score. It shows in the Tweaks panel.
+            category: Interface,
+            warn: "Only suppress this if you exclusively open .rdp files you created yourself; the warning is a real check on untrusted RDP files.",
+            on: vec![
+                set(Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows NT\\Terminal Services\\Client", "RedirectionWarningDialogVersion", dv(1)),
+                set(Hkcu, "SOFTWARE\\Microsoft\\Terminal Server Client", "RdpLaunchConsentAccepted", dv(1)),
+            ],
+            off: vec![
+                del(Hklm, "SOFTWARE\\Policies\\Microsoft\\Windows NT\\Terminal Services\\Client", "RedirectionWarningDialogVersion"),
+                del(Hkcu, "SOFTWARE\\Microsoft\\Terminal Server Client", "RdpLaunchConsentAccepted"),
+            ],
+            probe: Probe { hive: Hkcu, path: "SOFTWARE\\Microsoft\\Terminal Server Client".into(), name: "RdpLaunchConsentAccepted".into(), applied: Some(dv(1)) },
+        },
     ]
 }
+
+// Registry roots and key tables used by the multi-action tweaks above.
+const CRASH: &str = "SYSTEM\\CurrentControlSet\\Control\\CrashControl";
+const POLICY_SYSTEM: &str = "SOFTWARE\\Policies\\Microsoft\\Windows\\System";
+const EXPLORER_POLICY_CU: &str = "Software\\Policies\\Microsoft\\Windows\\Explorer";
+const EDGE: &str = "SOFTWARE\\Policies\\Microsoft\\Edge";
+const BRAVE: &str = "SOFTWARE\\Policies\\BraveSoftware\\Brave";
+
+/// Edge debloat policy values (all DWORDs; `off` deletes them).
+const EDGE_KEYS: &[(&str, u32)] = &[
+    ("PersonalizationReportingEnabled", 0),
+    ("ShowRecommendationsEnabled", 0),
+    ("HideFirstRunExperience", 1),
+    ("UserFeedbackAllowed", 0),
+    ("ConfigureDoNotTrack", 1),
+    ("AlternateErrorPagesEnabled", 0),
+    ("EdgeCollectionsEnabled", 0),
+    ("EdgeShoppingAssistantEnabled", 0),
+    ("MicrosoftEdgeInsiderPromotionEnabled", 0),
+    ("ShowMicrosoftRewards", 0),
+    ("WebWidgetAllowed", 0),
+    ("DiagnosticData", 0),
+    ("EdgeAssetDeliveryServiceEnabled", 0),
+    ("WalletDonationEnabled", 0),
+    ("DefaultBrowserSettingsCampaignEnabled", 0),
+];
+
+/// Brave debloat policy values (all DWORDs; `off` deletes them).
+const BRAVE_KEYS: &[(&str, u32)] = &[
+    ("BraveRewardsDisabled", 1),
+    ("BraveWalletDisabled", 1),
+    ("BraveVPNDisabled", 1),
+    ("BraveAIChatEnabled", 0),
+    ("BraveStatsPingEnabled", 0),
+    ("BraveNewsDisabled", 1),
+    ("BraveTalkDisabled", 1),
+    ("TorDisabled", 1),
+    ("BraveP3AEnabled", 0),
+    ("UrlKeyedAnonymizedDataCollectionEnabled", 0),
+    ("SafeBrowsingExtendedReportingEnabled", 0),
+    ("MetricsReportingEnabled", 0),
+];
 
 /// Curated "Essential Tweaks" — a safe, no-elevation recommended set applied by
 /// the one-click button (mirrors WinUtil's flagship preset, HKCU-only).
