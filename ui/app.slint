@@ -25,10 +25,11 @@ export global Theme {
     out property <string> tweaks-label: "TWEAKS";
     out property <string> toggle-label: hev ? "THEME: HEV" : "THEME: HOLO";
 
-    // Layout rhythm. Panels sit in a centered column of at most `content-max` so
-    // rows never sprawl edge-to-edge on a wide window (which stranded controls far
-    // from their labels). Spacing scale keeps vertical rhythm consistent.
-    out property <length> content-max: 1040px;
+    // Layout rhythm. List/toggle panels sit in a cozy centered column so controls
+    // hug their labels; table panels (Processes/Network/Services) get a wider cap
+    // so columns are not cramped. Spacing scale keeps vertical rhythm consistent.
+    out property <length> content-max: 900px;
+    out property <length> content-wide: 1280px;
     out property <length> gutter: 24px;
 }
 
@@ -459,31 +460,38 @@ component Meter inherits VerticalLayout {
     in property <string> value;
     in property <float> ratio;
     in property <bool> warn;
-    spacing: 4px;
+    spacing: 6px;
 
     HorizontalLayout {
+        alignment: stretch;
         Text {
             text: root.label;
             color: Theme.text-dim;
             font-size: 11px;
+            letter-spacing: 0.4px;
+            vertical-alignment: center;
         }
         Rectangle { horizontal-stretch: 1; }
         Text {
             text: root.value;
-            color: root.warn ? Theme.ember-soft : Theme.accent;
-            font-size: 11px;
+            color: root.warn ? Theme.ember-soft : Theme.accent-soft;
+            font-size: 12px;
+            font-weight: 600;
+            vertical-alignment: center;
         }
     }
+    // Thin, precise track. A tiny min-width keeps a nub visible near 0 so the
+    // meter never looks empty/broken.
     Rectangle {
-        height: 10px;
-        border-radius: 5px;
+        height: 5px;
+        border-radius: 2.5px;
         background: Theme.track;
         Rectangle {
             x: 0;
             y: 0;
-            width: parent.width * clamp(root.ratio, 0, 1);
+            width: max(parent.height, parent.width * clamp(root.ratio, 0, 1));
             height: parent.height;
-            border-radius: 5px;
+            border-radius: 2.5px;
             background: root.warn ? Theme.ember : Theme.accent;
         }
     }
@@ -1160,26 +1168,36 @@ component DashboardView inherits VerticalLayout {
         ModePill { label: "GAME"; active: Modes.active == 1; clicked => { Modes.activate(1); } }
         ModePill { label: "WORK"; active: Modes.active == 2; clicked => { Modes.activate(2); } }
     }
-    HorizontalLayout {
-        spacing: 26px;
-        alignment: stretch;
-        VerticalLayout {
-            alignment: center;
-            Gauge {
-                ratio: Sys.gpu-ratio;
-                value-text: Sys.gpu-text;
-                caption: "GPU LOAD";
+    // Live overview card: GPU gauge alongside the memory / load / temp meters.
+    Rectangle {
+        border-radius: 12px;
+        border-width: 1px;
+        border-color: Theme.divider;
+        background: Theme.track;
+        HorizontalLayout {
+            padding: 20px;
+            spacing: 28px;
+            alignment: stretch;
+            VerticalLayout {
+                alignment: center;
+                Gauge {
+                    ratio: Sys.gpu-ratio;
+                    value-text: Sys.gpu-text;
+                    caption: "GPU LOAD";
+                }
             }
-        }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 8px;
-            Meter { label: "VRAM"; value: Sys.vram-text; ratio: Sys.vram-ratio; }
-            Meter { label: "RAM"; value: Sys.ram-text; ratio: Sys.ram-ratio; }
-            Meter { label: "CPU"; value: Sys.cpu-text; ratio: Sys.cpu-ratio; }
-            Meter { label: "CPU TEMP"; value: Sys.cpu-temp-text; ratio: Sys.cpu-temp-ratio; warn: Sys.cpu-temp-warn; }
-            Meter { label: "GPU TEMP"; value: Sys.temp-text; ratio: Sys.temp-ratio; warn: Sys.temp-warn; }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 13px;
+                Meter { label: "VRAM"; value: Sys.vram-text; ratio: Sys.vram-ratio; }
+                Meter { label: "RAM"; value: Sys.ram-text; ratio: Sys.ram-ratio; }
+                Meter { label: "CPU"; value: Sys.cpu-text; ratio: Sys.cpu-ratio; }
+                // Temperature meters, visually separated from the load meters.
+                Rectangle { height: 1px; background: Theme.divider; }
+                Meter { label: "CPU TEMP"; value: Sys.cpu-temp-text; ratio: Sys.cpu-temp-ratio; warn: Sys.cpu-temp-warn; }
+                Meter { label: "GPU TEMP"; value: Sys.temp-text; ratio: Sys.temp-ratio; warn: Sys.temp-warn; }
+            }
         }
     }
     // Live history sparklines
@@ -2885,7 +2903,10 @@ export component AppWindow inherits Window {
                 // Centered content column: panels never sprawl past Theme.content-max,
                 // so controls sit near their labels instead of stranding at the edge.
                 content-col := Rectangle {
-                    width: min(parent.width, Theme.content-max);
+                    // Table panels (Network 11, Processes 13, Services 14) need room
+                    // for their columns; everything else uses the cozy reading width.
+                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14;
+                    width: min(parent.width, self.wide ? Theme.content-wide : Theme.content-max);
                     x: (parent.width - self.width) / 2;
                     height: parent.height;
                 if Nav.page == 0: DashboardView {
