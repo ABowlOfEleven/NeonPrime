@@ -18,7 +18,16 @@ Windows bug fixes reported from driving 3.1.0.
 - **PowerShell profile installer**: now runs elevated, sets the CurrentUser
   execution policy to RemoteSigned (so the installed profile actually loads
   instead of being blocked), unblocks the profile file, targets PowerShell 7
-  first, and installs the modules in PowerShell 7's scope as well as 5.1's.
+  first, and installs the modules in PowerShell 7's scope as well as 5.1's. Also
+  fixed the installer window flashing and closing after the UAC prompt: the
+  elevated launcher passed the script path unquoted, so with the app under
+  `C:\Program Files\` it split on the space; the path is now quoted.
+
+### Added
+
+- **Remove PowerShell profile** quick action: restores your previous `$PROFILE`
+  from the backup NeonPrime made, or clears it if NeonPrime created it, undoing
+  the profile install.
 
 ## 3.1.0 — 2026-07-06
 

@@ -829,7 +829,10 @@ fn launch_elevated_ps(script: &str, visible: bool) -> io::Result<()> {
 /// for long scripts where nested -Command quoting would be fragile (MicroWin).
 fn launch_elevated_file(ps1: &Path) -> io::Result<()> {
     let path = ps1.to_string_lossy().replace('\'', "''");
-    let inner = format!("'-NoExit','-ExecutionPolicy','Bypass','-File','{path}'");
+    // The path element must carry literal double quotes: Start-Process joins the
+    // -ArgumentList array with spaces WITHOUT re-quoting, so a bare path in
+    // "Program Files" would reach powershell as `-File C:\Program` and fail.
+    let inner = format!("'-NoExit','-ExecutionPolicy','Bypass','-File','\"{path}\"'");
     let ps = format!("Start-Process -FilePath 'powershell' -ArgumentList {inner} -Verb RunAs");
     Command::new("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
@@ -881,6 +884,30 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
                     "Installing PowerShell profile (approve UAC), see the new window.",
                 ),
                 Err(e) => notify("error", &format!("Couldn't start installer: {e}")),
+            }
+            return;
+        }
+
+        // Removing the profile only edits the user's own $PROFILE, so no
+        // elevation. A direct spawn passes the path as one argv, so a
+        // Program-Files space is not a problem (unlike the Start-Process path).
+        if a.id == "remove-ps-profile" {
+            let mut script = std::env::current_exe().unwrap_or_default();
+            script.pop();
+            script.push("profile");
+            script.push("uninstall-profile.ps1");
+            match Command::new("powershell")
+                .args([
+                    "-NoExit",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    &script.to_string_lossy(),
+                ])
+                .spawn()
+            {
+                Ok(_) => notify("info", "Removing PowerShell profile, see the new window."),
+                Err(e) => notify("error", &format!("Couldn't start remover: {e}")),
             }
             return;
         }

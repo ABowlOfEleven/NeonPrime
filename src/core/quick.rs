@@ -63,6 +63,13 @@ pub fn catalog() -> Vec<QuickAction> {
             danger: false,
             elevated: false,
         },
+        QuickAction {
+            id: "remove-ps-profile",
+            name: "Remove PowerShell profile",
+            desc: "Undo the NeonPrime profile: restore your previous $PROFILE from the backup, or reset it to the default.",
+            danger: true,
+            elevated: false,
+        },
     ]
 }
 
@@ -109,8 +116,8 @@ mod tests {
     #[test]
     fn every_runnable_action_has_an_invocation() {
         for a in catalog() {
-            // The profile installer is launched specially by the UI (visible console).
-            if a.id == "install-ps-profile" {
+            // The profile install/remove are launched specially by the UI.
+            if a.id == "install-ps-profile" || a.id == "remove-ps-profile" {
                 continue;
             }
             let inv = invocation(a.id).expect("invocation");
