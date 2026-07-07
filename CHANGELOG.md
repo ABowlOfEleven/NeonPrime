@@ -35,6 +35,11 @@ Windows bug fixes reported from driving 3.1.0.
 
 ### Added
 
+- **NeonPrime author's public Rust projects in the Install catalog** (search
+  "ABowlOfEleven"): hopscout (via its winget package), plus GenomeForge and
+  Formant, which download and install their latest GitHub-release MSI. Their
+  installed state is detected too — winget packages via the winget scan, the
+  GitHub-release apps via Add/Remove Programs.
 - **First-launch state indicators** on Install, Features, and Startup, so you no
   longer have to guess what's already done:
   - Install: a background `winget` scan flags each app `● INSTALLED` or

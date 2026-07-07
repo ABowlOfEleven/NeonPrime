@@ -7,13 +7,19 @@ use std::collections::{BTreeMap, HashSet};
 
 use serde::Deserialize;
 
+use crate::core::action::{Hive, RegValue};
+use crate::core::registry;
+
 /// One app, ready for the UI.
 pub struct App {
     pub name: String,
     pub desc: String,
-    /// winget package id (`--id`, exact match).
+    /// winget package id (`--id`, exact match). Empty for GitHub-release apps.
     pub id: String,
     pub category: String,
+    /// `owner/name` for apps installed from a GitHub release MSI instead of
+    /// winget. Empty for normal winget apps.
+    pub repo: String,
 }
 
 // Shape of `winget export` output — we only want the package identifiers.
@@ -73,9 +79,78 @@ pub fn installed_ids() -> HashSet<String> {
     set
 }
 
-/// True if `id` is present in a set from [`installed_ids`] (case-insensitive).
-pub fn is_installed(id: &str, installed: &HashSet<String>) -> bool {
-    installed.contains(&id.to_lowercase())
+/// Add/Remove-Programs display names (lowercased) from the registry uninstall
+/// keys. This catches apps installed outside winget (e.g. a GitHub-release MSI),
+/// which `winget export` omits. Fast (registry only), safe to call off-thread.
+pub fn installed_arp_names() -> HashSet<String> {
+    const UNINSTALL: &str = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+    const WOW: &str = "SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+    let mut set = HashSet::new();
+    for (hive, base) in [
+        (Hive::Hklm, UNINSTALL),
+        (Hive::Hklm, WOW),
+        (Hive::Hkcu, UNINSTALL),
+    ] {
+        for sub in registry::list_subkeys(hive, base) {
+            let path = format!("{base}\\{sub}");
+            if let Ok(Some(RegValue::Sz(name))) = registry::read(hive, &path, "DisplayName") {
+                if !name.is_empty() {
+                    set.insert(name.to_lowercase());
+                }
+            }
+        }
+    }
+    set
+}
+
+/// A snapshot of what's installed, from both winget and Add/Remove Programs.
+pub struct Installed {
+    /// winget package identifiers (lowercased).
+    pub ids: HashSet<String>,
+    /// Add/Remove-Programs display names (lowercased).
+    pub arp: HashSet<String>,
+}
+
+/// Scan installed state from winget + the registry. Slow (winget); off-thread.
+pub fn scan_installed() -> Installed {
+    Installed {
+        ids: installed_ids(),
+        arp: installed_arp_names(),
+    }
+}
+
+/// Whether `app` is installed. winget apps match by exact package id; author
+/// (GitHub-release) apps match their name against Add/Remove Programs.
+pub fn is_installed(app: &App, scan: &Installed) -> bool {
+    if !app.id.is_empty() {
+        scan.ids.contains(&app.id.to_lowercase())
+    } else {
+        let n = app.name.to_lowercase();
+        scan.arp.iter().any(|d| d.contains(&n))
+    }
+}
+
+/// A PowerShell script that downloads the latest GitHub-release MSI for `repo`
+/// (`owner/name`) and installs it. Runs in a visible elevated console.
+pub fn github_install_script(repo: &str) -> String {
+    format!(
+        "$ErrorActionPreference = 'Stop'\n\
+         Write-Host 'Fetching the latest release of {repo}...' -ForegroundColor Cyan\n\
+         $rel = Invoke-RestMethod -Uri 'https://api.github.com/repos/{repo}/releases/latest' -Headers @{{ 'User-Agent' = 'NeonPrime' }}\n\
+         $asset = $rel.assets | Where-Object {{ $_.name -like '*x64.msi' -or $_.name -like '*Setup.msi' -or $_.name -like '*.msi' }} | Select-Object -First 1\n\
+         if (-not $asset) {{ Write-Host 'No .msi asset in the latest release.' -ForegroundColor Red; Read-Host 'Press Enter to close'; exit 1 }}\n\
+         $out = Join-Path $env:TEMP $asset.name\n\
+         Write-Host \"Downloading $($asset.name)...\" -ForegroundColor Yellow\n\
+         Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $out\n\
+         Write-Host 'Installing...' -ForegroundColor Yellow\n\
+         $p = Start-Process msiexec.exe -ArgumentList '/i', ('\"' + $out + '\"') -Wait -PassThru\n\
+         Write-Host \"Done (exit $($p.ExitCode)).\" -ForegroundColor Green\n"
+    )
+}
+
+/// A `winget` command line to uninstall an Add/Remove-Programs app by name.
+pub fn uninstall_named_cmd(name: &str) -> String {
+    format!("winget uninstall --name \"{name}\"")
 }
 
 /// Shape of each entry in WinUtil's `applications.json` (extra fields ignored).
@@ -93,7 +168,8 @@ struct WinutilApp {
 
 const APPS_JSON: &str = include_str!("../../assets/winutil-applications.json");
 
-/// The full app catalog, parsed from the bundled WinUtil data and sorted by name.
+/// The full app catalog, parsed from the bundled WinUtil data plus the NeonPrime
+/// author's own public projects, sorted by name.
 pub fn catalog() -> Vec<App> {
     let map: BTreeMap<String, WinutilApp> = serde_json::from_str(APPS_JSON).unwrap_or_default();
     let mut apps: Vec<App> = map
@@ -104,10 +180,45 @@ pub fn catalog() -> Vec<App> {
             desc: a.description,
             id: a.winget,
             category: a.category,
+            repo: String::new(),
         })
         .collect();
+    apps.extend(author_apps());
     apps.sort_by_key(|a| a.name.to_lowercase());
     apps
+}
+
+/// The NeonPrime author's public Rust projects (search "ABowlOfEleven" to find
+/// them all). hopscout ships on winget; the others install from their GitHub
+/// release MSI. NeonPrime itself is intentionally omitted — you're running it.
+fn author_apps() -> Vec<App> {
+    let author = |name: &str, desc: &str, id: &str, repo: &str| App {
+        name: name.into(),
+        desc: desc.into(),
+        id: id.into(),
+        category: "ABowlOfEleven".into(),
+        repo: repo.into(),
+    };
+    vec![
+        author(
+            "hopscout",
+            "A modern MTR-style traceroute and network monitor (Rust): CLI + GUI.",
+            "ABowlOfEleven.hopscout",
+            "",
+        ),
+        author(
+            "GenomeForge",
+            "A local, native genome browser and variant explorer — your DNA stays on your machine.",
+            "",
+            "ABowlOfEleven/genomeforge",
+        ),
+        author(
+            "Formant",
+            "A creator-grade, CPU-only Rust vocal processor. A lightweight Voicemod alternative.",
+            "",
+            "ABowlOfEleven/Formant",
+        ),
+    ]
 }
 
 /// The full `winget` argument vector for installing an app id.
@@ -146,18 +257,63 @@ mod tests {
             c.len()
         );
         for a in &c {
-            assert!(!a.id.is_empty());
+            // Every app installs via a winget id OR a GitHub repo.
+            assert!(!a.id.is_empty() || !a.repo.is_empty());
             assert!(!a.name.is_empty());
         }
     }
 
     #[test]
-    fn is_installed_is_case_insensitive() {
-        let mut set = HashSet::new();
-        set.insert("mozilla.firefox".to_string());
-        assert!(is_installed("Mozilla.Firefox", &set));
-        assert!(is_installed("mozilla.firefox", &set));
-        assert!(!is_installed("Foo.Bar", &set));
+    fn catalog_includes_author_apps() {
+        let c = catalog();
+        assert!(c
+            .iter()
+            .any(|a| a.name == "hopscout" && a.id == "ABowlOfEleven.hopscout"));
+        assert!(c
+            .iter()
+            .any(|a| a.name == "GenomeForge" && a.repo == "ABowlOfEleven/genomeforge"));
+        assert!(c.iter().any(|a| a.name == "Formant"));
+    }
+
+    #[test]
+    fn is_installed_matches_winget_id_and_arp_name() {
+        let scan = Installed {
+            ids: HashSet::from(["mozilla.firefox".to_string()]),
+            arp: HashSet::from(["genomeforge 0.1.2".to_string()]),
+        };
+        let ff = App {
+            name: "Firefox".into(),
+            desc: String::new(),
+            id: "Mozilla.Firefox".into(),
+            category: String::new(),
+            repo: String::new(),
+        };
+        assert!(is_installed(&ff, &scan));
+        // Author app matched by ARP display name (substring).
+        let gf = App {
+            name: "GenomeForge".into(),
+            desc: String::new(),
+            id: String::new(),
+            category: String::new(),
+            repo: "ABowlOfEleven/genomeforge".into(),
+        };
+        assert!(is_installed(&gf, &scan));
+        let missing = App {
+            name: "Nope".into(),
+            desc: String::new(),
+            id: "No.Thing".into(),
+            category: String::new(),
+            repo: String::new(),
+        };
+        assert!(!is_installed(&missing, &scan));
+    }
+
+    #[test]
+    fn github_script_targets_repo() {
+        let s = github_install_script("ABowlOfEleven/genomeforge");
+        assert!(s.contains("ABowlOfEleven/genomeforge"));
+        assert!(s.contains(".msi"));
+        assert!(s.contains("msiexec"));
     }
 
     #[test]

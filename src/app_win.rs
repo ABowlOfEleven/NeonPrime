@@ -582,10 +582,26 @@ fn wire_installs(app: &AppWindow, notify: &Notify) -> Timer {
         let cat = catalog.clone();
         let notify = notify.clone();
         app.global::<Installer>().on_install(move |id| {
-            if let Some(a) = cat.get(id as usize) {
+            let Some(a) = cat.get(id as usize) else { return };
+            if a.repo.is_empty() {
                 match launch_elevated_ps(&installs::install_cmd(&a.id), true) {
                     Ok(()) => notify("info", &format!("Installing {} (approve UAC)…", a.name)),
                     Err(e) => notify("error", &format!("Couldn't start winget: {e}")),
+                }
+            } else {
+                // GitHub-release app: write the download + install script to a
+                // temp .ps1 and run it elevated (a file sidesteps -Command
+                // quoting for the multi-statement script).
+                let mut p = std::env::temp_dir();
+                p.push(format!("neonprime-install-{}.ps1", a.repo.replace('/', "-")));
+                match std::fs::write(&p, installs::github_install_script(&a.repo))
+                    .and_then(|()| launch_elevated_file(&p, false))
+                {
+                    Ok(()) => notify(
+                        "info",
+                        &format!("Installing {} from GitHub (approve UAC)…", a.name),
+                    ),
+                    Err(e) => notify("error", &format!("Couldn't start installer: {e}")),
                 }
             }
         });
@@ -594,11 +610,15 @@ fn wire_installs(app: &AppWindow, notify: &Notify) -> Timer {
         let cat = catalog.clone();
         let notify = notify.clone();
         app.global::<Installer>().on_remove(move |id| {
-            if let Some(a) = cat.get(id as usize) {
-                match launch_elevated_ps(&installs::uninstall_cmd(&a.id), true) {
-                    Ok(()) => notify("info", &format!("Removing {} (approve UAC)…", a.name)),
-                    Err(e) => notify("error", &format!("Couldn't start winget: {e}")),
-                }
+            let Some(a) = cat.get(id as usize) else { return };
+            let cmd = if a.repo.is_empty() {
+                installs::uninstall_cmd(&a.id)
+            } else {
+                installs::uninstall_named_cmd(&a.name)
+            };
+            match launch_elevated_ps(&cmd, true) {
+                Ok(()) => notify("info", &format!("Removing {} (approve UAC)…", a.name)),
+                Err(e) => notify("error", &format!("Couldn't start winget: {e}")),
             }
         });
     }
@@ -618,13 +638,13 @@ fn wire_installs(app: &AppWindow, notify: &Notify) -> Timer {
     // missing, so we leave those rows "unknown" rather than falsely marking
     // everything uninstalled.
     app.global::<Installer>().set_scanning(true);
-    let (tx, rx) = mpsc::channel::<std::collections::HashSet<String>>();
+    let (tx, rx) = mpsc::channel::<installs::Installed>();
     let scan: Rc<dyn Fn()> = {
         let tx = tx.clone();
         Rc::new(move || {
             let tx = tx.clone();
             std::thread::spawn(move || {
-                let _ = tx.send(installs::installed_ids());
+                let _ = tx.send(installs::scan_installed());
             });
         })
     };
@@ -654,14 +674,20 @@ fn wire_installs(app: &AppWindow, notify: &Notify) -> Timer {
     let source2 = source.clone();
     let timer = Timer::default();
     timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
-        while let Ok(set) = rx.try_recv() {
-            if !set.is_empty() {
-                for (i, a) in catalog2.iter().enumerate() {
-                    if let Some(mut r) = source2.row_data(i) {
-                        r.installed = installs::is_installed(&a.id, &set);
+        while let Ok(scan) = rx.try_recv() {
+            // If winget produced nothing (missing/errored), leave winget apps
+            // "unknown" rather than falsely marking them uninstalled; author apps
+            // resolve from Add/Remove Programs regardless.
+            let winget_ok = !scan.ids.is_empty();
+            for (i, a) in catalog2.iter().enumerate() {
+                if let Some(mut r) = source2.row_data(i) {
+                    if !a.id.is_empty() && !winget_ok {
+                        r.known = false;
+                    } else {
+                        r.installed = installs::is_installed(a, &scan);
                         r.known = true;
-                        source2.set_row_data(i, r);
                     }
+                    source2.set_row_data(i, r);
                 }
             }
             if let Some(app) = weak.upgrade() {
