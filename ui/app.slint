@@ -544,12 +544,16 @@ component Gauge inherits Rectangle {
             text: root.value-text;
             color: root.warn ? Theme.ember-soft : Theme.accent-soft;
             horizontal-alignment: center;
+            vertical-alignment: center;
+            height: 40px;
             font-size: 30px;
         }
         Text {
             text: root.caption;
             color: Theme.text-dim;
             horizontal-alignment: center;
+            vertical-alignment: center;
+            height: 15px;
             font-size: 11px;
         }
     }
@@ -560,22 +564,28 @@ component Sparkline inherits Rectangle {
     in property <color> tint;
     in property <string> label;
     in property <string> value;
-    height: 46px;
+    height: 52px;
     HorizontalLayout {
         spacing: 12px;
         VerticalLayout {
             width: 76px;
             alignment: center;
-            spacing: 2px;
+            spacing: 3px;
+            // Explicit box heights (a touch taller than the glyphs) with centered
+            // text, so the value's top isn't clipped by a tight line box.
             Text {
                 text: root.label;
                 color: Theme.text-dim;
                 font-size: 10px;
+                height: 14px;
+                vertical-alignment: center;
             }
             Text {
                 text: root.value;
                 color: root.tint;
                 font-size: 14px;
+                height: 22px;
+                vertical-alignment: center;
             }
         }
         // Bar histogram — fills the full width via layout, newest on the right.
