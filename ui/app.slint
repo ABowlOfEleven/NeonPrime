@@ -20,9 +20,16 @@ export global Theme {
     out property <color> text-body: hev ? #c9a766 : #a9c6d6;
 
     out property <string> overview-title: hev ? "HAZARD SYSTEMS ONLINE" : "SYSTEM OVERVIEW";
-    out property <string> tweaks-label: hev ? "PRY BLOAT" : "TWEAKS";
-    out property <string> tagline: hev ? "HEV · v3.0" : "v3.0.0";
+    // Nav/panel labels stay accurate in both themes (the HEV flavor lives in the
+    // crowbar icon and the dashboard title, not in a confusing "PRY BLOAT" rename).
+    out property <string> tweaks-label: "TWEAKS";
     out property <string> toggle-label: hev ? "THEME: HEV" : "THEME: HOLO";
+
+    // Layout rhythm. Panels sit in a centered column of at most `content-max` so
+    // rows never sprawl edge-to-edge on a wide window (which stranded controls far
+    // from their labels). Spacing scale keeps vertical rhythm consistent.
+    out property <length> content-max: 1040px;
+    out property <length> gutter: 24px;
 }
 
 export global Sys {
@@ -1275,7 +1282,7 @@ component TweaksView inherits VerticalLayout {
     padding-bottom: 8px;
     spacing: 10px;
     PanelHeader {
-        title: Theme.hev ? "PRY THE BLOAT" : "TWEAKS";
+        title: "TWEAKS";
         PushButton {
             w: 104px;
             label: "ESSENTIALS";
@@ -2875,6 +2882,12 @@ export component AppWindow inherits Window {
             // Main content — switches on Nav.page.
             Rectangle {
                 horizontal-stretch: 1;
+                // Centered content column: panels never sprawl past Theme.content-max,
+                // so controls sit near their labels instead of stranding at the edge.
+                content-col := Rectangle {
+                    width: min(parent.width, Theme.content-max);
+                    x: (parent.width - self.width) / 2;
+                    height: parent.height;
                 if Nav.page == 0: DashboardView {
                     width: parent.width;
                     height: parent.height;
@@ -2939,6 +2952,7 @@ export component AppWindow inherits Window {
                     width: parent.width;
                     height: parent.height;
                 }
+                } // content-col
 
                 Toast {
                     message: Ui.toast-message;
