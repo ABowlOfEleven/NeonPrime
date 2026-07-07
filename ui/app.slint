@@ -2784,7 +2784,9 @@ export component AppWindow inherits Window {
                 padding-left: 20px;
                 padding-right: 14px;
                 spacing: 12px;
-                alignment: start;
+                // No `alignment: start` — that collapses the stretch spacer below,
+                // which clustered the SEARCH/THEME pills next to the logo instead
+                // of pushing them to the right edge on a wide window.
                 VerticalLayout {
                     alignment: center;
                     Image {
@@ -2796,10 +2798,16 @@ export component AppWindow inherits Window {
                 }
                 VerticalLayout {
                     alignment: center;
-                    Text {
-                        text: "NEONPRIME";
-                        color: Theme.accent-soft;
-                        font-size: 16px;
+                    Rectangle {
+                        height: 24px;
+                        Text {
+                            width: 100%;
+                            height: 100%;
+                            text: "NEONPRIME";
+                            color: Theme.accent-soft;
+                            font-size: 16px;
+                            vertical-alignment: center;
+                        }
                     }
                 }
                 VerticalLayout {
