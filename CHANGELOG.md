@@ -2,6 +2,17 @@
 
 All notable changes to NeonPrime. Dates are UTC.
 
+## Unreleased
+
+### Fixed
+
+- **PowerShell profile installer now configures the terminal font.** Installing a
+  Nerd Font is not enough on its own: Windows Terminal has to be told to use it,
+  or the Oh My Posh prompt glyphs render as blank boxes. The installer now points
+  Windows Terminal's default font at an installed Nerd Font (CaskaydiaCove NF,
+  falling back to JetBrainsMono NF or Cascadia Code NF), backing up
+  `settings.json` first and leaving any Nerd Font you already chose alone.
+
 ## 3.1.1 — 2026-07-07
 
 Windows bug fixes from driving 3.1.0, plus a big push toward WinUtil parity: the
