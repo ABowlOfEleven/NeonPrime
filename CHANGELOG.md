@@ -22,6 +22,16 @@ Windows bug fixes reported from driving 3.1.0.
   fixed the installer window flashing and closing after the UAC prompt: the
   elevated launcher passed the script path unquoted, so with the app under
   `C:\Program Files\` it split on the space; the path is now quoted.
+- **Profile now loads under Windows PowerShell 5.1**: it used
+  `Set-PSReadLineOption -PredictionSource`, which needs PSReadLine 2.1+, but 5.1
+  ships 2.0 and errored on every shell start. The prediction options are now
+  gated behind a PSReadLine version check; history de-dup and key handlers still
+  apply everywhere.
+- **Quieter execution-policy handling**: the installer no longer tries to change
+  the execution policy when the effective policy already allows local scripts
+  (RemoteSigned / Unrestricted / Bypass, often forced by a machine GPO). That
+  attempt used to print a scary "overridden by a policy at a more specific scope"
+  error even though scripts already ran fine.
 
 ### Added
 

@@ -15,11 +15,20 @@ if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
 # Pretty file/folder icons
 if (Get-Module -ListAvailable -Name Terminal-Icons) { Import-Module Terminal-Icons }
 
-# PSReadLine — history prediction + sane keys
+# PSReadLine — history prediction + sane keys.
+# -PredictionSource / -PredictionViewStyle need PSReadLine 2.1+ (PowerShell 7, or
+# a manually updated module). Windows PowerShell 5.1 ships 2.0, so guard them or
+# the whole profile throws on load. History de-dup and the key handlers work on
+# every version.
 if (Get-Module -ListAvailable -Name PSReadLine) {
     Import-Module PSReadLine
-    Set-PSReadLineOption -PredictionSource History -HistoryNoDuplicates -EditMode Windows
-    try { Set-PSReadLineOption -PredictionViewStyle ListView } catch {}
+    Set-PSReadLineOption -HistoryNoDuplicates -EditMode Windows
+    if ((Get-Module PSReadLine).Version -ge [version]'2.1.0') {
+        try {
+            Set-PSReadLineOption -PredictionSource History
+            Set-PSReadLineOption -PredictionViewStyle ListView
+        } catch {}
+    }
     Set-PSReadLineKeyHandler -Key UpArrow   -Function HistorySearchBackward
     Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
     Set-PSReadLineKeyHandler -Key Tab       -Function MenuComplete

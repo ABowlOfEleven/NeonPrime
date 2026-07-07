@@ -15,10 +15,23 @@ if (-not (Test-Path $src)) { throw "NeonPrime.profile.ps1 not found next to this
 
 # 1. Let profiles run. A Restricted/AllSigned policy is the usual reason the
 #    profile "fails to load" after install. RemoteSigned allows local scripts.
-try {
-    Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force
-    Write-Host '  Execution policy (CurrentUser) -> RemoteSigned' -ForegroundColor Green
-} catch { Write-Host "  Could not set execution policy: $_" -ForegroundColor Yellow }
+#    If the *effective* policy already permits scripts (RemoteSigned/Unrestricted/
+#    Bypass, often forced by a machine GPO), do nothing: trying to Set it there
+#    just throws a noisy "overridden by a policy at a more specific scope" error
+#    even though scripts already run fine.
+$effective = Get-ExecutionPolicy
+if ($effective -in @('RemoteSigned', 'Unrestricted', 'Bypass')) {
+    Write-Host "  Execution policy already allows local scripts ($effective)." -ForegroundColor Green
+} else {
+    try {
+        Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force -ErrorAction Stop
+        Write-Host '  Execution policy (CurrentUser) -> RemoteSigned' -ForegroundColor Green
+    } catch {
+        Write-Host "  Execution policy is '$effective' and could not be relaxed (a machine policy may enforce it):" -ForegroundColor Yellow
+        Write-Host "    $($_.Exception.Message.Split([Environment]::NewLine)[0])" -ForegroundColor DarkYellow
+        Write-Host '    If the profile fails to load, ask an admin to set RemoteSigned, or run pwsh with -ExecutionPolicy Bypass.' -ForegroundColor DarkGray
+    }
+}
 
 # 2. Strip any mark-of-the-web so the profile is not treated as downloaded.
 try { Unblock-File -Path $src -ErrorAction SilentlyContinue } catch {}
