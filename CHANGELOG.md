@@ -38,6 +38,13 @@ Windows bug fixes reported from driving 3.1.0.
 - **Remove PowerShell profile** quick action: restores your previous `$PROFILE`
   from the backup NeonPrime made, or clears it if NeonPrime created it, undoing
   the profile install.
+- **PowerShell profile now matches Chris Titus Tech's WinUtil profile** and adds
+  our own on top. New: `Show-Help` (a grouped command menu), `Update-Profile`,
+  the `winutil` / `winutildev` launchers, `ff` / `sed` / `k9` / `trash` /
+  `docs` / `dtop`, the CTT git shortcuts (`gs` `ga` `gp` `gpush` `gpull` `gcl`
+  `gcom` `lazyg` `g`), the PSReadLine syntax-color scheme, and the extra edit
+  keybinds (Ctrl+D/W, Alt+D, Ctrl+arrows, Ctrl+Z/Y). The installer also opens
+  its console in PowerShell 7 when present, so you land in the modern shell.
 
 ## 3.1.0 — 2026-07-06
 
