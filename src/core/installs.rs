@@ -3,7 +3,7 @@
 //! removing to `winget uninstall --id <id> -e`, both in a visible elevated
 //! console so winget can show progress and elevate for machine-scope packages.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use serde::Deserialize;
 
@@ -14,6 +14,68 @@ pub struct App {
     /// winget package id (`--id`, exact match).
     pub id: String,
     pub category: String,
+}
+
+// Shape of `winget export` output — we only want the package identifiers.
+#[derive(Deserialize)]
+struct WingetExport {
+    #[serde(rename = "Sources", default)]
+    sources: Vec<WingetSource>,
+}
+#[derive(Deserialize)]
+struct WingetSource {
+    #[serde(rename = "Packages", default)]
+    packages: Vec<WingetPkg>,
+}
+#[derive(Deserialize)]
+struct WingetPkg {
+    #[serde(rename = "PackageIdentifier", default)]
+    identifier: String,
+}
+
+/// The set of currently-installed winget package ids (lowercased for
+/// case-insensitive matching against the catalog), via `winget export`.
+///
+/// This queries winget's sources and takes a few seconds, so callers must run it
+/// off the UI thread. Returns an empty set if winget is missing or errors — the
+/// UI treats "empty scan result" as "state unknown", never as "nothing installed".
+pub fn installed_ids() -> HashSet<String> {
+    #[cfg(windows)]
+    use std::os::windows::process::CommandExt;
+
+    let out = std::env::temp_dir().join("neonprime-winget-export.json");
+    let mut cmd = std::process::Command::new("winget");
+    cmd.args([
+        "export",
+        "-o",
+        &out.to_string_lossy(),
+        "--accept-source-agreements",
+        "--disable-interactivity",
+    ]);
+    #[cfg(windows)]
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+
+    let mut set = HashSet::new();
+    if cmd.output().is_ok() {
+        if let Ok(text) = std::fs::read_to_string(&out) {
+            if let Ok(export) = serde_json::from_str::<WingetExport>(&text) {
+                for src in export.sources {
+                    for pkg in src.packages {
+                        if !pkg.identifier.is_empty() {
+                            set.insert(pkg.identifier.to_lowercase());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let _ = std::fs::remove_file(&out);
+    set
+}
+
+/// True if `id` is present in a set from [`installed_ids`] (case-insensitive).
+pub fn is_installed(id: &str, installed: &HashSet<String>) -> bool {
+    installed.contains(&id.to_lowercase())
 }
 
 /// Shape of each entry in WinUtil's `applications.json` (extra fields ignored).
@@ -87,6 +149,15 @@ mod tests {
             assert!(!a.id.is_empty());
             assert!(!a.name.is_empty());
         }
+    }
+
+    #[test]
+    fn is_installed_is_case_insensitive() {
+        let mut set = HashSet::new();
+        set.insert("mozilla.firefox".to_string());
+        assert!(is_installed("Mozilla.Firefox", &set));
+        assert!(is_installed("mozilla.firefox", &set));
+        assert!(!is_installed("Foo.Bar", &set));
     }
 
     #[test]

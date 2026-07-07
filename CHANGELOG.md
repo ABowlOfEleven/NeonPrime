@@ -35,6 +35,14 @@ Windows bug fixes reported from driving 3.1.0.
 
 ### Added
 
+- **First-launch state indicators** on Install, Features, and Startup, so you no
+  longer have to guess what's already done:
+  - Install: a background `winget` scan flags each app `● INSTALLED` or
+    `AVAILABLE`, with a RECHECK button to re-scan after changes.
+  - Features: each optional feature shows `● ENABLED` / `DISABLED`, detected
+    unelevated from file/registry probes (no UAC just to look). The two whose
+    payload ships even when off (WSL, VM Platform) show `state: admin`.
+  - Startup: each entry now shows an explicit `● ON` / `OFF` pill.
 - **28 more WinUtil-parity tweaks**, all fully reversible through the same undo /
   rollback journal as the existing ones (ported with exact registry paths and
   on/off values from WinUtil's config):

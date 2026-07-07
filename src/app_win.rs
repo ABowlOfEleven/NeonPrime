@@ -531,7 +531,7 @@ fn wire_modes(
 
 // ── Installs ────────────────────────────────────────────────────────
 
-fn wire_installs(app: &AppWindow, notify: &Notify) {
+fn wire_installs(app: &AppWindow, notify: &Notify) -> Timer {
     let catalog = Rc::new(installs::catalog());
     let rows: Vec<AppRow> = catalog
         .iter()
@@ -541,6 +541,8 @@ fn wire_installs(app: &AppWindow, notify: &Notify) {
             name: a.name.as_str().into(),
             desc: a.desc.as_str().into(),
             category: a.category.as_str().into(),
+            installed: false,
+            known: false,
         })
         .collect();
     let source = Rc::new(VecModel::from(rows));
@@ -610,6 +612,64 @@ fn wire_installs(app: &AppWindow, notify: &Notify) {
             }
         });
     }
+
+    // Scan installed apps off-thread (`winget export` is slow), then flag each row
+    // installed / available. An empty scan result means winget failed or is
+    // missing, so we leave those rows "unknown" rather than falsely marking
+    // everything uninstalled.
+    app.global::<Installer>().set_scanning(true);
+    let (tx, rx) = mpsc::channel::<std::collections::HashSet<String>>();
+    let scan: Rc<dyn Fn()> = {
+        let tx = tx.clone();
+        Rc::new(move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(installs::installed_ids());
+            });
+        })
+    };
+    scan();
+
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        let source = source.clone();
+        app.global::<Installer>().on_recheck(move || {
+            for i in 0..source.row_count() {
+                if let Some(mut r) = source.row_data(i) {
+                    r.known = false;
+                    source.set_row_data(i, r);
+                }
+            }
+            if let Some(app) = weak.upgrade() {
+                app.global::<Installer>().set_scanning(true);
+            }
+            scan();
+        });
+    }
+
+    // Pump scan results onto the rows.
+    let weak = app.as_weak();
+    let catalog2 = catalog.clone();
+    let source2 = source.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(set) = rx.try_recv() {
+            if !set.is_empty() {
+                for (i, a) in catalog2.iter().enumerate() {
+                    if let Some(mut r) = source2.row_data(i) {
+                        r.installed = installs::is_installed(&a.id, &set);
+                        r.known = true;
+                        source2.set_row_data(i, r);
+                    }
+                }
+            }
+            if let Some(app) = weak.upgrade() {
+                app.global::<Installer>().set_scanning(false);
+            }
+        }
+    });
+    timer
 }
 
 // ── Config ──────────────────────────────────────────────────────────
@@ -954,7 +1014,7 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
     });
 }
 
-fn wire_startup(app: &AppWindow, notify: &Notify) {
+fn wire_startup(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     let model: Rc<VecModel<StartupRow>> = Rc::new(VecModel::default());
 
     let rebuild = {
@@ -997,23 +1057,31 @@ fn wire_startup(app: &AppWindow, notify: &Notify) {
         }
         rebuild2();
     });
+
+    rebuild
 }
 
 /// Windows optional features: enable/disable via elevated DISM in a visible
-/// console. State isn't probed (DISM queries need elevation), so each row offers
-/// explicit Enable/Disable like WinUtil.
-fn wire_features(app: &AppWindow, notify: &Notify) {
-    let rows: Vec<FeatureRow> = features::catalog()
-        .iter()
-        .enumerate()
-        .map(|(i, f)| FeatureRow {
-            id: i as i32,
-            name: f.name.into(),
-            desc: f.desc.into(),
-        })
-        .collect();
-    app.global::<Features>()
-        .set_rows(Rc::new(VecModel::from(rows)).into());
+/// console. Enable/disable itself needs admin, but each row shows a best-effort
+/// current state detected UNELEVATED (file/registry probes), so the user isn't
+/// guessing. State refreshes when the panel is navigated to. Returns that
+/// refresh closure. DISM changes usually need a reboot, so the state reflects the
+/// last boot until then.
+fn wire_features(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
+    fn rows() -> Vec<FeatureRow> {
+        features::catalog()
+            .iter()
+            .enumerate()
+            .map(|(i, f)| FeatureRow {
+                id: i as i32,
+                name: f.name.into(),
+                desc: f.desc.into(),
+                state: features::detect_state(f.id).code(),
+            })
+            .collect()
+    }
+    let model: Rc<VecModel<FeatureRow>> = Rc::new(VecModel::from(rows()));
+    app.global::<Features>().set_rows(model.clone().into());
 
     let notify = notify.clone();
     app.global::<Features>().on_apply(move |id, enable| {
@@ -1033,6 +1101,8 @@ fn wire_features(app: &AppWindow, notify: &Notify) {
             Err(e) => notify("error", &format!("{}: {e}", f.name)),
         }
     });
+
+    Rc::new(move || model.set_vec(rows()))
 }
 
 /// UWP debloat: probe installed packages off-thread (unelevated), remove per-user,
@@ -2283,10 +2353,10 @@ fn main() -> Result<(), slint::PlatformError> {
         &tweaks_model,
     );
     wire_modes(&app, &jrnl, &journal_path, &notify, &modes_catalog);
-    wire_installs(&app, &notify);
+    let _installs_pump = wire_installs(&app, &notify);
     wire_quick(&app, &notify);
-    wire_startup(&app, &notify);
-    wire_features(&app, &notify);
+    let startup_refresh = wire_startup(&app, &notify);
+    let features_refresh = wire_features(&app, &notify);
     let _debloat_pump = wire_debloat(&app, &notify);
     let _cleanup_pump = wire_cleanup(&app, &notify);
     let net_refresh = wire_network(&app, &notify);
@@ -2341,6 +2411,8 @@ fn main() -> Result<(), slint::PlatformError> {
         app.global::<Nav>().on_changed(move |page| match page {
             1 => refresh_tweaks(&tmodel, &tcat),
             3 => power_refresh(),
+            6 => startup_refresh(),
+            7 => features_refresh(),
             8 => privacy_refresh(),
             9 => history_refresh(),
             11 => net(),
