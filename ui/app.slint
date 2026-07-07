@@ -2812,61 +2812,76 @@ export component AppWindow inherits Window {
                 }
                 VerticalLayout {
                     alignment: center;
-                    Text {
-                        text: (Theme.hev ? "HEV · v" : "v") + Build.version;
-                        color: Theme.text-dim;
-                        font-size: 11px;
+                    Rectangle {
+                        height: 16px;
+                        Text {
+                            width: 100%;
+                            height: 100%;
+                            text: (Theme.hev ? "HEV · v" : "v") + Build.version;
+                            color: Theme.text-dim;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
                     }
                 }
                 Rectangle { horizontal-stretch: 1; }
-                Rectangle {
-                    width: 120px;
-                    height: 26px;
-                    border-radius: 8px;
-                    border-width: 1px;
-                    border-color: Theme.divider;
-                    background: Theme.track;
-                    Text {
-                        width: 100%;
-                        height: 100%;
-                        text: "SEARCH · CTRL+K";
-                        color: Theme.text-dim;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        font-size: 10px;
-                    }
-                    TouchArea {
-                        clicked => {
-                            Palette.open = !Palette.open;
-                            if (Palette.open) {
-                                Palette.query = "";
-                                Palette.selected = 0;
-                                Palette.filter();
-                            } else {
-                                fs.focus();
+                // Pills wrapped in centering VerticalLayouts so they sit at the row
+                // middle (a bare fixed-height child of the HorizontalLayout aligns to
+                // the top, which left them sitting too high).
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 120px;
+                        height: 26px;
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: Theme.divider;
+                        background: Theme.track;
+                        Text {
+                            width: 100%;
+                            height: 100%;
+                            text: "SEARCH · CTRL+K";
+                            color: Theme.text-dim;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            font-size: 10px;
+                        }
+                        TouchArea {
+                            clicked => {
+                                Palette.open = !Palette.open;
+                                if (Palette.open) {
+                                    Palette.query = "";
+                                    Palette.selected = 0;
+                                    Palette.filter();
+                                } else {
+                                    fs.focus();
+                                }
                             }
                         }
                     }
                 }
-                Rectangle {
-                    width: 112px;
-                    height: 26px;
-                    border-radius: 8px;
-                    border-width: 1px;
-                    border-color: Theme.divider;
-                    background: Theme.accent.with-alpha(0.08);
-                    Text {
-                        width: 100%;
-                        height: 100%;
-                        text: Theme.toggle-label;
-                        color: Theme.accent-soft;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        font-size: 11px;
-                    }
-                    TouchArea {
-                        clicked => {
-                            Ui.toggle-theme();
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 112px;
+                        height: 26px;
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: Theme.divider;
+                        background: Theme.accent.with-alpha(0.08);
+                        Text {
+                            width: 100%;
+                            height: 100%;
+                            text: Theme.toggle-label;
+                            color: Theme.accent-soft;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            font-size: 11px;
+                        }
+                        TouchArea {
+                            clicked => {
+                                Ui.toggle-theme();
+                            }
                         }
                     }
                 }
