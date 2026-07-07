@@ -35,6 +35,27 @@ Windows bug fixes reported from driving 3.1.0.
 
 ### Added
 
+- **28 more WinUtil-parity tweaks**, all fully reversible through the same undo /
+  rollback journal as the existing ones (ported with exact registry paths and
+  on/off values from WinUtil's config):
+  - Interface: show battery %, End Task on taskbar, always-show scrollbars, Num
+    Lock on startup, verbose sign-in, detailed BSoD, hide Home/Gallery, hide
+    Start recommendations, disable sign-in blur, disable lock screen, suppress
+    unsigned-RDP warning.
+  - Privacy: disable Activity History, location tracking, Delivery Optimization,
+    background apps, notifications, Notepad AI, plus Edge and Brave debloat.
+  - Performance: adjust visuals for best performance, Game Mode, disable
+    fullscreen optimizations, disable Storage Sense, disable hibernation, UTC
+    clock, prefer IPv4.
+  - Hardening score: block firmware-injected software (WPBT) and block automatic
+    driver-software installs.
+  The aggressive, non-reversible removals (remove Edge / OneDrive, disable
+  BitLocker) are intentionally left out.
+- **Windows feature + system-tool parity**: NFS client (DISM), and new Quick
+  Actions to enable the OpenSSH server, fix the clock over NTP, back up the
+  registry, toggle the legacy F8 boot menu, set up auto sign-in (netplwiz), and
+  open the classic control-panel applets (Sound, Power, Region, Network, System,
+  Date & Time, Printers, Computer Management, System Restore).
 - **Remove PowerShell profile** quick action: restores your previous `$PROFILE`
   from the backup NeonPrime made, or clears it if NeonPrime created it, undoing
   the profile install.

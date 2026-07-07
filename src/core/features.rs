@@ -77,6 +77,12 @@ pub fn catalog() -> &'static [Feature] {
             desc: "Obsolete file-sharing protocol. Insecure — enable only if forced.",
             dism: "SMB1Protocol",
         },
+        Feature {
+            id: "nfs",
+            name: "NFS Client",
+            desc: "Mount Unix/Linux/NAS network shares over NFS.",
+            dism: "ServicesForNFS-ClientOnly,ClientForNFS-Infrastructure,NFS-Administration",
+        },
     ]
 }
 
