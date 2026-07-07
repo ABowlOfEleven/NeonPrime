@@ -66,23 +66,23 @@ Every mode is a reversible bundle. Click the active one again to turn it back of
 
 **Optimize**
 
-- **Privacy & hardening score:** a live gauge that reads your real registry and service state and hardens any exposed item in one click (all reversible). Beyond telemetry, it includes real security hardening, each with a plain warning about what it does and what could break: disable SMBv1, block AutoRun, require SmartScreen, disable LLMNR, stop WDigest credential caching, Defender PUA protection, disable Windows Script Host, no LM hash, block inbound RDP, disable Remote Assistance.
-- **Tweaks & debloat:** 29 reversible tweaks across Interface, Privacy, and Performance, with live search, category filters, and a one-click Essential Tweaks preset.
+- **Privacy & hardening score:** a live gauge that reads your real registry and service state and hardens any exposed item in one click (all reversible). Beyond telemetry, it includes real security hardening, each with a plain warning about what it does and what could break: disable SMBv1, block AutoRun, require SmartScreen, disable LLMNR, stop WDigest credential caching, Defender PUA protection, disable Windows Script Host, no LM hash, block inbound RDP, disable Remote Assistance, block firmware-injected software (WPBT), and block automatic driver-software installs.
+- **Tweaks:** over 50 reversible tweaks across Interface, Privacy, and Performance, ported to match WinUtil (Activity History, location, hibernation, Game Mode, background apps, notifications, Edge/Brave debloat, and many more), each undoable through the rollback journal, with live search, category filters, and a one-click Essential Tweaks preset.
 - **Debloat:** remove preinstalled UWP apps (Copilot, Xbox Game Bar, and friends) per-user with live installed/removed state, plus one-click telemetry scheduled-task disabling.
 - **Cleanup:** scan reclaimable space (temp, Recycle Bin, thumbnails, system and update caches) and clear it per target.
-- **Startup manager:** enable or disable per-user startup apps, reversibly.
+- **Startup manager:** enable or disable per-user startup apps, reversibly, each showing its current on/off state.
 
 **Software**
 
-- **Install:** a `winget`-backed picker with 194 apps imported from WinUtil's catalog, live search, and an "update all".
-- **Windows Features:** DISM enable/disable for .NET 3.5, Hyper-V, Sandbox, WSL, IIS, and more.
+- **Install:** a picker with 197 apps (WinUtil's `winget` catalog plus the author's own public Rust projects), live search, an "update all", and a first-launch scan that flags each app installed or available (with a recheck button).
+- **Windows Features:** DISM enable/disable for .NET 3.5, Hyper-V, Sandbox, WSL, IIS, NFS, and more, each showing its detected enabled/disabled state (read without a UAC prompt).
 - **MicroWin:** build a slimmed, debloated Windows ISO. Strip bundled apps, apply offline privacy tweaks, and inject an autounattend that bypasses TPM/SecureBoot/RAM and skips OOBE.
 
 **System**
 
 - **System modes & power plans:** one-click AI, Game, and Work that actually do things (see above), plus a Balanced / High-Performance / Ultimate switcher.
 - **Services manager:** a searchable list of every service, with start/stop and start-type control (auto, manual, disabled).
-- **Quick Actions:** restart Explorer, flush DNS, clear temp, empty the Recycle Bin, create a restore point, install the NeonPrime PowerShell profile.
+- **Quick Actions:** restart Explorer, flush DNS, clear temp, empty the Recycle Bin, create a restore point, install or remove a WinUtil/CTT-style PowerShell profile (with prompt, prediction, and handy functions), enable the OpenSSH server, fix the clock over NTP, back up the registry, toggle the legacy F8 boot menu, set up auto sign-in, and open the classic control-panel applets.
 - **Config:** export your whole setup to TOML and replay it on a clean install, plus repair fixes (SFC, DISM, network reset, Windows Update reset), Windows Update modes, and restore points.
 - **History:** a full timeline over the action journal. Revert any past change, or all of them, not just the last.
 
@@ -139,7 +139,7 @@ cargo run --release
 cargo run --release --bin neonprime-linux
 cargo run --release --bin neonprime-tui
 
-cargo test --all      # 50 unit + integration tests
+cargo test --all      # 54 unit + integration tests
 ```
 
 One source tree, split by `cfg`: the Windows backend is gated to `cfg(windows)`, the Linux backend to `cfg(target_os = "linux")`, and each platform compiles its own Slint UI (`ui/app.slint` vs `ui/linux.slint`). Building the Linux GUI needs Slint's usual deps (`fontconfig`, `xcb`, `xkbcommon`).
@@ -147,7 +147,7 @@ One source tree, split by `cfg`: the Windows backend is gated to `cfg(windows)`,
 ### Installer (MSI)
 
 ```sh
-./build-installer.ps1   # -> NeonPrime-3.0.0-Setup.msi
+./build-installer.ps1 -Version 3.1.1   # -> NeonPrime-3.1.1-Setup.msi
 ```
 
 Produces a Windows MSI (via WiX 5: `dotnet tool install --global wix --version 5.0.2`) that installs `neonprime.exe`, the elevated `broker.exe`, and the self-contained sensor sidecar to `Program Files\NeonPrime`, with a Start-Menu shortcut, an uninstaller, and major-upgrade handling. No runtime prerequisites on the target.
@@ -174,7 +174,7 @@ Build a self-contained sidecar (bundles the .NET runtime, nothing to install on 
 
 **Linux:** a 16-panel GUI plus a headless TUI over the same backend. Compiles and passes CI (fmt / clippy / test) on every push; runtime testing on real hardware is ongoing.
 
-50 tests pass, with a Windows + Linux CI matrix on every push.
+54 tests pass, with a Windows + Linux CI matrix on every push (clippy runs with warnings denied on both).
 
 **Notes and caveats:**
 
