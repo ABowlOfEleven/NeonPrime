@@ -7,5 +7,12 @@ sensors/obj/
 /dist
 *.msi
 
+# Release artifacts (produced by build-installer.ps1 / Release CI, never committed)
+*-portable.zip
+*.AppImage
+*.deb
+*.rpm
+NeonPrime-*-linux-*.tar.gz
+
 # Windows Sandbox staging
 /sandbox/share/
