@@ -571,10 +571,6 @@ component Sparkline inherits Rectangle {
             width: 76px;
             alignment: center;
             spacing: 2px;
-            // Wrap each text in a fixed-height Rectangle it fills. A Text's own
-            // height inside a layout is pinned to the tight line box (which clips
-            // the glyph tops); filling a taller Rectangle gives real vertical room
-            // and lets vertical-alignment actually center it.
             Rectangle {
                 height: 13px;
                 Text {
@@ -782,20 +778,32 @@ component PanelHeader inherits HorizontalLayout {
     spacing: 10px;
     VerticalLayout {
         alignment: center;
-        Text {
-            text: root.title;
-            color: Theme.accent-soft;
-            font-size: 14px;
+        Rectangle {
+            height: 20px;
+            Text {
+                width: 100%;
+                height: 100%;
+                text: root.title;
+                color: Theme.accent-soft;
+                font-size: 14px;
+                vertical-alignment: center;
+            }
         }
     }
     Rectangle { horizontal-stretch: 1; }
     VerticalLayout {
         alignment: center;
-        Text {
-            text: root.hint;
-            color: Theme.text-dim;
-            font-size: 11px;
-            horizontal-alignment: right;
+        Rectangle {
+            height: 16px;
+            Text {
+                width: 100%;
+                height: 100%;
+                text: root.hint;
+                color: Theme.text-dim;
+                font-size: 11px;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
         }
     }
     @children
@@ -1184,10 +1192,16 @@ component DashboardView inherits VerticalLayout {
         alignment: stretch;
         VerticalLayout {
             alignment: center;
-            Text {
-                text: Theme.overview-title;
-                color: Theme.accent-soft;
-                font-size: 14px;
+            Rectangle {
+                height: 20px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: Theme.overview-title;
+                    color: Theme.accent-soft;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                }
             }
         }
         Rectangle { horizontal-stretch: 1; }
@@ -2740,6 +2754,9 @@ component Toast inherits Rectangle {
 
 export component AppWindow inherits Window {
     title: "NeonPrime";
+    // Pin a font with proper vertical metrics. The renderer's fallback font has a
+    // tight line box that clipped glyph tops (the recurring "borked text").
+    default-font-family: "Segoe UI";
     default-font-size: 13px;
     preferred-width: 760px;
     preferred-height: 680px;
@@ -3058,44 +3075,32 @@ export component AppWindow inherits Window {
                 height: 1px;
                 background: Theme.divider;
             }
-            // Align the footer content with the body: clear the 160px sidebar,
-            // then sit in the same centered column as the panels so the two ends
-            // aren't stranded in the window corners on a wide window.
+            // Just the system-status pill, bottom-right and vertically centered.
+            // (Broker/GPU state already lives in the sidebar, so it's not repeated
+            // here.) `alignment: end` packs the group against the right edge.
             HorizontalLayout {
-                Rectangle { width: 160px; }
-                Rectangle {
-                    horizontal-stretch: 1;
-                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14;
+                padding-left: 20px;
+                padding-right: 20px;
+                alignment: end;
+                VerticalLayout {
+                    alignment: center;
                     HorizontalLayout {
-                        width: min(parent.width, parent.wide ? Theme.content-wide : Theme.content-max);
-                        x: (parent.width - self.width) / 2;
+                        spacing: 7px;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 6px;
+                                height: 6px;
+                                border-radius: 3px;
+                                background: Theme.accent;
+                            }
+                        }
                         Text {
-                            text: Sys.gpu-available ? "BROKER CONNECTED · GPU LINKED" : "BROKER CONNECTED · NO GPU";
-                            color: Theme.text-dim;
+                            text: "NOMINAL";
+                            color: Theme.accent-soft;
                             vertical-alignment: center;
                             font-size: 10px;
                             letter-spacing: 0.3px;
-                        }
-                        Rectangle { horizontal-stretch: 1; }
-                        HorizontalLayout {
-                            spacing: 7px;
-                            alignment: end;
-                            VerticalLayout {
-                                alignment: center;
-                                Rectangle {
-                                    width: 6px;
-                                    height: 6px;
-                                    border-radius: 3px;
-                                    background: Theme.accent;
-                                }
-                            }
-                            Text {
-                                text: "NOMINAL";
-                                color: Theme.accent-soft;
-                                vertical-alignment: center;
-                                font-size: 10px;
-                                letter-spacing: 0.3px;
-                            }
                         }
                     }
                 }
