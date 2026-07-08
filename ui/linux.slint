@@ -279,6 +279,11 @@ export global Nav {
     callback changed(int);
 }
 
+// Build/version info, set from Rust (CARGO_PKG_VERSION).
+export global Build {
+    in property <string> version: "0.0.0";
+}
+
 // ── Base components ─────────────────────────────────────────────────────────
 component PushButton inherits Rectangle {
     in property <string> label;
@@ -2023,7 +2028,7 @@ export component AppWindow inherits Window {
                             letter-spacing: 2px;
                         }
                         Text {
-                            text: "linux · v3.0";
+                            text: "linux · v" + Build.version;
                             color: Theme.text-dim;
                             font-size: 10px;
                         }
