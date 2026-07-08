@@ -341,7 +341,11 @@ component NavItem inherits Rectangle {
     in property <image> icon;
     property <bool> active: Nav.page == root.index;
     height: 31px;
-    background: active ? Theme.accent.with-alpha(0.08) : (fscope.has-focus ? Theme.accent.with-alpha(0.04) : transparent);
+    background: active
+        ? Theme.accent.with-alpha(0.08)
+        : (nav-touch.has-hover ? Theme.accent.with-alpha(0.10)
+            : (fscope.has-focus ? Theme.accent.with-alpha(0.04) : transparent));
+    animate background { duration: 110ms; easing: ease-out; }
     border-width: fscope.has-focus ? 1px : 0px;
     border-color: Theme.accent-soft;
     border-radius: 4px;
@@ -369,12 +373,12 @@ component NavItem inherits Rectangle {
                 width: 20px;
                 height: 20px;
                 source: root.icon;
-                colorize: active ? Theme.accent : Theme.text-dim;
+                colorize: active ? Theme.accent : (nav-touch.has-hover ? Theme.text-body : Theme.text-dim);
             }
         }
         Text {
             text: root.label;
-            color: active ? Theme.accent-soft : Theme.text-dim;
+            color: active ? Theme.accent-soft : (nav-touch.has-hover ? Theme.text-body : Theme.text-dim);
             vertical-alignment: center;
             font-size: 12px;
         }
@@ -391,7 +395,8 @@ component NavItem inherits Rectangle {
             return EventResult.reject;
         }
     }
-    TouchArea {
+    nav-touch := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             fscope.focus();
             Nav.page = root.index;
@@ -422,8 +427,13 @@ component ModePill inherits Rectangle {
     height: 26px;
     border-radius: 8px;
     border-width: fscope.has-focus ? 2px : 1px;
-    border-color: fscope.has-focus ? Theme.accent-soft : (active ? Theme.accent : Theme.divider);
-    background: active ? Theme.accent.with-alpha(0.16) : transparent;
+    border-color: fscope.has-focus
+        ? Theme.accent-soft
+        : (active ? Theme.accent : (pill-touch.has-hover ? Theme.accent-soft : Theme.divider));
+    background: active
+        ? Theme.accent.with-alpha(0.16)
+        : (pill-touch.has-hover ? Theme.accent.with-alpha(0.08) : transparent);
+    animate background, border-color { duration: 110ms; easing: ease-out; }
     accessible-role: button;
     accessible-label: root.label;
     accessible-action-default => {
@@ -433,7 +443,7 @@ component ModePill inherits Rectangle {
         width: 100%;
         height: 100%;
         text: root.label;
-        color: active ? Theme.accent-soft : Theme.text-dim;
+        color: active ? Theme.accent-soft : (pill-touch.has-hover ? Theme.text-body : Theme.text-dim);
         horizontal-alignment: center;
         vertical-alignment: center;
         font-size: 11px;
@@ -449,7 +459,8 @@ component ModePill inherits Rectangle {
             return EventResult.reject;
         }
     }
-    TouchArea {
+    pill-touch := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             fscope.focus();
             root.clicked();
@@ -628,8 +639,13 @@ component Toggle inherits Rectangle {
     height: 22px;
     border-radius: 11px;
     border-width: fscope.has-focus ? 2px : 1px;
-    border-color: fscope.has-focus ? Theme.accent-soft : (on ? Theme.accent : Theme.divider);
-    background: on ? Theme.accent.with-alpha(0.2) : transparent;
+    border-color: fscope.has-focus
+        ? Theme.accent-soft
+        : (on ? Theme.accent : (tgl-touch.has-hover ? Theme.text-dim : Theme.divider));
+    background: on
+        ? Theme.accent.with-alpha(0.2)
+        : (tgl-touch.has-hover ? Theme.accent.with-alpha(0.06) : transparent);
+    animate background, border-color { duration: 110ms; easing: ease-out; }
     accessible-role: checkbox;
     accessible-label: root.a11y-label;
     accessible-checked: root.on;
@@ -657,7 +673,8 @@ component Toggle inherits Rectangle {
             return EventResult.reject;
         }
     }
-    TouchArea {
+    tgl-touch := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             fscope.focus();
             root.toggled(!root.on);
@@ -676,8 +693,11 @@ component PushButton inherits Rectangle {
     height: 26px;
     border-radius: 7px;
     border-width: fscope.has-focus ? 2px : 1px;
-    border-color: fscope.has-focus ? tint-soft : tint;
-    background: touch.pressed ? tint.with-alpha(0.28) : tint.with-alpha(0.12);
+    border-color: fscope.has-focus ? tint-soft : (touch.has-hover ? tint-soft : tint);
+    background: touch.pressed
+        ? tint.with-alpha(0.30)
+        : (touch.has-hover ? tint.with-alpha(0.20) : tint.with-alpha(0.12));
+    animate background, border-color { duration: 110ms; easing: ease-out; }
     accessible-role: button;
     accessible-label: root.label;
     accessible-action-default => {
@@ -707,6 +727,7 @@ component PushButton inherits Rectangle {
         }
     }
     touch := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             fscope.focus();
             root.clicked();
@@ -1303,8 +1324,13 @@ component FilterChip inherits Rectangle {
     width: chip-txt.preferred-width + 18px;
     border-radius: 6px;
     border-width: fscope.has-focus ? 2px : 1px;
-    border-color: fscope.has-focus ? Theme.accent-soft : (active ? Theme.accent : Theme.divider);
-    background: active ? Theme.accent.with-alpha(0.16) : transparent;
+    border-color: fscope.has-focus
+        ? Theme.accent-soft
+        : (active ? Theme.accent : (chip-touch.has-hover ? Theme.accent-soft : Theme.divider));
+    background: active
+        ? Theme.accent.with-alpha(0.16)
+        : (chip-touch.has-hover ? Theme.accent.with-alpha(0.08) : transparent);
+    animate background, border-color { duration: 110ms; easing: ease-out; }
     accessible-role: button;
     accessible-label: root.label;
     accessible-action-default => {
@@ -1314,7 +1340,7 @@ component FilterChip inherits Rectangle {
         x: 9px;
         height: 100%;
         text: root.label;
-        color: active ? Theme.accent-soft : Theme.text-dim;
+        color: active ? Theme.accent-soft : (chip-touch.has-hover ? Theme.text-body : Theme.text-dim);
         vertical-alignment: center;
         font-size: 10px;
     }
@@ -1329,7 +1355,8 @@ component FilterChip inherits Rectangle {
             return EventResult.reject;
         }
     }
-    TouchArea {
+    chip-touch := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             fscope.focus();
             root.clicked();
