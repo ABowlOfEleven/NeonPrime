@@ -1347,6 +1347,7 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
             frac: 0.0,
             elevated: r.elevated,
             warning: r.warning.as_str().into(),
+            imported: r.imported,
         })
         .collect();
     model.set_vec(rows);
@@ -1384,6 +1385,32 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
                 app.global::<Cleanup>().set_scanning(true);
             }
             scan();
+        });
+    }
+
+    // Import button: (re)load winapp2.ini from the app data dir, then rescan so
+    // detected cleaners appear. The file itself is untrusted; parsing only ever
+    // produces sandboxed file-cleaning actions (no registry deletes).
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        let notify = notify.clone();
+        app.global::<Cleanup>().on_import(move || {
+            let path = cleaners::winapp2_path();
+            if !path.exists() {
+                notify(
+                    "info",
+                    &format!("Drop a winapp2.ini at {} then IMPORT.", path.display()),
+                );
+                return;
+            }
+            cleaners::invalidate_import();
+            let n = cleaners::imported_cleaners().len();
+            if let Some(app) = weak.upgrade() {
+                app.global::<Cleanup>().set_scanning(true);
+            }
+            scan();
+            notify("success", &format!("Imported {n} winapp2 cleaner(s)."));
         });
     }
 
@@ -1459,6 +1486,7 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
                         frac: sz as f32 / max as f32,
                         elevated: r.elevated,
                         warning: r.warning.as_str().into(),
+                        imported: r.imported,
                     }
                 })
                 .collect();

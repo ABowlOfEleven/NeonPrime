@@ -18,14 +18,16 @@ mod builtin;
 mod engine;
 mod path;
 mod recycle;
+mod winapp2;
 
 pub use browsers::{any_running, browser_cleaners};
 pub use builtin::system_cleaners;
 pub use engine::{elevated_script, execute, preview, CleanResult, Preview};
 pub use path::{expand_and_validate, RejectReason};
+pub use winapp2::{imported_cleaners, invalidate_import, winapp2_path};
 
 /// Where a cleaner belongs in the panel's grouping.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Group {
     System,
     Browsers,
@@ -36,13 +38,14 @@ pub enum Group {
 
 /// Where a cleaner definition came from. Imported definitions are untrusted and
 /// treated more conservatively (file cleaning only, mandatory preview).
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Source {
     Builtin,
     Winapp2,
 }
 
 /// A named cleaner: one or more selectable options that share a heading.
+#[derive(Clone)]
 pub struct Cleaner {
     /// Stable slug, e.g. "temp", "firefox", "winapp2:Firefox-Cache".
     pub id: String,
@@ -57,6 +60,7 @@ pub struct Cleaner {
 }
 
 /// One checkable line under a cleaner (e.g. "Cache", "Cookies").
+#[derive(Clone)]
 pub struct CleanerOption {
     pub id: String,
     pub label: String,
@@ -80,6 +84,7 @@ pub struct CleanerOption {
 /// variables; the engine expands and sandboxes it via [`path`] before any
 /// filesystem access, so both built-in and imported roots are validated the same
 /// way.
+#[derive(Clone)]
 pub enum CleanAction {
     /// Delete files under `root` matching `mask` (`*` = all). `recurse` walks
     /// subdirectories; `remove_self` deletes the (now empty) root afterwards.
@@ -96,12 +101,14 @@ pub enum CleanAction {
     RecycleBin,
 }
 
-/// The full set of cleaners shown in the panel: built-in system targets first,
-/// then any detected browsers. Rebuilt on demand (the browser half does a little
-/// filesystem detection), so worker threads can reconstruct it independently.
+/// The full set of cleaners shown in the panel: built-in system targets, then
+/// detected browsers, then any imported winapp2 definitions. Rebuilt on demand
+/// (browser detection walks a few dirs; the winapp2 half is mtime-cached), so
+/// worker threads can reconstruct it independently.
 pub fn catalog() -> Vec<Cleaner> {
     let mut v = system_cleaners();
     v.extend(browser_cleaners());
+    v.extend(imported_cleaners());
     v
 }
 
@@ -117,6 +124,8 @@ pub struct Row {
     pub elevated: bool,
     pub guard_running: bool,
     pub running_procs: Vec<String>,
+    /// True for cleaners loaded from an untrusted winapp2.ini import.
+    pub imported: bool,
 }
 
 /// Flatten a catalog into panel rows. A single-option cleaner whose option label
@@ -140,6 +149,7 @@ pub fn rows(catalog: &[Cleaner]) -> Vec<Row> {
                 elevated: o.elevated,
                 guard_running: o.guard_running,
                 running_procs: c.running_procs.clone(),
+                imported: c.source == Source::Winapp2,
             });
         }
     }

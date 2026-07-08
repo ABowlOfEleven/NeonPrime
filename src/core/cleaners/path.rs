@@ -39,6 +39,13 @@ pub fn expand_and_validate(raw: &str) -> Result<PathBuf, RejectReason> {
     Ok(expanded)
 }
 
+/// Expand `%VARS%` (allowlist) WITHOUT confining to the sandbox. Detection-only
+/// (e.g. "does %ProgramFiles%\App exist"), never a deletion target. Returns None
+/// on an unknown variable.
+pub fn expand_only(raw: &str) -> Option<PathBuf> {
+    expand(raw).ok()
+}
+
 /// Replace every `%NAME%` with its allowlisted value. A `%NAME%` whose name is
 /// not recognized is a hard error; a stray unmatched `%` is kept literally.
 fn expand(raw: &str) -> Result<PathBuf, RejectReason> {

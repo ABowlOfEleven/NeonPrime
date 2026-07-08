@@ -56,6 +56,12 @@ pub fn list_string_values(hive: Hive, path: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// True if the key at `path` exists under `hive`. Used by winapp2 `Detect`
+/// directives to decide whether an imported cleaner's software is installed.
+pub fn key_exists(hive: Hive, path: &str) -> bool {
+    root(hive).open_subkey(path).is_ok()
+}
+
 /// List the immediate subkey names under a key. Missing key → empty.
 pub fn list_subkeys(hive: Hive, path: &str) -> Vec<String> {
     match root(hive).open_subkey(path) {

@@ -225,6 +225,7 @@ export struct CleanRow {
     frac: float, // size as a share of the largest target (0..1), for the bar
     elevated: bool,
     warning: string, // non-empty when the option erases user state (destructive)
+    imported: bool, // from an untrusted winapp2.ini import
 }
 
 export global Cleanup {
@@ -233,6 +234,7 @@ export global Cleanup {
     in property <string> total;
     callback clean(int);
     callback rescan();
+    callback import();
 }
 
 export struct NetRow {
@@ -2330,6 +2332,12 @@ component CleanupRowView inherits Rectangle {
                     font-size: 10px;
                     vertical-alignment: center;
                 }
+                Text {
+                    text: root.target.imported ? "· WINAPP2" : "";
+                    color: Theme.text-dim;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
             }
             ExpandableDesc {
                 text: root.target.desc;
@@ -2392,6 +2400,13 @@ component CleanupView inherits VerticalLayout {
     PanelHeader {
         title: "CLEANUP";
         hint: Cleanup.scanning ? "scanning disk…" : Cleanup.total + " reclaimable";
+        PushButton {
+            w: 96px;
+            label: "IMPORT";
+            clicked => {
+                Cleanup.import();
+            }
+        }
         PushButton {
             w: 90px;
             label: "RESCAN";
