@@ -24,8 +24,8 @@ use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
     cleanup, config, debloat, dns, engine, eventlog, features, firewall, installs, journal,
-    microwin, modes, netmon, power, privacy, procmon, quick, repair, services, settings, startup,
-    tweaks,
+    localusers, microwin, modes, netmon, power, privacy, procmon, quick, repair, services, settings,
+    startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -1731,6 +1731,133 @@ fn wire_events(app: &AppWindow) -> Timer {
     timer
 }
 
+/// Local Users panel: list accounts + Administrators membership (unelevated), with
+/// elevated enable/disable, admin toggle, password-never-expires, and a `net user`
+/// password reset in a visible console.
+fn wire_users(app: &AppWindow, notify: &Notify) -> Timer {
+    let source: Rc<VecModel<LocalUser>> = Rc::new(VecModel::default());
+    let filter_text = Rc::new(RefCell::new(String::new()));
+    let filtered = Rc::new(FilterModel::new(ModelRc::from(source.clone()), {
+        let ft = filter_text.clone();
+        move |row: &LocalUser| {
+            let q = ft.borrow();
+            q.is_empty()
+                || row.name.to_lowercase().contains(q.as_str())
+                || row.full_name.to_lowercase().contains(q.as_str())
+        }
+    }));
+    app.global::<Users>()
+        .set_rows(ModelRc::from(filtered.clone()));
+    app.global::<Users>().set_loading(true);
+
+    {
+        let weak = app.as_weak();
+        let ft = filter_text.clone();
+        let filtered = filtered.clone();
+        app.global::<Users>().on_filter(move || {
+            if let Some(app) = weak.upgrade() {
+                *ft.borrow_mut() = app.global::<Users>().get_filter_text().to_lowercase();
+                filtered.reset();
+            }
+        });
+    }
+
+    let (tx, rx) = mpsc::channel::<Vec<localusers::LocalUser>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(localusers::list());
+            });
+        }
+    };
+    scan();
+
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Users>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Users>().set_loading(true);
+            }
+            scan();
+        });
+    }
+
+    // Elevated account changes (approve UAC, then REFRESH to see the result).
+    {
+        let notify = notify.clone();
+        app.global::<Users>().on_set_enabled(move |name, want| {
+            let verb = if want { "Enabling" } else { "Disabling" };
+            match launch_elevated_ps(&localusers::enable_script(&name, want), false) {
+                Ok(()) => notify("info", &format!("{verb} {name} (approve UAC), then REFRESH")),
+                Err(e) => notify("error", &format!("{name}: {e}")),
+            }
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Users>().on_set_admin(move |name, want| {
+            let verb = if want { "Granting admin to" } else { "Removing admin from" };
+            match launch_elevated_ps(&localusers::admin_script(&name, want), false) {
+                Ok(()) => notify("info", &format!("{verb} {name} (approve UAC), then REFRESH")),
+                Err(e) => notify("error", &format!("{name}: {e}")),
+            }
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Users>().on_set_expiry(move |name, never| {
+            match launch_elevated_ps(&localusers::expiry_script(&name, never), false) {
+                Ok(()) => notify(
+                    "info",
+                    &format!("Updating password expiry for {name} (approve UAC), then REFRESH"),
+                ),
+                Err(e) => notify("error", &format!("{name}: {e}")),
+            }
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Users>().on_reset_password(move |name| {
+            match launch_elevated_ps(&localusers::reset_password_script(&name), true) {
+                Ok(()) => notify(
+                    "info",
+                    &format!("Resetting {name} password (approve UAC), then type it in the console."),
+                ),
+                Err(e) => notify("error", &format!("{name}: {e}")),
+            }
+        });
+    }
+
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let filtered2 = filtered.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(users) = rx.try_recv() {
+            let rows: Vec<LocalUser> = users
+                .iter()
+                .map(|u| LocalUser {
+                    name: u.name.as_str().into(),
+                    full_name: u.full_name.as_str().into(),
+                    description: u.description.as_str().into(),
+                    enabled: u.enabled,
+                    is_admin: u.is_admin,
+                    never_expires: u.never_expires,
+                })
+                .collect();
+            source2.set_vec(rows);
+            filtered2.reset();
+            if let Some(app) = weak.upgrade() {
+                app.global::<Users>().set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
 /// MicroWin, debloated-ISO builder. Generates an elevated build script + an
 /// autounattend, then runs them in a visible console. (Heavy, admin, ~20 GB.)
 fn wire_microwin(app: &AppWindow, notify: &Notify) {
@@ -2481,6 +2608,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let proc_refresh = wire_proc(&app, &notify);
     let _services_pump = wire_services(&app, &notify);
     let _events_pump = wire_events(&app);
+    let _users_pump = wire_users(&app, &notify);
     wire_microwin(&app, &notify);
     wire_palette(&app);
     let power_refresh = wire_power(&app, &notify);

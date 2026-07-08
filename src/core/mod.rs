@@ -32,6 +32,8 @@ pub mod ipc;
 #[cfg(windows)]
 pub mod journal;
 #[cfg(windows)]
+pub mod localusers;
+#[cfg(windows)]
 pub mod microwin;
 #[cfg(windows)]
 pub mod modes;

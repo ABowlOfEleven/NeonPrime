@@ -309,6 +309,27 @@ export global Events {
     callback refresh();
 }
 
+export struct LocalUser {
+    name: string,
+    full-name: string,
+    description: string,
+    enabled: bool,
+    is-admin: bool,
+    never-expires: bool,
+}
+
+export global Users {
+    in property <[LocalUser]> rows;
+    in property <bool> loading: true;
+    in-out property <string> filter-text;
+    callback filter();
+    callback refresh();
+    callback set-enabled(string, bool);
+    callback set-admin(string, bool);
+    callback set-expiry(string, bool);
+    callback reset-password(string);
+}
+
 export global MicroWin {
     in-out property <string> iso;
     in-out property <string> output;
@@ -2918,6 +2939,163 @@ component EventLogView inherits VerticalLayout {
     }
 }
 
+component UserRowView inherits Rectangle {
+    in property <LocalUser> user;
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: user.name;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                if user.is-admin: Text {
+                    text: "· ADMIN";
+                    color: Theme.ember-soft;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+                if !user.enabled: Text {
+                    text: "· DISABLED";
+                    color: Theme.text-dim;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: user.full-name != ""
+                    ? (user.description != "" ? user.full-name + " · " + user.description : user.full-name)
+                    : user.description;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: 6px;
+                FilterChip {
+                    label: "ADMIN";
+                    active: user.is-admin;
+                    clicked => {
+                        Users.set-admin(user.name, !user.is-admin);
+                    }
+                }
+                FilterChip {
+                    label: "NO EXPIRY";
+                    active: user.never-expires;
+                    clicked => {
+                        Users.set-expiry(user.name, !user.never-expires);
+                    }
+                }
+                PushButton {
+                    w: 88px;
+                    label: "RESET PW";
+                    clicked => {
+                        Users.reset-password(user.name);
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Toggle {
+                on: user.enabled;
+                a11y-label: user.name;
+                toggled(v) => {
+                    Users.set-enabled(user.name, v);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component UsersView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "USERS";
+        hint: Users.loading ? "reading local accounts…" : "local accounts · Administrators membership";
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Users.refresh();
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        Rectangle {
+            height: 30px;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Theme.divider;
+            background: Theme.track;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                TextInput {
+                    text <=> Users.filter-text;
+                    color: Theme.text-body;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    single-line: true;
+                    edited => {
+                        Users.filter();
+                    }
+                }
+            }
+            if Users.filter-text == "": Text {
+                x: 11px;
+                text: "search users…";
+                color: Theme.text-dim;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+    }
+    if Users.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Reading local accounts…";
+    }
+    if !Users.loading && Users.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No accounts match.";
+    }
+    if !Users.loading && Users.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for u in Users.rows: UserRowView {
+            user: u;
+        }
+    }
+}
+
 component MicroWinOption inherits HorizontalLayout {
     in property <string> label;
     in-out property <bool> on;
@@ -3242,6 +3420,7 @@ export component AppWindow inherits Window {
                             NavSection { label: "SYSTEM"; }
                             NavItem { label: "MODES"; index: 3; icon: @image-url("icons/modes.svg"); }
                             NavItem { label: "SERVICES"; index: 14; icon: @image-url("icons/services.svg"); }
+                            NavItem { label: "USERS"; index: 17; icon: @image-url("icons/users.svg"); }
                             NavItem { label: "ACTIONS"; index: 5; icon: @image-url("icons/bolt.svg"); }
                             NavItem { label: "CONFIG"; index: 4; icon: @image-url("icons/config.svg"); }
                             NavItem { label: "HISTORY"; index: 9; icon: @image-url("icons/history.svg"); }
@@ -3265,7 +3444,7 @@ export component AppWindow inherits Window {
                 content-col := Rectangle {
                     // Table panels (Network 11, Processes 13, Services 14) need room
                     // for their columns; everything else uses the cozy reading width.
-                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14 || Nav.page == 16;
+                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14 || Nav.page == 16 || Nav.page == 17;
                     width: min(parent.width, self.wide ? Theme.content-wide : Theme.content-max);
                     x: (parent.width - self.width) / 2;
                     height: parent.height;
@@ -3334,6 +3513,10 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 16: EventLogView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 17: UsersView {
                     width: parent.width;
                     height: parent.height;
                 }
