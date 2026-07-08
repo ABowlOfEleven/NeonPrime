@@ -13,11 +13,13 @@
 //! -target list it has always been; the hierarchical option UI arrives with the
 //! multi-option browser cleaners.
 
+mod browsers;
 mod builtin;
 mod engine;
 mod path;
 mod recycle;
 
+pub use browsers::{any_running, browser_cleaners};
 pub use builtin::system_cleaners;
 pub use engine::{elevated_script, execute, preview, CleanResult, Preview};
 pub use path::{expand_and_validate, RejectReason};
@@ -47,6 +49,10 @@ pub struct Cleaner {
     pub name: String,
     pub group: Group,
     pub source: Source,
+    /// Executable names (e.g. "chrome.exe") whose presence means the app is
+    /// running. Options with `guard_running` are blocked while any is alive.
+    /// Empty for cleaners that need no such guard.
+    pub running_procs: Vec<String>,
     pub options: Vec<CleanerOption>,
 }
 
@@ -63,6 +69,10 @@ pub struct CleanerOption {
     /// Cleaning needs admin; the engine emits a script for the elevated shell
     /// rather than deleting in-process.
     pub elevated: bool,
+    /// Refuse to run this option while the cleaner's `running_procs` are alive
+    /// (deleting a live browser's cookies/history corrupts the profile). The
+    /// caller enforces this via [`any_running`]; safe caches leave it false.
+    pub guard_running: bool,
     pub actions: Vec<CleanAction>,
 }
 
@@ -84,6 +94,66 @@ pub enum CleanAction {
     EmptyDir { root: String },
     /// Empty the shell Recycle Bin across all drives.
     RecycleBin,
+}
+
+/// The full set of cleaners shown in the panel: built-in system targets first,
+/// then any detected browsers. Rebuilt on demand (the browser half does a little
+/// filesystem detection), so worker threads can reconstruct it independently.
+pub fn catalog() -> Vec<Cleaner> {
+    let mut v = system_cleaners();
+    v.extend(browser_cleaners());
+    v
+}
+
+/// A flattened one-row-per-option view of a catalog, for the flat panel list.
+/// Carries everything the row needs so the UI thread never re-walks the model.
+pub struct Row {
+    pub cleaner: usize,
+    pub option: usize,
+    pub name: String,
+    pub desc: String,
+    /// Empty when the option is non-destructive.
+    pub warning: String,
+    pub elevated: bool,
+    pub guard_running: bool,
+    pub running_procs: Vec<String>,
+}
+
+/// Flatten a catalog into panel rows. A single-option cleaner whose option label
+/// matches its name shows just the name (the system targets); multi-option
+/// cleaners show "Name Option" (e.g. "Google Chrome Cache").
+pub fn rows(catalog: &[Cleaner]) -> Vec<Row> {
+    let mut out = Vec::new();
+    for (ci, c) in catalog.iter().enumerate() {
+        for (oi, o) in c.options.iter().enumerate() {
+            let name = if c.options.len() == 1 && o.label == c.name {
+                c.name.clone()
+            } else {
+                format!("{} {}", c.name, o.label)
+            };
+            out.push(Row {
+                cleaner: ci,
+                option: oi,
+                name,
+                desc: o.desc.clone(),
+                warning: o.warning.clone().unwrap_or_default(),
+                elevated: o.elevated,
+                guard_running: o.guard_running,
+                running_procs: c.running_procs.clone(),
+            });
+        }
+    }
+    out
+}
+
+/// A selection vector that picks exactly option `i` of `n` (for previewing or
+/// cleaning a single option in isolation).
+pub fn only(n: usize, i: usize) -> Vec<bool> {
+    let mut sel = vec![false; n];
+    if let Some(slot) = sel.get_mut(i) {
+        *slot = true;
+    }
+    sel
 }
 
 /// Human-readable byte size (e.g. "1.4 GB"). Shared byte formatter used by the

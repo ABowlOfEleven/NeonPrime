@@ -287,6 +287,7 @@ mod tests {
             name: "t".into(),
             group: Group::System,
             source: Source::Builtin,
+            running_procs: Vec::new(),
             options: vec![CleanerOption {
                 id: "t".into(),
                 label: "t".into(),
@@ -294,6 +295,7 @@ mod tests {
                 default_on: true,
                 warning: None,
                 elevated: false,
+                guard_running: false,
                 actions: vec![CleanAction::EmptyDir { root: root.into() }],
             }],
         }

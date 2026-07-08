@@ -12,6 +12,7 @@ fn one(id: &str, name: &str, desc: &str, elevated: bool, actions: Vec<CleanActio
         name: name.into(),
         group: Group::System,
         source: Source::Builtin,
+        running_procs: Vec::new(),
         options: vec![CleanerOption {
             id: id.into(),
             label: name.into(),
@@ -19,6 +20,7 @@ fn one(id: &str, name: &str, desc: &str, elevated: bool, actions: Vec<CleanActio
             default_on: true,
             warning: None,
             elevated,
+            guard_running: false,
             actions,
         }],
     }

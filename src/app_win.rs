@@ -1329,22 +1329,24 @@ fn wire_power(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
 /// Disk cleanup: scan reclaimable sizes off-thread, clean user targets in-process
 /// and system caches via an elevated shell. Returns the result pump.
 fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
-    // Each built-in system cleaner is single-option, so the panel stays a flat
-    // one-row-per-target list. The list is rebuilt cheaply from the pure
-    // `system_cleaners()` producer wherever it is needed (including worker
-    // threads), so nothing but plain sizes crosses the thread boundary.
-    let count = cleaners::system_cleaners().len();
+    // The panel is a flat one-row-per-option list over the whole catalog
+    // (built-in system targets plus detected browsers). Both the catalog and its
+    // flattened rows are rebuilt cheaply from pure producers wherever needed
+    // (including worker threads), so nothing but plain sizes crosses the thread
+    // boundary. A row's `id` is its index in `cleaners::rows`.
+    let count = cleaners::rows(&cleaners::catalog()).len();
     let model: Rc<VecModel<CleanRow>> = Rc::new(VecModel::default());
-    let rows: Vec<CleanRow> = cleaners::system_cleaners()
+    let rows: Vec<CleanRow> = cleaners::rows(&cleaners::catalog())
         .iter()
         .enumerate()
-        .map(|(i, c)| CleanRow {
+        .map(|(i, r)| CleanRow {
             id: i as i32,
-            name: c.name.as_str().into(),
-            desc: c.options[0].desc.as_str().into(),
+            name: r.name.as_str().into(),
+            desc: r.desc.as_str().into(),
             size: "-".into(),
             frac: 0.0,
-            elevated: c.options[0].elevated,
+            elevated: r.elevated,
+            warning: r.warning.as_str().into(),
         })
         .collect();
     model.set_vec(rows);
@@ -1359,9 +1361,13 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
         move || {
             let tx = tx.clone();
             std::thread::spawn(move || {
-                let v: Vec<u64> = cleaners::system_cleaners()
+                let cat = cleaners::catalog();
+                let v: Vec<u64> = cleaners::rows(&cat)
                     .iter()
-                    .map(|c| cleaners::preview(c, &[true]).bytes)
+                    .map(|r| {
+                        let c = &cat[r.cleaner];
+                        cleaners::preview(c, &cleaners::only(c.options.len(), r.option)).bytes
+                    })
                     .collect();
                 let _ = tx.send(CleanMsg::Scanned(v));
             });
@@ -1386,13 +1392,16 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
         let notify = notify.clone();
         let tx = tx.clone();
         app.global::<Cleanup>().on_clean(move |idx| {
-            let catalog = cleaners::system_cleaners();
-            let Some(c) = catalog.get(idx as usize) else {
+            let cat = cleaners::catalog();
+            let all_rows = cleaners::rows(&cat);
+            let Some(r) = all_rows.get(idx as usize) else {
                 return;
             };
-            let name = c.name.clone();
-            if c.options[0].elevated {
-                if let Some(script) = cleaners::elevated_script(c, &[true]) {
+            let c = &cat[r.cleaner];
+            let name = r.name.clone();
+            let sel = cleaners::only(c.options.len(), r.option);
+            if r.elevated {
+                if let Some(script) = cleaners::elevated_script(c, &sel) {
                     match launch_elevated_ps(&script, false) {
                         Ok(()) => notify(
                             "info",
@@ -1401,14 +1410,24 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
                         Err(e) => notify("error", &format!("{name}: {e}")),
                     }
                 }
+            } else if r.guard_running && cleaners::any_running(&r.running_procs) {
+                // Deleting a live browser profile's cookies/history would corrupt
+                // it, so destructive options are hard-blocked while it is open.
+                notify(
+                    "error",
+                    &format!("Close {} first to clean {name}.", c.name),
+                );
             } else {
                 notify("info", &format!("Cleaning {name}…"));
                 let tx = tx.clone();
                 std::thread::spawn(move || {
-                    let catalog = cleaners::system_cleaners();
-                    let size = if let Some(c) = catalog.get(idx as usize) {
-                        cleaners::execute(c, &[true], false);
-                        cleaners::preview(c, &[true]).bytes
+                    let cat = cleaners::catalog();
+                    let rows = cleaners::rows(&cat);
+                    let size = if let Some(r) = rows.get(idx as usize) {
+                        let c = &cat[r.cleaner];
+                        let sel = cleaners::only(c.options.len(), r.option);
+                        cleaners::execute(c, &sel, false);
+                        cleaners::preview(c, &sel).bytes
                     } else {
                         0
                     };
@@ -1427,18 +1446,19 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
         Rc::new(move || {
             let sizes = sizes.borrow();
             let max = sizes.iter().copied().max().unwrap_or(0).max(1);
-            let mut rows: Vec<CleanRow> = cleaners::system_cleaners()
+            let mut rows: Vec<CleanRow> = cleaners::rows(&cleaners::catalog())
                 .iter()
                 .enumerate()
-                .map(|(i, c)| {
+                .map(|(i, r)| {
                     let sz = sizes.get(i).copied().unwrap_or(0);
                     CleanRow {
                         id: i as i32,
-                        name: c.name.as_str().into(),
-                        desc: c.options[0].desc.as_str().into(),
+                        name: r.name.as_str().into(),
+                        desc: r.desc.as_str().into(),
                         size: cleaners::human(sz).into(),
                         frac: sz as f32 / max as f32,
-                        elevated: c.options[0].elevated,
+                        elevated: r.elevated,
+                        warning: r.warning.as_str().into(),
                     }
                 })
                 .collect();

@@ -224,6 +224,7 @@ export struct CleanRow {
     size: string,
     frac: float, // size as a share of the largest target (0..1), for the bar
     elevated: bool,
+    warning: string, // non-empty when the option erases user state (destructive)
 }
 
 export global Cleanup {
@@ -2333,6 +2334,12 @@ component CleanupRowView inherits Rectangle {
             ExpandableDesc {
                 text: root.target.desc;
                 size: 10px;
+            }
+            if root.target.warning != "": Text {
+                text: "⚠ " + root.target.warning;
+                color: Theme.ember-soft;
+                font-size: 10px;
+                overflow: elide;
             }
             // Reclaimable-size bar, relative to the largest target.
             Rectangle {
