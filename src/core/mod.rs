@@ -10,6 +10,12 @@
 #[cfg(windows)]
 pub mod action;
 #[cfg(windows)]
+pub mod asset;
+#[cfg(windows)]
+pub mod bundle;
+#[cfg(windows)]
+pub mod certs;
+#[cfg(windows)]
 pub mod cleanup;
 #[cfg(windows)]
 pub mod config;
@@ -21,12 +27,6 @@ pub mod devices;
 pub mod disks;
 #[cfg(windows)]
 pub mod dns;
-#[cfg(windows)]
-pub mod asset;
-#[cfg(windows)]
-pub mod bundle;
-#[cfg(windows)]
-pub mod certs;
 #[cfg(windows)]
 pub mod engine;
 #[cfg(windows)]

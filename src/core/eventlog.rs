@@ -74,8 +74,10 @@ mod tests {
 
     #[test]
     fn parses_a_tab_line() {
-        let e = parse_line("07-08 03:21\t2\tService Control Manager\t7009\tSystem\tA timeout was reached.")
-            .expect("parsed");
+        let e = parse_line(
+            "07-08 03:21\t2\tService Control Manager\t7009\tSystem\tA timeout was reached.",
+        )
+        .expect("parsed");
         assert_eq!(e.level, 2);
         assert_eq!(e.id, 7009);
         assert_eq!(e.log, "System");

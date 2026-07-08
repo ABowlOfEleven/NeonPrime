@@ -194,9 +194,24 @@ mod tests {
     #[test]
     fn summary_counts() {
         let items = vec![
-            PostureItem { name: "a".into(), status: String::new(), state: 1, detail: String::new() },
-            PostureItem { name: "b".into(), status: String::new(), state: 3, detail: String::new() },
-            PostureItem { name: "c".into(), status: String::new(), state: 2, detail: String::new() },
+            PostureItem {
+                name: "a".into(),
+                status: String::new(),
+                state: 1,
+                detail: String::new(),
+            },
+            PostureItem {
+                name: "b".into(),
+                status: String::new(),
+                state: 3,
+                detail: String::new(),
+            },
+            PostureItem {
+                name: "c".into(),
+                status: String::new(),
+                state: 2,
+                detail: String::new(),
+            },
         ];
         assert_eq!(summary(&items), (1, 1, 1));
     }

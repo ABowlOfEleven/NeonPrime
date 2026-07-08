@@ -32,7 +32,9 @@ fn write_file(dir: &Path, name: &str, content: &str, count: &mut usize) {
 }
 
 fn esc_html(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 /// Build the whole bundle under the user's profile folder. Returns the folder
@@ -112,7 +114,13 @@ pub fn generate() -> Result<BundleResult, String> {
     let _ = Command::new("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &dump])
         .output();
-    for f in ["specs.txt", "network.txt", "processes.txt", "installed-apps.txt", "drivers.txt"] {
+    for f in [
+        "specs.txt",
+        "network.txt",
+        "processes.txt",
+        "installed-apps.txt",
+        "drivers.txt",
+    ] {
         if dir.join(f).exists() {
             files += 1;
         }
