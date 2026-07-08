@@ -23,7 +23,7 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    asset, bundle, certs, cleanup, config, debloat, devices, disks, dns, engine, eventlog, features,
+    asset, bundle, certs, cleaners, config, debloat, devices, disks, dns, engine, eventlog, features,
     firewall, gpo, installs, journal, localusers, microwin, modes, netmon, posture, power, printers,
     privacy, procmon, profiles, quick, repair, services, settings, startup, tweaks,
 };
@@ -1329,24 +1329,29 @@ fn wire_power(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
 /// Disk cleanup: scan reclaimable sizes off-thread, clean user targets in-process
 /// and system caches via an elevated shell. Returns the result pump.
 fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
+    // Each built-in system cleaner is single-option, so the panel stays a flat
+    // one-row-per-target list. The list is rebuilt cheaply from the pure
+    // `system_cleaners()` producer wherever it is needed (including worker
+    // threads), so nothing but plain sizes crosses the thread boundary.
+    let count = cleaners::system_cleaners().len();
     let model: Rc<VecModel<CleanRow>> = Rc::new(VecModel::default());
-    let rows: Vec<CleanRow> = cleanup::catalog()
+    let rows: Vec<CleanRow> = cleaners::system_cleaners()
         .iter()
         .enumerate()
-        .map(|(i, t)| CleanRow {
+        .map(|(i, c)| CleanRow {
             id: i as i32,
-            name: t.name.into(),
-            desc: t.desc.into(),
+            name: c.name.as_str().into(),
+            desc: c.options[0].desc.as_str().into(),
             size: "-".into(),
             frac: 0.0,
-            elevated: t.elevated,
+            elevated: c.options[0].elevated,
         })
         .collect();
     model.set_vec(rows);
     app.global::<Cleanup>().set_rows(model.clone().into());
     app.global::<Cleanup>().set_scanning(true);
 
-    let sizes: Rc<RefCell<Vec<u64>>> = Rc::new(RefCell::new(vec![0; cleanup::catalog().len()]));
+    let sizes: Rc<RefCell<Vec<u64>>> = Rc::new(RefCell::new(vec![0; count]));
     let (tx, rx) = mpsc::channel::<CleanMsg>();
 
     let scan = {
@@ -1354,9 +1359,9 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
         move || {
             let tx = tx.clone();
             std::thread::spawn(move || {
-                let v: Vec<u64> = cleanup::catalog()
+                let v: Vec<u64> = cleaners::system_cleaners()
                     .iter()
-                    .map(|t| cleanup::size_of(t.id))
+                    .map(|c| cleaners::preview(c, &[true]).bytes)
                     .collect();
                 let _ = tx.send(CleanMsg::Scanned(v));
             });
@@ -1381,26 +1386,32 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
         let notify = notify.clone();
         let tx = tx.clone();
         app.global::<Cleanup>().on_clean(move |idx| {
-            let Some(t) = cleanup::catalog().get(idx as usize) else {
+            let catalog = cleaners::system_cleaners();
+            let Some(c) = catalog.get(idx as usize) else {
                 return;
             };
-            if t.elevated {
-                if let Some(script) = cleanup::clean_script(t.id) {
+            let name = c.name.clone();
+            if c.options[0].elevated {
+                if let Some(script) = cleaners::elevated_script(c, &[true]) {
                     match launch_elevated_ps(&script, false) {
                         Ok(()) => notify(
                             "info",
-                            &format!("Clearing {}, approve UAC, then RESCAN.", t.name),
+                            &format!("Clearing {name}, approve UAC, then RESCAN."),
                         ),
-                        Err(e) => notify("error", &format!("{}: {e}", t.name)),
+                        Err(e) => notify("error", &format!("{name}: {e}")),
                     }
                 }
             } else {
-                notify("info", &format!("Cleaning {}…", t.name));
-                let (tx, name) = (tx.clone(), t.name.to_string());
+                notify("info", &format!("Cleaning {name}…"));
+                let tx = tx.clone();
                 std::thread::spawn(move || {
-                    let id = cleanup::catalog()[idx as usize].id;
-                    let _ = cleanup::clean(id);
-                    let size = cleanup::size_of(id);
+                    let catalog = cleaners::system_cleaners();
+                    let size = if let Some(c) = catalog.get(idx as usize) {
+                        cleaners::execute(c, &[true], false);
+                        cleaners::preview(c, &[true]).bytes
+                    } else {
+                        0
+                    };
                     let _ = tx.send(CleanMsg::Cleaned { idx, size, name });
                 });
             }
@@ -1416,18 +1427,18 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
         Rc::new(move || {
             let sizes = sizes.borrow();
             let max = sizes.iter().copied().max().unwrap_or(0).max(1);
-            let mut rows: Vec<CleanRow> = cleanup::catalog()
+            let mut rows: Vec<CleanRow> = cleaners::system_cleaners()
                 .iter()
                 .enumerate()
-                .map(|(i, t)| {
+                .map(|(i, c)| {
                     let sz = sizes.get(i).copied().unwrap_or(0);
                     CleanRow {
                         id: i as i32,
-                        name: t.name.into(),
-                        desc: t.desc.into(),
-                        size: cleanup::human(sz).into(),
+                        name: c.name.as_str().into(),
+                        desc: c.options[0].desc.as_str().into(),
+                        size: cleaners::human(sz).into(),
                         frac: sz as f32 / max as f32,
-                        elevated: t.elevated,
+                        elevated: c.options[0].elevated,
                     }
                 })
                 .collect();
@@ -1440,7 +1451,7 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
             if let Some(app) = weak.upgrade() {
                 let total: u64 = sizes.iter().sum();
                 app.global::<Cleanup>()
-                    .set_total(cleanup::human(total).into());
+                    .set_total(cleaners::human(total).into());
             }
         })
     };
@@ -1519,7 +1530,7 @@ fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
                         "-".into()
                     };
                     let vram = if p.vram > 0 {
-                        cleanup::human(p.vram)
+                        cleaners::human(p.vram)
                     } else {
                         "-".into()
                     };
@@ -1527,7 +1538,7 @@ fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
                         pid: p.pid as i32,
                         name: p.name.as_str().into(),
                         cpu: format!("{:.0}%", p.cpu).as_str().into(),
-                        mem: cleanup::human(p.mem).as_str().into(),
+                        mem: cleaners::human(p.mem).as_str().into(),
                         gpu: gpu.as_str().into(),
                         vram: vram.as_str().into(),
                     }

@@ -16,7 +16,7 @@ pub mod bundle;
 #[cfg(windows)]
 pub mod certs;
 #[cfg(windows)]
-pub mod cleanup;
+pub mod cleaners;
 #[cfg(windows)]
 pub mod config;
 #[cfg(windows)]
