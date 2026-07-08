@@ -1,4 +1,4 @@
-//! Network "phoning home" monitor — active IPv4 TCP connections with the owning
+//! Network "phoning home" monitor, active IPv4 TCP connections with the owning
 //! process, via `GetExtendedTcpTable`. Read-only; no elevation needed.
 
 use std::collections::{HashMap, HashSet};
@@ -98,7 +98,7 @@ pub fn connections() -> Vec<Conn> {
         let (name, path) = names
             .get(&pid)
             .cloned()
-            .unwrap_or_else(|| ("—".into(), String::new()));
+            .unwrap_or_else(|| ("-".into(), String::new()));
         out.push(Conn {
             proc_name: name,
             pid,

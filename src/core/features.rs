@@ -1,4 +1,4 @@
-//! Windows optional features — DISM enable/disable. Unlike tweaks these aren't
+//! Windows optional features, DISM enable/disable. Unlike tweaks these aren't
 //! registry-reversible, so enable/disable shell out to DISM under elevation.
 //! Disabling a feature is the natural inverse of enabling it.
 //!
@@ -135,7 +135,7 @@ pub fn catalog() -> &'static [Feature] {
         Feature {
             id: "smb1",
             name: "SMB 1.0 / CIFS",
-            desc: "Obsolete file-sharing protocol. Insecure — enable only if forced.",
+            desc: "Obsolete file-sharing protocol. Insecure, enable only if forced.",
             dism: "SMB1Protocol",
         },
         Feature {

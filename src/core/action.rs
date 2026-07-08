@@ -17,9 +17,9 @@ pub enum RegValue {
 /// Which registry hive an action targets.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hive {
-    /// `HKEY_CURRENT_USER` — writable without elevation.
+    /// `HKEY_CURRENT_USER`, writable without elevation.
     Hkcu,
-    /// `HKEY_LOCAL_MACHINE` — requires administrator rights.
+    /// `HKEY_LOCAL_MACHINE`, requires administrator rights.
     Hklm,
 }
 
@@ -64,7 +64,7 @@ impl Action {
     }
 }
 
-/// Captured prior state — how to undo an applied [`Action`].
+/// Captured prior state, how to undo an applied [`Action`].
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub enum Reversal {
     /// Restore a registry value. `previous == None` means it didn't exist

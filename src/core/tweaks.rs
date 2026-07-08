@@ -7,7 +7,7 @@
 //! tweak was applied outside NeonPrime.
 //!
 //! The first entry is a **sandbox** tweak that writes only under
-//! `HKCU\Software\NeonPrime\Test` — applying it changes nothing the user sees,
+//! `HKCU\Software\NeonPrime\Test`, applying it changes nothing the user sees,
 //! so it's safe for automated end-to-end testing of the apply/revert pipeline.
 
 use crate::core::action::{Action, Hive, RegValue};
@@ -215,7 +215,7 @@ pub fn catalog() -> Vec<Tweak> {
     vec![
         // ── Sandbox (safe to toggle in automated tests) ──────────────
         dw_del("sandbox-demo", "Demo toggle (safe sandbox)",
-            "Writes only to HKCU\\Software\\NeonPrime\\Test — proves the apply/undo pipeline, changes nothing real.",
+            "Writes only to HKCU\\Software\\NeonPrime\\Test, proves the apply/undo pipeline, changes nothing real.",
             Sandbox, Hkcu, "Software\\NeonPrime\\Test", "DemoTweak", 1),
 
         // ── Interface (HKCU, no elevation) ───────────────────────────
@@ -317,7 +317,7 @@ pub fn catalog() -> Vec<Tweak> {
             "Stop dmwappushservice (device-management WAP push message routing).",
             Privacy, Hklm, "SYSTEM\\CurrentControlSet\\Services\\dmwappushservice", "Start", 4, 3),
         dw("svc-sysmain", "Set SysMain (Superfetch) to manual",
-            "Cut background prefetch disk activity — helps on SSDs and low-RAM systems.",
+            "Cut background prefetch disk activity, helps on SSDs and low-RAM systems.",
             Performance, Hklm, "SYSTEM\\CurrentControlSet\\Services\\SysMain", "Start", 3, 2),
         dw("svc-wmpnetwork", "Disable WMP network sharing",
             "Stop the Windows Media Player network sharing service.",
@@ -680,7 +680,7 @@ const BRAVE_KEYS: &[(&str, u32)] = &[
     ("MetricsReportingEnabled", 0),
 ];
 
-/// Curated "Essential Tweaks" — a safe, no-elevation recommended set applied by
+/// Curated "Essential Tweaks", a safe, no-elevation recommended set applied by
 /// the one-click button (mirrors WinUtil's flagship preset, HKCU-only).
 pub fn essential_ids() -> &'static [&'static str] {
     &[

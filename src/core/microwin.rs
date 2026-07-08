@@ -1,4 +1,4 @@
-//! MicroWin — build a slimmed, debloated Windows ISO from a stock one.
+//! MicroWin, build a slimmed, debloated Windows ISO from a stock one.
 //!
 //! The pipeline mirrors WinUtil's: mount the source ISO, copy it out, mount the
 //! `install.wim` (converting from ESD if needed), remove provisioned Appx
@@ -146,7 +146,7 @@ pub fn build_script(o: &Options, oscdimg: &str, unattend: &str) -> String {
     s.push_str(&format!("$index = {}\n", o.index));
     s.push_str("$src = Join-Path $work 'src'\n");
     s.push_str("$mnt = Join-Path $work 'mount'\n");
-    s.push_str("Write-Host 'NeonPrime MicroWin — preparing workspace...' -ForegroundColor Cyan\n");
+    s.push_str("Write-Host 'NeonPrime MicroWin, preparing workspace...' -ForegroundColor Cyan\n");
     s.push_str("Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue\n");
     s.push_str("New-Item -ItemType Directory -Force -Path $src,$mnt | Out-Null\n");
 

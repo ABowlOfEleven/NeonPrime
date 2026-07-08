@@ -3,7 +3,7 @@
 //!
 //! Export is a pure snapshot of current state. Import replays it through the
 //! same reversible engine, so everything it does is journaled and undoable.
-//! Elevated (HKLM) tweaks are skipped on import here — they need the broker —
+//! Elevated (HKLM) tweaks are skipped on import here, they need the broker —
 //! and app installs are captured for reference but not auto-run.
 
 use std::path::{Path, PathBuf};

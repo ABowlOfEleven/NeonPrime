@@ -1,4 +1,4 @@
-//! System modes — named bundles of reversible [`Action`]s plus a power plan.
+//! System modes, named bundles of reversible [`Action`]s plus a power plan.
 //!
 //! Activating a mode flips the machine's personality in one click: it reverts
 //! whatever mode was active, applies its own HKCU registry actions (through the
@@ -74,7 +74,7 @@ pub fn catalog() -> Vec<Mode> {
             id: "work",
             name: "Work",
             tagline: "Calm & balanced",
-            desc: "Balanced power and toast notifications silenced — the quiet profile.",
+            desc: "Balanced power and toast notifications silenced, the quiet profile.",
             actions: vec![dw(PUSH, "ToastEnabled", 0)],
             power_guid: Some(BALANCED),
         },
@@ -135,7 +135,7 @@ mod tests {
         for m in catalog() {
             assert!(!m.actions.is_empty(), "{} has no actions", m.id);
             assert!(m.power_guid.is_some(), "{} has no power plan", m.id);
-            // Mode actions are HKCU — no elevation, so activation never prompts UAC.
+            // Mode actions are HKCU, no elevation, so activation never prompts UAC.
             assert!(m.actions.iter().all(|a| !a.needs_elevation()));
         }
     }

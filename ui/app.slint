@@ -1,4 +1,4 @@
-// NeonPrime UI — P3: nav-driven views + the Tweaks panel.
+// NeonPrime UI, P3: nav-driven views + the Tweaks panel.
 // Themes via `Theme.hev`; live telemetry via `Sys`; tweak rows via `Tweaks`.
 
 import { ListView } from "std-widgets.slint";
@@ -35,25 +35,25 @@ export global Theme {
 
 export global Sys {
     in-out property <float> cpu-ratio: 0;
-    in-out property <string> cpu-text: "—";
+    in-out property <string> cpu-text: "-";
     in-out property <float> cpu-temp-ratio: 0;
-    in-out property <string> cpu-temp-text: "—";
+    in-out property <string> cpu-temp-text: "-";
     in-out property <bool> cpu-temp-warn: false;
-    in-out property <string> gpu-name: "—";
+    in-out property <string> gpu-name: "-";
     in-out property <float> ram-ratio: 0;
-    in-out property <string> ram-text: "—";
+    in-out property <string> ram-text: "-";
     in-out property <bool> gpu-available: false;
     in-out property <float> gpu-ratio: 0;
-    in-out property <string> gpu-text: "—";
+    in-out property <string> gpu-text: "-";
     in-out property <float> vram-ratio: 0;
-    in-out property <string> vram-text: "—";
+    in-out property <string> vram-text: "-";
     in-out property <float> temp-ratio: 0;
-    in-out property <string> temp-text: "—";
+    in-out property <string> temp-text: "-";
     in-out property <bool> temp-warn: false;
-    in-out property <string> spec-os: "—";
-    in-out property <string> spec-cpu: "—";
-    in-out property <string> spec-ram: "—";
-    in-out property <string> spec-uptime: "—";
+    in-out property <string> spec-os: "-";
+    in-out property <string> spec-cpu: "-";
+    in-out property <string> spec-ram: "-";
+    in-out property <string> spec-uptime: "-";
     // Rolling-history samples (0..1), newest last. Rendered as bar sparklines.
     in-out property <[float]> cpu-history;
     in-out property <[float]> gpu-history;
@@ -605,7 +605,7 @@ component Sparkline inherits Rectangle {
                 }
             }
         }
-        // Bar histogram — fills the full width via layout, newest on the right.
+        // Bar histogram, fills the full width via layout, newest on the right.
         Rectangle {
             horizontal-stretch: 1;
             clip: true;
@@ -984,7 +984,7 @@ component AppRowView inherits Rectangle {
             Text {
                 text: root.app.known
                     ? (root.app.installed ? "● INSTALLED" : "AVAILABLE")
-                    : (Installer.scanning ? "scanning…" : "—");
+                    : (Installer.scanning ? "scanning…" : "-");
                 color: root.app.installed ? Theme.accent : Theme.text-dim;
                 font-size: 10px;
                 horizontal-alignment: right;
@@ -1580,7 +1580,7 @@ component ConfigView inherits VerticalLayout {
         padding-right: 20px;
         spacing: 12px;
         Text {
-            text: "Elevated repairs — each opens a console and asks for admin (UAC).";
+            text: "Elevated repairs, each opens a console and asks for admin (UAC).";
             color: Theme.text-dim;
             font-size: 12px;
             wrap: word-wrap;
@@ -2793,7 +2793,7 @@ component MicroWinView inherits VerticalLayout {
         padding-right: 20px;
         spacing: 10px;
         Text {
-            text: "Builds a slimmed Windows ISO from a stock one. Needs admin, ~20 GB free, and several minutes — watch the elevated console.";
+            text: "Builds a slimmed Windows ISO from a stock one. Needs admin, ~20 GB free, and several minutes, watch the elevated console.";
             color: Theme.text-dim;
             font-size: 12px;
             wrap: word-wrap;
@@ -2813,7 +2813,7 @@ component MicroWinView inherits VerticalLayout {
         Text { text: "OUTPUT ISO"; color: Theme.text-dim; font-size: 10px; }
         TextField {
             text <=> MicroWin.output;
-            placeholder: "auto — set when you choose a source";
+            placeholder: "auto, set when you choose a source";
         }
         HorizontalLayout {
             spacing: 12px;
@@ -2924,7 +2924,7 @@ export component AppWindow inherits Window {
                 padding-left: 20px;
                 padding-right: 14px;
                 spacing: 12px;
-                // No `alignment: start` — that collapses the stretch spacer below,
+                // No `alignment: start`, that collapses the stretch spacer below,
                 // which clustered the SEARCH/THEME pills next to the logo instead
                 // of pushing them to the right edge on a wide window.
                 VerticalLayout {
@@ -3085,7 +3085,7 @@ export component AppWindow inherits Window {
                 }
             }
 
-            // Main content — switches on Nav.page.
+            // Main content, switches on Nav.page.
             Rectangle {
                 horizontal-stretch: 1;
                 // Centered content column: panels never sprawl past Theme.content-max,
@@ -3185,7 +3185,7 @@ export component AppWindow inherits Window {
                 height: 1px;
                 background: Theme.divider;
             }
-            // Broker/GPU state on the left, system status on the right — both
+            // Broker/GPU state on the left, system status on the right, both
             // vertically centered.
             HorizontalLayout {
                 padding-left: 20px;

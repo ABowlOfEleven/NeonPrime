@@ -1,8 +1,8 @@
 //! UWP/Appx debloat + telemetry scheduled-task disabling.
 //!
 //! Per-user Appx removal (`Remove-AppxPackage` without `-AllUsers`) needs no
-//! elevation, and `Get-AppxPackage` lists the current user's packages unelevated
-//! — so unlike DISM features we *can* honestly show installed/removed state.
+//! elevation, and `Get-AppxPackage` lists the current user's packages unelevated,
+//! so unlike DISM features we *can* honestly show installed/removed state.
 //! Removal is one-directional here; every app listed is reinstallable from the
 //! Microsoft Store. Telemetry tasks are disabled via `schtasks` (elevated).
 

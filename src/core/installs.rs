@@ -22,7 +22,7 @@ pub struct App {
     pub repo: String,
 }
 
-// Shape of `winget export` output — we only want the package identifiers.
+// Shape of `winget export` output, we only want the package identifiers.
 #[derive(Deserialize)]
 struct WingetExport {
     #[serde(rename = "Sources", default)]
@@ -43,7 +43,7 @@ struct WingetPkg {
 /// case-insensitive matching against the catalog), via `winget export`.
 ///
 /// This queries winget's sources and takes a few seconds, so callers must run it
-/// off the UI thread. Returns an empty set if winget is missing or errors — the
+/// off the UI thread. Returns an empty set if winget is missing or errors, the
 /// UI treats "empty scan result" as "state unknown", never as "nothing installed".
 pub fn installed_ids() -> HashSet<String> {
     #[cfg(windows)]
@@ -190,7 +190,7 @@ pub fn catalog() -> Vec<App> {
 
 /// The NeonPrime author's public Rust projects (search "ABowlOfEleven" to find
 /// them all). hopscout ships on winget; the others install from their GitHub
-/// release MSI. NeonPrime itself is intentionally omitted — you're running it.
+/// release MSI. NeonPrime itself is intentionally omitted, you're running it.
 fn author_apps() -> Vec<App> {
     let author = |name: &str, desc: &str, id: &str, repo: &str| App {
         name: name.into(),
@@ -208,7 +208,7 @@ fn author_apps() -> Vec<App> {
         ),
         author(
             "GenomeForge",
-            "A local, native genome browser and variant explorer — your DNA stays on your machine.",
+            "A local, native genome browser and variant explorer, your DNA stays on your machine.",
             "",
             "ABowlOfEleven/genomeforge",
         ),

@@ -31,7 +31,7 @@ impl CpuTempMonitor {
         let shared = latest.clone();
 
         std::thread::spawn(move || {
-            // COM is initialized for THIS thread only — no clash with the UI.
+            // COM is initialized for THIS thread only, no clash with the UI.
             let Ok(com) = COMLibrary::new() else { return };
             let Ok(conn) = WMIConnection::with_namespace_path("root\\WMI", com) else {
                 return;
