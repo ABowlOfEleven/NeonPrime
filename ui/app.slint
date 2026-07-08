@@ -291,6 +291,171 @@ export global Services {
     callback refresh();
 }
 
+export struct EventRow {
+    time: string,
+    level: int, // 0 info, 1 warning, 2 error/critical
+    source: string,
+    id: int,
+    log: string,
+    message: string,
+}
+
+export global Events {
+    in property <[EventRow]> rows;
+    in property <bool> loading: true;
+    in-out property <string> filter-text;
+    in-out property <int> level-filter: 0; // 0 all, 1 warnings+errors, 2 errors only
+    callback filter();
+    callback refresh();
+}
+
+export struct LocalUser {
+    name: string,
+    full-name: string,
+    description: string,
+    enabled: bool,
+    is-admin: bool,
+    never-expires: bool,
+}
+
+export global Users {
+    in property <[LocalUser]> rows;
+    in property <bool> loading: true;
+    in-out property <string> filter-text;
+    callback filter();
+    callback refresh();
+    callback set-enabled(string, bool);
+    callback set-admin(string, bool);
+    callback set-expiry(string, bool);
+    callback reset-password(string);
+}
+
+export struct PostureRow {
+    name: string,
+    status: string,
+    state: int, // 0 unknown, 1 good, 2 warn, 3 risk
+    detail: string,
+}
+
+export global Posture {
+    in property <[PostureRow]> rows;
+    in property <bool> loading: true;
+    in property <int> good;
+    in property <int> warn;
+    in property <int> bad;
+    callback refresh();
+    callback export-report();
+}
+
+export global Support {
+    in property <bool> generating;
+    in property <string> last-path;
+    in property <string> asset-manufacturer;
+    in property <string> asset-model;
+    in property <string> asset-serial;
+    in property <bool> has-warranty;
+    callback generate();
+    callback open-folder();
+    callback warranty-lookup();
+}
+
+export struct PrinterRow {
+    name: string,
+    status: string,
+    jobs: int,
+    is-default: bool,
+}
+
+export global Printers {
+    in property <[PrinterRow]> rows;
+    in property <bool> loading: true;
+    callback refresh();
+    callback clear-queue(string);
+    callback restart-spooler();
+}
+
+export struct ProfileRow {
+    account: string,
+    path: string,
+    size-mb: int,
+    last-use: string,
+    loaded: bool,
+    sid: string,
+}
+
+export global Profiles {
+    in property <[ProfileRow]> rows;
+    in property <bool> loading: true;
+    callback refresh();
+    callback delete-profile(string);
+}
+
+export struct VolumeRow {
+    name: string,
+    label: string,
+    fs: string,
+    total-gb: int,
+    free-gb: int,
+    used-frac: float,
+}
+
+export struct PhysRow {
+    model: string,
+    media: string,
+    size-gb: int,
+    health: string,
+    state: int,
+}
+
+export global Disks {
+    in property <[VolumeRow]> volumes;
+    in property <[PhysRow]> physical;
+    in property <bool> loading: true;
+    callback refresh();
+}
+
+export struct DeviceRow {
+    name: string,
+    class: string,
+    version: string,
+    date: string,
+    problem: bool,
+}
+
+export global Devices {
+    in property <[DeviceRow]> rows;
+    in property <bool> loading: true;
+    in property <int> total;
+    in property <int> problems;
+    in-out property <string> filter-text;
+    in-out property <bool> problems-only;
+    callback filter();
+    callback refresh();
+    callback export-list();
+}
+
+export struct CertRow {
+    subject: string,
+    issuer: string,
+    expires: string,
+    days-left: int,
+    state: int,
+}
+
+export global Certs {
+    in property <[CertRow]> rows;
+    in property <bool> loading: true;
+    callback refresh();
+}
+
+export global Gpo {
+    in property <[string]> applied;
+    in property <string> last-refresh;
+    in property <bool> loading: true;
+    callback refresh();
+    callback export-report();
+}
+
 export global MicroWin {
     in-out property <string> iso;
     in-out property <string> output;
@@ -2747,6 +2912,1295 @@ component ServicesView inherits VerticalLayout {
     }
 }
 
+component EventRowView inherits Rectangle {
+    in property <EventRow> ev;
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        // Severity badge.
+        VerticalLayout {
+            alignment: start;
+            Rectangle {
+                width: 60px;
+                height: 18px;
+                border-radius: 5px;
+                border-width: 1px;
+                border-color: ev.level == 2 ? Theme.ember : (ev.level == 1 ? Theme.accent-soft : Theme.divider);
+                background: (ev.level == 2 ? Theme.ember : (ev.level == 1 ? Theme.accent-soft : Theme.text-dim)).with-alpha(0.12);
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: ev.level == 2 ? "ERROR" : (ev.level == 1 ? "WARN" : "INFO");
+                    color: ev.level == 2 ? Theme.ember-soft : (ev.level == 1 ? Theme.accent-soft : Theme.text-dim);
+                    font-size: 9px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: ev.source;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                Text {
+                    text: ev.log + " · id " + ev.id;
+                    color: Theme.text-dim;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            ExpandableDesc {
+                text: ev.message;
+                size: 11px;
+            }
+        }
+        VerticalLayout {
+            alignment: start;
+            Rectangle {
+                height: 16px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: ev.time;
+                    color: Theme.text-dim;
+                    font-size: 10px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component EventLogView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "EVENTS";
+        hint: Events.loading ? "reading event logs…" : "System + Application errors and warnings";
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Events.refresh();
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 7px;
+        alignment: start;
+        FilterChip { label: "ALL"; active: Events.level-filter == 0; clicked => { Events.level-filter = 0; Events.filter(); } }
+        FilterChip { label: "WARN+"; active: Events.level-filter == 1; clicked => { Events.level-filter = 1; Events.filter(); } }
+        FilterChip { label: "ERRORS"; active: Events.level-filter == 2; clicked => { Events.level-filter = 2; Events.filter(); } }
+        Rectangle { width: 8px; }
+        Rectangle {
+            height: 30px;
+            horizontal-stretch: 1;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Theme.divider;
+            background: Theme.track;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                TextInput {
+                    text <=> Events.filter-text;
+                    color: Theme.text-body;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    single-line: true;
+                    edited => {
+                        Events.filter();
+                    }
+                }
+            }
+            if Events.filter-text == "": Text {
+                x: 11px;
+                text: "search events…";
+                color: Theme.text-dim;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+    }
+    if Events.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Reading event logs…";
+    }
+    if !Events.loading && Events.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No matching events.";
+    }
+    if !Events.loading && Events.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for e in Events.rows: EventRowView {
+            ev: e;
+        }
+    }
+}
+
+component UserRowView inherits Rectangle {
+    in property <LocalUser> user;
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: user.name;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                if user.is-admin: Text {
+                    text: "· ADMIN";
+                    color: Theme.ember-soft;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+                if !user.enabled: Text {
+                    text: "· DISABLED";
+                    color: Theme.text-dim;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: user.full-name != ""
+                    ? (user.description != "" ? user.full-name + " · " + user.description : user.full-name)
+                    : user.description;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: 6px;
+                FilterChip {
+                    label: "ADMIN";
+                    active: user.is-admin;
+                    clicked => {
+                        Users.set-admin(user.name, !user.is-admin);
+                    }
+                }
+                FilterChip {
+                    label: "NO EXPIRY";
+                    active: user.never-expires;
+                    clicked => {
+                        Users.set-expiry(user.name, !user.never-expires);
+                    }
+                }
+                PushButton {
+                    w: 88px;
+                    label: "RESET PW";
+                    clicked => {
+                        Users.reset-password(user.name);
+                    }
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Toggle {
+                on: user.enabled;
+                a11y-label: user.name;
+                toggled(v) => {
+                    Users.set-enabled(user.name, v);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component UsersView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "USERS";
+        hint: Users.loading ? "reading local accounts…" : "local accounts · Administrators membership";
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Users.refresh();
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        Rectangle {
+            height: 30px;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Theme.divider;
+            background: Theme.track;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                TextInput {
+                    text <=> Users.filter-text;
+                    color: Theme.text-body;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    single-line: true;
+                    edited => {
+                        Users.filter();
+                    }
+                }
+            }
+            if Users.filter-text == "": Text {
+                x: 11px;
+                text: "search users…";
+                color: Theme.text-dim;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+    }
+    if Users.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Reading local accounts…";
+    }
+    if !Users.loading && Users.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No accounts match.";
+    }
+    if !Users.loading && Users.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for u in Users.rows: UserRowView {
+            user: u;
+        }
+    }
+}
+
+component PostureRowView inherits Rectangle {
+    in property <PostureRow> item;
+    property <color> tint: item.state == 1
+        ? Theme.accent
+        : (item.state == 2 ? Theme.ember-soft : (item.state == 3 ? Theme.ember : Theme.text-dim));
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 11px;
+        padding-bottom: 11px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: start;
+            Rectangle {
+                width: 60px;
+                height: 18px;
+                border-radius: 5px;
+                border-width: 1px;
+                border-color: root.tint;
+                background: root.tint.with-alpha(0.12);
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: item.state == 1 ? "OK" : (item.state == 2 ? "WARN" : (item.state == 3 ? "RISK" : "?"));
+                    color: root.tint;
+                    font-size: 9px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            Text {
+                text: item.name;
+                color: Theme.text-body;
+                font-size: 13px;
+                overflow: elide;
+            }
+            Text {
+                text: item.detail;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                height: 18px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: item.status;
+                    color: Theme.text-body;
+                    font-size: 12px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component ComplianceView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "COMPLIANCE";
+        hint: Posture.loading
+            ? "checking security posture…"
+            : Posture.good + " ok · " + Posture.warn + " warn · " + Posture.bad + " risk";
+        PushButton {
+            w: 84px;
+            label: "EXPORT";
+            clicked => {
+                Posture.export-report();
+            }
+        }
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Posture.refresh();
+            }
+        }
+    }
+    if Posture.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Checking security posture…";
+    }
+    if !Posture.loading: ListView {
+        vertical-stretch: 1;
+        for p in Posture.rows: PostureRowView {
+            item: p;
+        }
+    }
+}
+
+component AssetLine inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 8px;
+    Text {
+        text: root.label;
+        color: Theme.text-dim;
+        font-size: 11px;
+        width: 96px;
+        vertical-alignment: center;
+    }
+    Text {
+        text: root.value != "" ? root.value : "-";
+        color: Theme.text-body;
+        font-size: 12px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+component SupportView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 14px;
+    PanelHeader {
+        title: "SUPPORT BUNDLE";
+        hint: "one-click machine snapshot for a ticket";
+    }
+    VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 14px;
+        // Asset + warranty.
+        Rectangle {
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.divider;
+            background: Theme.track;
+            HorizontalLayout {
+                padding: 16px;
+                spacing: 20px;
+                VerticalLayout {
+                    spacing: 7px;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: "ASSET";
+                        color: Theme.accent-soft;
+                        font-size: 12px;
+                        letter-spacing: 1px;
+                    }
+                    AssetLine { label: "Model"; value: Support.asset-model; }
+                    AssetLine { label: "Manufacturer"; value: Support.asset-manufacturer; }
+                    AssetLine { label: "Serial / tag"; value: Support.asset-serial; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    if Support.has-warranty: PushButton {
+                        w: 150px;
+                        label: "WARRANTY LOOKUP";
+                        clicked => {
+                            Support.warranty-lookup();
+                        }
+                    }
+                }
+            }
+        }
+        // Generate.
+        Rectangle {
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.divider;
+            background: Theme.track;
+            VerticalLayout {
+                padding: 16px;
+                spacing: 12px;
+                Text {
+                    text: "Collects specs, security posture, recent event errors, services, network config, installed apps, top processes, and drivers into a timestamped folder with an HTML report you can attach to a ticket.";
+                    color: Theme.text-dim;
+                    font-size: 11px;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+                    PushButton {
+                        w: 230px;
+                        label: Support.generating ? "GENERATING…" : "GENERATE SUPPORT BUNDLE";
+                        clicked => {
+                            if (!Support.generating) {
+                                Support.generate();
+                            }
+                        }
+                    }
+                    if Support.last-path != "" && !Support.generating: PushButton {
+                        w: 120px;
+                        label: "OPEN FOLDER";
+                        clicked => {
+                            Support.open-folder();
+                        }
+                    }
+                }
+                if Support.last-path != "": Text {
+                    text: "Saved to: " + Support.last-path;
+                    color: Theme.text-dim;
+                    font-size: 10px;
+                    wrap: word-wrap;
+                }
+            }
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
+component PrinterRowView inherits Rectangle {
+    in property <PrinterRow> pr;
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: pr.name;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                if pr.is-default: Text {
+                    text: "· DEFAULT";
+                    color: Theme.accent-soft;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: pr.status + "  ·  " + pr.jobs + " job(s) queued";
+                color: pr.jobs > 0 ? Theme.ember-soft : Theme.text-dim;
+                font-size: 10px;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 120px;
+            if pr.jobs > 0: PushButton {
+                w: 114px;
+                danger: true;
+                label: "CLEAR QUEUE";
+                clicked => {
+                    Printers.clear-queue(pr.name);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component PrintersView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "PRINTERS";
+        hint: Printers.loading ? "reading printers…" : "queues and the Print Spooler";
+        PushButton {
+            w: 150px;
+            label: "RESTART SPOOLER";
+            clicked => {
+                Printers.restart-spooler();
+            }
+        }
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Printers.refresh();
+            }
+        }
+    }
+    if Printers.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Reading printers…";
+    }
+    if !Printers.loading && Printers.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No printers installed.";
+    }
+    if !Printers.loading && Printers.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for p in Printers.rows: PrinterRowView {
+            pr: p;
+        }
+    }
+}
+
+component ProfileRowView inherits Rectangle {
+    in property <ProfileRow> pf;
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: pf.account;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                if pf.loaded: Text {
+                    text: "· LOADED";
+                    color: Theme.accent-soft;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: pf.path;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 74px;
+            Rectangle {
+                height: 18px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: pf.size-mb >= 0 ? pf.size-mb + " MB" : "-";
+                    color: Theme.accent-soft;
+                    font-size: 13px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 84px;
+            Rectangle {
+                height: 16px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: pf.last-use != "" ? pf.last-use : "-";
+                    color: Theme.text-dim;
+                    font-size: 10px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 84px;
+            if !pf.loaded: PushButton {
+                w: 78px;
+                danger: true;
+                label: "DELETE";
+                clicked => {
+                    Profiles.delete-profile(pf.sid);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component ProfilesView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "PROFILES";
+        hint: Profiles.loading ? "measuring profiles…" : "local user profiles · delete stale to reclaim disk";
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Profiles.refresh();
+            }
+        }
+    }
+    if Profiles.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Measuring user profiles…";
+    }
+    if !Profiles.loading && Profiles.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No removable user profiles.";
+    }
+    if !Profiles.loading && Profiles.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for p in Profiles.rows: ProfileRowView {
+            pf: p;
+        }
+    }
+}
+
+component SubHeader inherits HorizontalLayout {
+    in property <string> label;
+    padding-left: 20px;
+    padding-top: 12px;
+    padding-bottom: 4px;
+    Text {
+        text: root.label;
+        color: Theme.text-dim;
+        font-size: 10px;
+        letter-spacing: 1px;
+    }
+}
+
+component PhysDiskRow inherits Rectangle {
+    in property <PhysRow> d;
+    property <color> tint: d.state == 1
+        ? Theme.accent
+        : (d.state == 2 ? Theme.ember-soft : (d.state == 3 ? Theme.ember : Theme.text-dim));
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 11px;
+        padding-bottom: 11px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 72px;
+                height: 18px;
+                border-radius: 5px;
+                border-width: 1px;
+                border-color: root.tint;
+                background: root.tint.with-alpha(0.12);
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: d.health != "" ? d.health : "Unknown";
+                    color: root.tint;
+                    font-size: 9px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            Text {
+                text: d.model;
+                color: Theme.text-body;
+                font-size: 13px;
+                overflow: elide;
+            }
+            Text {
+                text: d.size-gb + " GB  ·  " + (d.media != "" ? d.media : "disk");
+                color: Theme.text-dim;
+                font-size: 10px;
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component VolumeRowView inherits Rectangle {
+    in property <VolumeRow> v;
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 11px;
+        padding-bottom: 11px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40px;
+                height: 20px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: v.name;
+                    color: Theme.accent-soft;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 5px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: v.label != "" ? v.label : v.fs;
+                    color: Theme.text-body;
+                    font-size: 12px;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: v.free-gb + " GB free of " + v.total-gb + " GB";
+                    color: v.used-frac > 0.9 ? Theme.ember-soft : Theme.text-dim;
+                    font-size: 10px;
+                }
+            }
+            Rectangle {
+                height: 5px;
+                border-radius: 2.5px;
+                background: Theme.track;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * v.used-frac;
+                    height: parent.height;
+                    border-radius: 2.5px;
+                    background: v.used-frac > 0.9 ? Theme.ember : Theme.accent.with-alpha(0.75);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component DisksView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "DISKS";
+        hint: Disks.loading ? "reading disks…" : "physical health and volume space";
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Disks.refresh();
+            }
+        }
+    }
+    if Disks.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Reading disks…";
+    }
+    if !Disks.loading: Flickable {
+        vertical-stretch: 1;
+        VerticalLayout {
+            width: parent.width;
+            spacing: 0px;
+            if Disks.physical.length > 0: SubHeader {
+                label: "PHYSICAL DISKS";
+            }
+            for d in Disks.physical: PhysDiskRow {
+                d: d;
+            }
+            SubHeader {
+                label: "VOLUMES";
+            }
+            for v in Disks.volumes: VolumeRowView {
+                v: v;
+            }
+        }
+    }
+}
+
+component DeviceRowView inherits Rectangle {
+    in property <DeviceRow> dev;
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: dev.name;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                if dev.problem: Text {
+                    text: "· PROBLEM";
+                    color: Theme.ember-soft;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: dev.class
+                    + (dev.version != "" ? "  ·  v" + dev.version : "")
+                    + (dev.date != "" ? "  ·  " + dev.date : "");
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component DriversView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "DRIVERS";
+        hint: Devices.loading
+            ? "reading drivers…"
+            : Devices.total + " devices · " + Devices.problems + " problem(s)";
+        PushButton {
+            w: 84px;
+            label: "EXPORT";
+            clicked => {
+                Devices.export-list();
+            }
+        }
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Devices.refresh();
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 7px;
+        alignment: start;
+        FilterChip {
+            label: "ALL";
+            active: !Devices.problems-only;
+            clicked => {
+                Devices.problems-only = false;
+                Devices.filter();
+            }
+        }
+        FilterChip {
+            label: "PROBLEMS";
+            active: Devices.problems-only;
+            clicked => {
+                Devices.problems-only = true;
+                Devices.filter();
+            }
+        }
+        Rectangle { width: 8px; }
+        Rectangle {
+            height: 30px;
+            horizontal-stretch: 1;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Theme.divider;
+            background: Theme.track;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                TextInput {
+                    text <=> Devices.filter-text;
+                    color: Theme.text-body;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    single-line: true;
+                    edited => {
+                        Devices.filter();
+                    }
+                }
+            }
+            if Devices.filter-text == "": Text {
+                x: 11px;
+                text: "search devices…";
+                color: Theme.text-dim;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+    }
+    if Devices.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Reading drivers…";
+    }
+    if !Devices.loading && Devices.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No devices match.";
+    }
+    if !Devices.loading && Devices.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for d in Devices.rows: DeviceRowView {
+            dev: d;
+        }
+    }
+}
+
+component CertRowView inherits Rectangle {
+    in property <CertRow> c;
+    property <color> tint: c.state == 1 ? Theme.accent : (c.state == 2 ? Theme.ember-soft : Theme.ember);
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 11px;
+        padding-bottom: 11px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 66px;
+                height: 18px;
+                border-radius: 5px;
+                border-width: 1px;
+                border-color: root.tint;
+                background: root.tint.with-alpha(0.12);
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: c.state == 1 ? "OK" : (c.state == 2 ? "SOON" : "EXPIRED");
+                    color: root.tint;
+                    font-size: 9px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            Text {
+                text: c.subject;
+                color: Theme.text-body;
+                font-size: 13px;
+                overflow: elide;
+            }
+            Text {
+                text: "issued by " + c.issuer;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            Rectangle {
+                height: 16px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: c.expires;
+                    color: Theme.text-body;
+                    font-size: 12px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+            Rectangle {
+                height: 14px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: c.days-left < 0 ? (-c.days-left) + " days ago" : c.days-left + " days left";
+                    color: root.tint;
+                    font-size: 10px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component CertsView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "CERTIFICATES";
+        hint: Certs.loading ? "reading machine store…" : "LocalMachine\\My · soonest expiry first";
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Certs.refresh();
+            }
+        }
+    }
+    if Certs.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Reading the machine certificate store…";
+    }
+    if !Certs.loading && Certs.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No certificates in the machine store.";
+    }
+    if !Certs.loading && Certs.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for c in Certs.rows: CertRowView {
+            c: c;
+        }
+    }
+}
+
+component GpoLineRow inherits Rectangle {
+    in property <string> name;
+    height: 40px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 18px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background: Theme.accent;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.name;
+                color: Theme.text-body;
+                font-size: 12px;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component GpoView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "GROUP POLICY";
+        hint: Gpo.loading
+            ? "reading applied policy…"
+            : (Gpo.last-refresh != "" ? "last applied " + Gpo.last-refresh : "resultant set of policy");
+        PushButton {
+            w: 130px;
+            label: "EXPORT REPORT";
+            clicked => {
+                Gpo.export-report();
+            }
+        }
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Gpo.refresh();
+            }
+        }
+    }
+    if Gpo.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Reading applied policy…";
+    }
+    if !Gpo.loading && Gpo.applied.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No applied GPOs found (this PC may not be domain-joined).\nUse EXPORT REPORT for the full RSoP report.";
+    }
+    if !Gpo.loading && Gpo.applied.length > 0: VerticalLayout {
+        SubHeader {
+            label: "APPLIED GROUP POLICY OBJECTS";
+        }
+        ListView {
+            vertical-stretch: 1;
+            for name in Gpo.applied: GpoLineRow {
+                name: name;
+            }
+        }
+    }
+}
+
 component MicroWinOption inherits HorizontalLayout {
     in property <string> label;
     in-out property <bool> on;
@@ -3054,6 +4508,7 @@ export component AppWindow inherits Window {
                             NavItem { label: "DASHBOARD"; index: 0; icon: @image-url("icons/dashboard.svg"); }
                             NavItem { label: "NETWORK"; index: 11; icon: @image-url("icons/network.svg"); }
                             NavItem { label: "PROCESSES"; index: 13; icon: @image-url("icons/processes.svg"); }
+                            NavItem { label: "EVENTS"; index: 16; icon: @image-url("icons/events.svg"); }
 
                             NavSection { label: "OPTIMIZE"; }
                             NavItem { label: Theme.tweaks-label; index: 1; icon: Theme.hev ? @image-url("icons/crowbar.svg") : @image-url("icons/tweaks.svg"); }
@@ -3070,9 +4525,20 @@ export component AppWindow inherits Window {
                             NavSection { label: "SYSTEM"; }
                             NavItem { label: "MODES"; index: 3; icon: @image-url("icons/modes.svg"); }
                             NavItem { label: "SERVICES"; index: 14; icon: @image-url("icons/services.svg"); }
+                            NavItem { label: "USERS"; index: 17; icon: @image-url("icons/users.svg"); }
+                            NavItem { label: "COMPLIANCE"; index: 18; icon: @image-url("icons/compliance.svg"); }
                             NavItem { label: "ACTIONS"; index: 5; icon: @image-url("icons/bolt.svg"); }
                             NavItem { label: "CONFIG"; index: 4; icon: @image-url("icons/config.svg"); }
                             NavItem { label: "HISTORY"; index: 9; icon: @image-url("icons/history.svg"); }
+
+                            NavSection { label: "IT"; }
+                            NavItem { label: "SUPPORT"; index: 19; icon: @image-url("icons/support.svg"); }
+                            NavItem { label: "PRINTERS"; index: 20; icon: @image-url("icons/printer.svg"); }
+                            NavItem { label: "PROFILES"; index: 21; icon: @image-url("icons/profiles.svg"); }
+                            NavItem { label: "DISKS"; index: 22; icon: @image-url("icons/disk.svg"); }
+                            NavItem { label: "DRIVERS"; index: 23; icon: @image-url("icons/driver.svg"); }
+                            NavItem { label: "CERTS"; index: 24; icon: @image-url("icons/cert.svg"); }
+                            NavItem { label: "GROUP POLICY"; index: 25; icon: @image-url("icons/gpo.svg"); }
                         }
                     }
                 }
@@ -3093,7 +4559,7 @@ export component AppWindow inherits Window {
                 content-col := Rectangle {
                     // Table panels (Network 11, Processes 13, Services 14) need room
                     // for their columns; everything else uses the cozy reading width.
-                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14;
+                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14 || Nav.page == 16 || Nav.page == 17 || Nav.page == 21 || Nav.page == 22 || Nav.page == 23 || Nav.page == 24;
                     width: min(parent.width, self.wide ? Theme.content-wide : Theme.content-max);
                     x: (parent.width - self.width) / 2;
                     height: parent.height;
@@ -3158,6 +4624,46 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 15: MicroWinView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 16: EventLogView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 17: UsersView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 18: ComplianceView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 19: SupportView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 20: PrintersView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 21: ProfilesView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 22: DisksView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 23: DriversView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 24: CertsView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 25: GpoView {
                     width: parent.width;
                     height: parent.height;
                 }

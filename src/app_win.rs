@@ -23,8 +23,9 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    cleanup, config, debloat, dns, engine, features, firewall, installs, journal, microwin, modes,
-    netmon, power, privacy, procmon, quick, repair, services, settings, startup, tweaks,
+    asset, bundle, certs, cleanup, config, debloat, devices, disks, dns, engine, eventlog, features,
+    firewall, gpo, installs, journal, localusers, microwin, modes, netmon, posture, power, printers,
+    privacy, procmon, profiles, quick, repair, services, settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -708,30 +709,29 @@ fn wire_config(
     tweaks_catalog: &Rc<Vec<tweaks::Tweak>>,
     tweaks_model: &Rc<VecModel<TweakRow>>,
     modes_catalog: &Rc<Vec<modes::Mode>>,
-) {
+) -> Timer {
     let cfg_path = config::default_path();
+    // Export runs off-thread (it scans winget for the app set); results come back
+    // as (toml, tweak count, app count, mode) and land on the UI via the timer.
+    let (etx, erx) = mpsc::channel::<(String, usize, usize, Option<String>)>();
 
     {
         let weak = app.as_weak();
         let cfg_path = cfg_path.clone();
-        let notify = notify.clone();
+        let etx = etx.clone();
         app.global::<Configuration>().on_export_config(move || {
-            let cfg = config::capture();
-            let toml = cfg.to_toml().unwrap_or_default();
-            let _ = std::fs::write(&cfg_path, &toml);
             if let Some(app) = weak.upgrade() {
-                let c = app.global::<Configuration>();
-                c.set_preview(toml.as_str().into());
-                c.set_status(format!("Exported → {}", cfg_path.display()).as_str().into());
+                app.global::<Configuration>()
+                    .set_status("Capturing provisioning profile (scanning apps)…".into());
             }
-            notify(
-                "success",
-                &format!(
-                    "Exported {} tweak(s), mode {}",
-                    cfg.tweaks.len(),
-                    cfg.mode.as_deref().unwrap_or("none")
-                ),
-            );
+            let cfg_path = cfg_path.clone();
+            let etx = etx.clone();
+            std::thread::spawn(move || {
+                let cfg = config::capture_profile();
+                let toml = cfg.to_toml().unwrap_or_default();
+                let _ = std::fs::write(&cfg_path, &toml);
+                let _ = etx.send((toml, cfg.tweaks.len(), cfg.apps.len(), cfg.mode));
+            });
         });
     }
 
@@ -743,6 +743,7 @@ fn wire_config(
         let tcat = tweaks_catalog.clone();
         let tmodel = tweaks_model.clone();
         let mcat = modes_catalog.clone();
+        let cfg_path = cfg_path.clone();
         app.global::<Configuration>().on_import_config(move || {
             let toml = match std::fs::read_to_string(&cfg_path) {
                 Ok(s) => s,
@@ -773,6 +774,30 @@ fn wire_config(
                     cfg.mode.as_deref().unwrap_or("none")
                 ),
             );
+            // Provisioning: install the profile's app set in a visible elevated
+            // console (winget). Security: an imported profile is untrusted, so only
+            // ids that exist in our own catalog are ever installed (and the script
+            // builder additionally rejects non-token ids). This blocks command
+            // injection and arbitrary-package installs from a malicious profile.
+            let known = installs::catalog();
+            let apps: Vec<String> = cfg
+                .apps
+                .iter()
+                .filter(|id| known.iter().any(|a| a.id == **id))
+                .cloned()
+                .collect();
+            if !apps.is_empty() {
+                match launch_elevated_ps(&installs::install_many_script(&apps), true) {
+                    Ok(()) => notify(
+                        "info",
+                        &format!(
+                            "Installing {} app(s) from the profile (approve UAC), see the console.",
+                            apps.len()
+                        ),
+                    ),
+                    Err(e) => notify("error", &format!("App install failed: {e}")),
+                }
+            }
         });
     }
 
@@ -833,6 +858,29 @@ fn wire_config(
                 Err(e) => notify("error", &format!("Couldn't open System Restore: {e}")),
             });
     }
+
+    // Pump async export results back to the UI.
+    let weak = app.as_weak();
+    let cfg_path2 = cfg_path.clone();
+    let notify2 = notify.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok((toml, ntweaks, napps, mode)) = erx.try_recv() {
+            if let Some(app) = weak.upgrade() {
+                let c = app.global::<Configuration>();
+                c.set_preview(toml.as_str().into());
+                c.set_status(format!("Exported → {}", cfg_path2.display()).as_str().into());
+            }
+            notify2(
+                "success",
+                &format!(
+                    "Exported {ntweaks} tweak(s), {napps} app(s), mode {}",
+                    mode.as_deref().unwrap_or("none")
+                ),
+            );
+        }
+    });
+    timer
 }
 
 // ── Theme + Undo ────────────────────────────────────────────────────
@@ -1015,14 +1063,17 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
 
         let result = if inv.elevated {
             // Launch elevated via UAC (Start-Process -Verb RunAs). Returns at once.
+            // `visible` actions (SFC/DISM and other repairs) keep their console up so
+            // the user can watch; the rest run hidden.
             let arglist = inv
                 .args
                 .iter()
                 .map(|s| format!("'{}'", s.replace('\'', "''")))
                 .collect::<Vec<_>>()
                 .join(",");
+            let window = if inv.visible { "" } else { " -WindowStyle Hidden" };
             let ps = format!(
-                "Start-Process -FilePath '{}' -ArgumentList {arglist} -Verb RunAs -WindowStyle Hidden",
+                "Start-Process -FilePath '{}' -ArgumentList {arglist} -Verb RunAs{window}",
                 inv.program
             );
             Command::new("powershell")
@@ -1633,6 +1684,839 @@ fn wire_services(app: &AppWindow, notify: &Notify) -> Timer {
             filtered2.reset();
             if let Some(app) = weak.upgrade() {
                 app.global::<Services>().set_scanning(false);
+            }
+        }
+    });
+    timer
+}
+
+/// Event Viewer: recent System/Application errors and warnings, filtered by level
+/// and text. Read-only, scanned off-thread like Services.
+fn wire_events(app: &AppWindow) -> Timer {
+    let source: Rc<VecModel<EventRow>> = Rc::new(VecModel::default());
+    // (lowercased search text, level filter): 0 all, 1 warnings+errors, 2 errors.
+    let filter_state = Rc::new(RefCell::new((String::new(), 0i32)));
+    let filtered = Rc::new(FilterModel::new(ModelRc::from(source.clone()), {
+        let st = filter_state.clone();
+        move |row: &EventRow| {
+            let (q, lvl) = &*st.borrow();
+            let level_ok = match lvl {
+                2 => row.level == 2,
+                1 => row.level >= 1,
+                _ => true,
+            };
+            let text_ok = q.is_empty()
+                || row.source.to_lowercase().contains(q.as_str())
+                || row.message.to_lowercase().contains(q.as_str());
+            level_ok && text_ok
+        }
+    }));
+    app.global::<Events>()
+        .set_rows(ModelRc::from(filtered.clone()));
+    app.global::<Events>().set_loading(true);
+
+    {
+        let weak = app.as_weak();
+        let st = filter_state.clone();
+        let filtered = filtered.clone();
+        app.global::<Events>().on_filter(move || {
+            if let Some(app) = weak.upgrade() {
+                let ev = app.global::<Events>();
+                *st.borrow_mut() = (ev.get_filter_text().to_lowercase(), ev.get_level_filter());
+                filtered.reset();
+            }
+        });
+    }
+
+    let (tx, rx) = mpsc::channel::<Vec<eventlog::EventEntry>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(eventlog::recent(300));
+            });
+        }
+    };
+    scan();
+
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Events>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Events>().set_loading(true);
+            }
+            scan();
+        });
+    }
+
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let filtered2 = filtered.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(events) = rx.try_recv() {
+            let rows: Vec<EventRow> = events
+                .iter()
+                .map(|e| EventRow {
+                    time: e.time.as_str().into(),
+                    level: e.level as i32,
+                    source: e.source.as_str().into(),
+                    id: e.id as i32,
+                    log: e.log.as_str().into(),
+                    message: e.message.as_str().into(),
+                })
+                .collect();
+            source2.set_vec(rows);
+            filtered2.reset();
+            if let Some(app) = weak.upgrade() {
+                app.global::<Events>().set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
+/// Local Users panel: list accounts + Administrators membership (unelevated), with
+/// elevated enable/disable, admin toggle, password-never-expires, and a `net user`
+/// password reset in a visible console.
+fn wire_users(app: &AppWindow, notify: &Notify) -> Timer {
+    let source: Rc<VecModel<LocalUser>> = Rc::new(VecModel::default());
+    let filter_text = Rc::new(RefCell::new(String::new()));
+    let filtered = Rc::new(FilterModel::new(ModelRc::from(source.clone()), {
+        let ft = filter_text.clone();
+        move |row: &LocalUser| {
+            let q = ft.borrow();
+            q.is_empty()
+                || row.name.to_lowercase().contains(q.as_str())
+                || row.full_name.to_lowercase().contains(q.as_str())
+        }
+    }));
+    app.global::<Users>()
+        .set_rows(ModelRc::from(filtered.clone()));
+    app.global::<Users>().set_loading(true);
+
+    {
+        let weak = app.as_weak();
+        let ft = filter_text.clone();
+        let filtered = filtered.clone();
+        app.global::<Users>().on_filter(move || {
+            if let Some(app) = weak.upgrade() {
+                *ft.borrow_mut() = app.global::<Users>().get_filter_text().to_lowercase();
+                filtered.reset();
+            }
+        });
+    }
+
+    let (tx, rx) = mpsc::channel::<Vec<localusers::LocalUser>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(localusers::list());
+            });
+        }
+    };
+    scan();
+
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Users>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Users>().set_loading(true);
+            }
+            scan();
+        });
+    }
+
+    // Elevated account changes (approve UAC, then REFRESH to see the result).
+    {
+        let notify = notify.clone();
+        app.global::<Users>().on_set_enabled(move |name, want| {
+            let verb = if want { "Enabling" } else { "Disabling" };
+            match launch_elevated_ps(&localusers::enable_script(&name, want), false) {
+                Ok(()) => notify("info", &format!("{verb} {name} (approve UAC), then REFRESH")),
+                Err(e) => notify("error", &format!("{name}: {e}")),
+            }
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Users>().on_set_admin(move |name, want| {
+            let verb = if want { "Granting admin to" } else { "Removing admin from" };
+            match launch_elevated_ps(&localusers::admin_script(&name, want), false) {
+                Ok(()) => notify("info", &format!("{verb} {name} (approve UAC), then REFRESH")),
+                Err(e) => notify("error", &format!("{name}: {e}")),
+            }
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Users>().on_set_expiry(move |name, never| {
+            match launch_elevated_ps(&localusers::expiry_script(&name, never), false) {
+                Ok(()) => notify(
+                    "info",
+                    &format!("Updating password expiry for {name} (approve UAC), then REFRESH"),
+                ),
+                Err(e) => notify("error", &format!("{name}: {e}")),
+            }
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Users>().on_reset_password(move |name| {
+            match launch_elevated_ps(&localusers::reset_password_script(&name), true) {
+                Ok(()) => notify(
+                    "info",
+                    &format!("Resetting {name} password (approve UAC), then type it in the console."),
+                ),
+                Err(e) => notify("error", &format!("{name}: {e}")),
+            }
+        });
+    }
+
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let filtered2 = filtered.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(users) = rx.try_recv() {
+            let rows: Vec<LocalUser> = users
+                .iter()
+                .map(|u| LocalUser {
+                    name: u.name.as_str().into(),
+                    full_name: u.full_name.as_str().into(),
+                    description: u.description.as_str().into(),
+                    enabled: u.enabled,
+                    is_admin: u.is_admin,
+                    never_expires: u.never_expires,
+                })
+                .collect();
+            source2.set_vec(rows);
+            filtered2.reset();
+            if let Some(app) = weak.upgrade() {
+                app.global::<Users>().set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
+/// A local timestamp string for reports (one cheap PowerShell call).
+fn ps_now() -> String {
+    Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "(Get-Date).ToString('yyyy-MM-dd HH:mm')",
+        ])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+
+/// Write the compliance report to the user's profile folder and open it.
+fn write_compliance_report(items: &[posture::PostureItem]) -> io::Result<String> {
+    let machine = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "this-pc".into());
+    let html = posture::report_html(items, &machine, &ps_now());
+    let mut path = PathBuf::from(std::env::var("USERPROFILE").unwrap_or_else(|_| ".".into()));
+    path.push(format!("neonprime-compliance-{machine}.html"));
+    std::fs::write(&path, html)?;
+    let p = path.to_string_lossy().to_string();
+    let _ = Command::new("explorer").arg(&p).spawn();
+    Ok(p)
+}
+
+/// Compliance & posture panel: read-only security board (Defender, firewall,
+/// BitLocker, TPM, Secure Boot, UAC, update age) with an HTML report export.
+fn wire_posture(app: &AppWindow, notify: &Notify) -> Timer {
+    let source: Rc<VecModel<PostureRow>> = Rc::new(VecModel::default());
+    app.global::<Posture>()
+        .set_rows(ModelRc::from(source.clone()));
+    app.global::<Posture>().set_loading(true);
+
+    let (tx, rx) = mpsc::channel::<Vec<posture::PostureItem>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(posture::scan());
+            });
+        }
+    };
+    scan();
+
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Posture>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Posture>().set_loading(true);
+            }
+            scan();
+        });
+    }
+
+    {
+        let notify = notify.clone();
+        let src = source.clone();
+        app.global::<Posture>().on_export_report(move || {
+            let mut items = Vec::with_capacity(src.row_count());
+            for i in 0..src.row_count() {
+                if let Some(r) = src.row_data(i) {
+                    items.push(posture::PostureItem {
+                        name: r.name.to_string(),
+                        status: r.status.to_string(),
+                        state: r.state.clamp(0, 3) as u8,
+                        detail: r.detail.to_string(),
+                    });
+                }
+            }
+            match write_compliance_report(&items) {
+                Ok(p) => notify("info", &format!("Saved compliance report: {p}")),
+                Err(e) => notify("error", &format!("Export failed: {e}")),
+            }
+        });
+    }
+
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(items) = rx.try_recv() {
+            let (g, w, b) = posture::summary(&items);
+            let rows: Vec<PostureRow> = items
+                .iter()
+                .map(|i| PostureRow {
+                    name: i.name.as_str().into(),
+                    status: i.status.as_str().into(),
+                    state: i.state as i32,
+                    detail: i.detail.as_str().into(),
+                })
+                .collect();
+            source2.set_vec(rows);
+            if let Some(app) = weak.upgrade() {
+                let p = app.global::<Posture>();
+                p.set_good(g as i32);
+                p.set_warn(w as i32);
+                p.set_bad(b as i32);
+                p.set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
+/// Support Bundle panel: asset identity + warranty link, and a one-click machine
+/// snapshot written to a timestamped folder (generated off-thread).
+fn wire_support(app: &AppWindow, notify: &Notify) -> Timer {
+    // Warranty URL kept for the button once the asset scan lands.
+    let warranty = Rc::new(RefCell::new(String::new()));
+
+    let (atx, arx) = mpsc::channel::<asset::AssetInfo>();
+    std::thread::spawn(move || {
+        let _ = atx.send(asset::info());
+    });
+
+    let (btx, brx) = mpsc::channel::<Result<bundle::BundleResult, String>>();
+
+    {
+        let weak = app.as_weak();
+        let btx = btx.clone();
+        app.global::<Support>().on_generate(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Support>().set_generating(true);
+            }
+            let btx = btx.clone();
+            std::thread::spawn(move || {
+                let _ = btx.send(bundle::generate());
+            });
+        });
+    }
+    {
+        let weak = app.as_weak();
+        app.global::<Support>().on_open_folder(move || {
+            if let Some(app) = weak.upgrade() {
+                let p = app.global::<Support>().get_last_path().to_string();
+                if !p.is_empty() {
+                    let _ = Command::new("explorer").arg(&p).spawn();
+                }
+            }
+        });
+    }
+    {
+        let warranty = warranty.clone();
+        app.global::<Support>().on_warranty_lookup(move || {
+            let url = warranty.borrow().clone();
+            if !url.is_empty() {
+                let _ = Command::new("explorer").arg(&url).spawn();
+            }
+        });
+    }
+
+    let weak = app.as_weak();
+    let warranty2 = warranty.clone();
+    let notify = notify.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        if let Ok(a) = arx.try_recv() {
+            *warranty2.borrow_mut() = a.warranty_url.clone();
+            if let Some(app) = weak.upgrade() {
+                let s = app.global::<Support>();
+                s.set_asset_manufacturer(a.manufacturer.as_str().into());
+                s.set_asset_model(a.model.as_str().into());
+                s.set_asset_serial(a.serial.as_str().into());
+                s.set_has_warranty(!a.warranty_url.is_empty());
+            }
+        }
+        while let Ok(res) = brx.try_recv() {
+            if let Some(app) = weak.upgrade() {
+                let s = app.global::<Support>();
+                s.set_generating(false);
+                match res {
+                    Ok(b) => {
+                        s.set_last_path(b.path.as_str().into());
+                        notify("info", &format!("Support bundle ready ({} files).", b.files));
+                    }
+                    Err(e) => notify("error", &format!("Bundle failed: {e}")),
+                }
+            }
+        }
+    });
+    timer
+}
+
+/// Printers panel: list printers + queue depth (unelevated), clear a queue or
+/// restart the spooler (elevated).
+fn wire_printers(app: &AppWindow, notify: &Notify) -> Timer {
+    let source: Rc<VecModel<PrinterRow>> = Rc::new(VecModel::default());
+    app.global::<Printers>()
+        .set_rows(ModelRc::from(source.clone()));
+    app.global::<Printers>().set_loading(true);
+
+    let (tx, rx) = mpsc::channel::<Vec<printers::Printer>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(printers::list());
+            });
+        }
+    };
+    scan();
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Printers>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Printers>().set_loading(true);
+            }
+            scan();
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Printers>().on_clear_queue(move |name| {
+            match launch_elevated_ps(&printers::clear_queue_script(&name), false) {
+                Ok(()) => notify("info", &format!("Clearing {name} queue (approve UAC), then REFRESH")),
+                Err(e) => notify("error", &format!("{name}: {e}")),
+            }
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Printers>().on_restart_spooler(move || {
+            match launch_elevated_ps(&printers::restart_spooler_script(), false) {
+                Ok(()) => notify("info", "Restarting Print Spooler (approve UAC), then REFRESH"),
+                Err(e) => notify("error", &format!("Spooler: {e}")),
+            }
+        });
+    }
+
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(v) = rx.try_recv() {
+            let rows: Vec<PrinterRow> = v
+                .iter()
+                .map(|p| PrinterRow {
+                    name: p.name.as_str().into(),
+                    status: p.status.as_str().into(),
+                    jobs: p.jobs as i32,
+                    is_default: p.is_default,
+                })
+                .collect();
+            source2.set_vec(rows);
+            if let Some(app) = weak.upgrade() {
+                app.global::<Printers>().set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
+/// Profiles panel: local user profiles with size + last-use (unelevated), delete
+/// a stale profile (elevated).
+fn wire_profiles(app: &AppWindow, notify: &Notify) -> Timer {
+    let source: Rc<VecModel<ProfileRow>> = Rc::new(VecModel::default());
+    app.global::<Profiles>()
+        .set_rows(ModelRc::from(source.clone()));
+    app.global::<Profiles>().set_loading(true);
+
+    let (tx, rx) = mpsc::channel::<Vec<profiles::Profile>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(profiles::list());
+            });
+        }
+    };
+    scan();
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Profiles>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Profiles>().set_loading(true);
+            }
+            scan();
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Profiles>().on_delete_profile(move |sid| {
+            match launch_elevated_ps(&profiles::delete_script(&sid), false) {
+                Ok(()) => notify("info", "Removing profile (approve UAC), then REFRESH"),
+                Err(e) => notify("error", &format!("Profile: {e}")),
+            }
+        });
+    }
+
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(v) = rx.try_recv() {
+            let rows: Vec<ProfileRow> = v
+                .iter()
+                .map(|p| ProfileRow {
+                    account: p.account.as_str().into(),
+                    path: p.path.as_str().into(),
+                    size_mb: p.size_mb.clamp(-1, i32::MAX as i64) as i32,
+                    last_use: p.last_use.as_str().into(),
+                    loaded: p.loaded,
+                    sid: p.sid.as_str().into(),
+                })
+                .collect();
+            source2.set_vec(rows);
+            if let Some(app) = weak.upgrade() {
+                app.global::<Profiles>().set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
+/// Write a text report to the user's profile folder and open it.
+fn write_text_report(name: &str, content: &str) -> io::Result<String> {
+    let mut path = PathBuf::from(std::env::var("USERPROFILE").unwrap_or_else(|_| ".".into()));
+    path.push(name);
+    std::fs::write(&path, content)?;
+    let p = path.to_string_lossy().to_string();
+    let _ = Command::new("explorer").arg(&p).spawn();
+    Ok(p)
+}
+
+/// Disks panel: physical-disk health + per-volume free space (unelevated).
+fn wire_disks(app: &AppWindow) -> Timer {
+    let vol_src: Rc<VecModel<VolumeRow>> = Rc::new(VecModel::default());
+    let phys_src: Rc<VecModel<PhysRow>> = Rc::new(VecModel::default());
+    app.global::<Disks>()
+        .set_volumes(ModelRc::from(vol_src.clone()));
+    app.global::<Disks>()
+        .set_physical(ModelRc::from(phys_src.clone()));
+    app.global::<Disks>().set_loading(true);
+
+    let (tx, rx) = mpsc::channel::<(Vec<disks::PhysDisk>, Vec<disks::Volume>)>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send((disks::physical(), disks::volumes()));
+            });
+        }
+    };
+    scan();
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Disks>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Disks>().set_loading(true);
+            }
+            scan();
+        });
+    }
+
+    let weak = app.as_weak();
+    let vs = vol_src.clone();
+    let ps = phys_src.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok((phys, vols)) = rx.try_recv() {
+            let prows: Vec<PhysRow> = phys
+                .iter()
+                .map(|d| PhysRow {
+                    model: d.model.as_str().into(),
+                    media: d.media.as_str().into(),
+                    size_gb: d.size_gb.clamp(0, i32::MAX as i64) as i32,
+                    health: d.health.as_str().into(),
+                    state: d.state as i32,
+                })
+                .collect();
+            let vrows: Vec<VolumeRow> = vols
+                .iter()
+                .map(|v| VolumeRow {
+                    name: v.name.as_str().into(),
+                    label: v.label.as_str().into(),
+                    fs: v.fs.as_str().into(),
+                    total_gb: v.total_gb.clamp(0, i32::MAX as i64) as i32,
+                    free_gb: v.free_gb.clamp(0, i32::MAX as i64) as i32,
+                    used_frac: v.used_frac,
+                })
+                .collect();
+            ps.set_vec(prows);
+            vs.set_vec(vrows);
+            if let Some(app) = weak.upgrade() {
+                app.global::<Disks>().set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
+/// Drivers panel: signed-driver inventory with problem-device flagging, text
+/// filter, a problems-only toggle, and an export (unelevated).
+fn wire_devices(app: &AppWindow, notify: &Notify) -> Timer {
+    let source: Rc<VecModel<DeviceRow>> = Rc::new(VecModel::default());
+    // (lowercased text, problems-only).
+    let state = Rc::new(RefCell::new((String::new(), false)));
+    let filtered = Rc::new(FilterModel::new(ModelRc::from(source.clone()), {
+        let st = state.clone();
+        move |row: &DeviceRow| {
+            let (q, po) = &*st.borrow();
+            let prob_ok = !po || row.problem;
+            let text_ok = q.is_empty()
+                || row.name.to_lowercase().contains(q.as_str())
+                || row.class.to_lowercase().contains(q.as_str());
+            prob_ok && text_ok
+        }
+    }));
+    app.global::<Devices>()
+        .set_rows(ModelRc::from(filtered.clone()));
+    app.global::<Devices>().set_loading(true);
+
+    {
+        let weak = app.as_weak();
+        let st = state.clone();
+        let filtered = filtered.clone();
+        app.global::<Devices>().on_filter(move || {
+            if let Some(app) = weak.upgrade() {
+                let d = app.global::<Devices>();
+                *st.borrow_mut() = (d.get_filter_text().to_lowercase(), d.get_problems_only());
+                filtered.reset();
+            }
+        });
+    }
+
+    let raw = Rc::new(RefCell::new(Vec::<devices::Device>::new()));
+    {
+        let raw = raw.clone();
+        let notify = notify.clone();
+        app.global::<Devices>().on_export_list(move || {
+            let text = devices::to_text(&raw.borrow());
+            match write_text_report("neonprime-drivers.txt", &text) {
+                Ok(p) => notify("info", &format!("Saved driver inventory: {p}")),
+                Err(e) => notify("error", &format!("Export failed: {e}")),
+            }
+        });
+    }
+
+    let (tx, rx) = mpsc::channel::<Vec<devices::Device>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(devices::list());
+            });
+        }
+    };
+    scan();
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Devices>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Devices>().set_loading(true);
+            }
+            scan();
+        });
+    }
+
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let filtered2 = filtered.clone();
+    let raw2 = raw.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(devs) = rx.try_recv() {
+            let problems = devs.iter().filter(|d| d.problem).count();
+            let total = devs.len();
+            let rows: Vec<DeviceRow> = devs
+                .iter()
+                .map(|d| DeviceRow {
+                    name: d.name.as_str().into(),
+                    class: d.class.as_str().into(),
+                    version: d.version.as_str().into(),
+                    date: d.date.as_str().into(),
+                    problem: d.problem,
+                })
+                .collect();
+            *raw2.borrow_mut() = devs;
+            source2.set_vec(rows);
+            filtered2.reset();
+            if let Some(app) = weak.upgrade() {
+                let d = app.global::<Devices>();
+                d.set_total(total as i32);
+                d.set_problems(problems as i32);
+                d.set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
+/// Certificates panel: machine-store certs by soonest expiry (unelevated).
+fn wire_certs(app: &AppWindow) -> Timer {
+    let source: Rc<VecModel<CertRow>> = Rc::new(VecModel::default());
+    app.global::<Certs>()
+        .set_rows(ModelRc::from(source.clone()));
+    app.global::<Certs>().set_loading(true);
+
+    let (tx, rx) = mpsc::channel::<Vec<certs::Cert>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(certs::list());
+            });
+        }
+    };
+    scan();
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Certs>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Certs>().set_loading(true);
+            }
+            scan();
+        });
+    }
+
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(v) = rx.try_recv() {
+            let rows: Vec<CertRow> = v
+                .iter()
+                .map(|c| CertRow {
+                    subject: c.subject.as_str().into(),
+                    issuer: c.issuer.as_str().into(),
+                    expires: c.expires.as_str().into(),
+                    days_left: c.days_left.clamp(i32::MIN as i64, i32::MAX as i64) as i32,
+                    state: c.state as i32,
+                })
+                .collect();
+            source2.set_vec(rows);
+            if let Some(app) = weak.upgrade() {
+                app.global::<Certs>().set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
+/// Group Policy (RSoP) panel: applied GPOs + last refresh via gpresult, plus a
+/// full HTML report export.
+fn wire_gpo(app: &AppWindow, notify: &Notify) -> Timer {
+    let applied: Rc<VecModel<slint::SharedString>> = Rc::new(VecModel::default());
+    app.global::<Gpo>()
+        .set_applied(ModelRc::from(applied.clone()));
+    app.global::<Gpo>().set_loading(true);
+
+    let (tx, rx) = mpsc::channel::<gpo::GpoInfo>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(gpo::info());
+            });
+        }
+    };
+    scan();
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Gpo>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Gpo>().set_loading(true);
+            }
+            scan();
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Gpo>().on_export_report(move || {
+            notify("info", "Generating the RSoP report…");
+            std::thread::spawn(move || {
+                let mut path =
+                    PathBuf::from(std::env::var("USERPROFILE").unwrap_or_else(|_| ".".into()));
+                path.push("neonprime-gpreport.html");
+                let p = path.to_string_lossy().to_string();
+                let _ = Command::new("gpresult").args(gpo::export_argv(&p)).status();
+                let _ = Command::new("explorer").arg(&p).spawn();
+            });
+        });
+    }
+
+    let weak = app.as_weak();
+    let applied2 = applied.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(info) = rx.try_recv() {
+            let names: Vec<slint::SharedString> =
+                info.applied.iter().map(|s| s.as_str().into()).collect();
+            applied2.set_vec(names);
+            if let Some(app) = weak.upgrade() {
+                let g = app.global::<Gpo>();
+                g.set_last_refresh(info.last_refresh.as_str().into());
+                g.set_loading(false);
             }
         }
     });
@@ -2388,6 +3272,16 @@ fn main() -> Result<(), slint::PlatformError> {
     let net_refresh = wire_network(&app, &notify);
     let proc_refresh = wire_proc(&app, &notify);
     let _services_pump = wire_services(&app, &notify);
+    let _events_pump = wire_events(&app);
+    let _users_pump = wire_users(&app, &notify);
+    let _posture_pump = wire_posture(&app, &notify);
+    let _support_pump = wire_support(&app, &notify);
+    let _printers_pump = wire_printers(&app, &notify);
+    let _profiles_pump = wire_profiles(&app, &notify);
+    let _disks_pump = wire_disks(&app);
+    let _devices_pump = wire_devices(&app, &notify);
+    let _certs_pump = wire_certs(&app);
+    let _gpo_pump = wire_gpo(&app, &notify);
     wire_microwin(&app, &notify);
     wire_palette(&app);
     let power_refresh = wire_power(&app, &notify);
@@ -2407,7 +3301,7 @@ fn main() -> Result<(), slint::PlatformError> {
         &tweaks_catalog,
         &tweaks_model,
     );
-    wire_config(
+    let _config_pump = wire_config(
         &app,
         &jrnl,
         &journal_path,

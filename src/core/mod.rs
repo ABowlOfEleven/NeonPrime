@@ -16,13 +16,27 @@ pub mod config;
 #[cfg(windows)]
 pub mod debloat;
 #[cfg(windows)]
+pub mod devices;
+#[cfg(windows)]
+pub mod disks;
+#[cfg(windows)]
 pub mod dns;
 #[cfg(windows)]
+pub mod asset;
+#[cfg(windows)]
+pub mod bundle;
+#[cfg(windows)]
+pub mod certs;
+#[cfg(windows)]
 pub mod engine;
+#[cfg(windows)]
+pub mod eventlog;
 #[cfg(windows)]
 pub mod features;
 #[cfg(windows)]
 pub mod firewall;
+#[cfg(windows)]
+pub mod gpo;
 #[cfg(windows)]
 pub mod installs;
 #[cfg(windows)]
@@ -30,17 +44,25 @@ pub mod ipc;
 #[cfg(windows)]
 pub mod journal;
 #[cfg(windows)]
+pub mod localusers;
+#[cfg(windows)]
 pub mod microwin;
 #[cfg(windows)]
 pub mod modes;
 #[cfg(windows)]
 pub mod netmon;
 #[cfg(windows)]
+pub mod posture;
+#[cfg(windows)]
 pub mod power;
+#[cfg(windows)]
+pub mod printers;
 #[cfg(windows)]
 pub mod privacy;
 #[cfg(windows)]
 pub mod procmon;
+#[cfg(windows)]
+pub mod profiles;
 #[cfg(windows)]
 pub mod quick;
 #[cfg(windows)]

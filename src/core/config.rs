@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::core::journal::Journal;
-use crate::core::{engine, modes, tweaks};
+use crate::core::{engine, installs, modes, tweaks};
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone, PartialEq)]
 pub struct Config {
@@ -44,7 +44,7 @@ pub fn default_path() -> PathBuf {
     p
 }
 
-/// Snapshot the current applied tweaks and active mode.
+/// Snapshot the current applied tweaks and active mode (no app scan).
 pub fn capture() -> Config {
     let tweaks = tweaks::catalog()
         .iter()
@@ -56,6 +56,25 @@ pub fn capture() -> Config {
         mode: modes::active(),
         apps: Vec::new(),
     }
+}
+
+/// The catalog winget ids currently installed, for baking an app install-set into
+/// a provisioning profile. Runs `winget export`, so call it off the UI thread.
+pub fn capture_apps() -> Vec<String> {
+    let installed = installs::installed_ids(); // lowercased
+    installs::catalog()
+        .iter()
+        .filter(|a| !a.id.is_empty() && installed.contains(&a.id.to_lowercase()))
+        .map(|a| a.id.clone())
+        .collect()
+}
+
+/// Snapshot current tweaks + mode + installed catalog apps (a full provisioning
+/// profile). The app scan makes this slow; run it off the UI thread.
+pub fn capture_profile() -> Config {
+    let mut cfg = capture();
+    cfg.apps = capture_apps();
+    cfg
 }
 
 /// Replay a config: apply each (unelevated) tweak's `on` actions and activate
