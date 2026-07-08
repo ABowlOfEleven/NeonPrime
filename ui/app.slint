@@ -434,6 +434,28 @@ export global Devices {
     callback export-list();
 }
 
+export struct CertRow {
+    subject: string,
+    issuer: string,
+    expires: string,
+    days-left: int,
+    state: int,
+}
+
+export global Certs {
+    in property <[CertRow]> rows;
+    in property <bool> loading: true;
+    callback refresh();
+}
+
+export global Gpo {
+    in property <[string]> applied;
+    in property <string> last-refresh;
+    in property <bool> loading: true;
+    callback refresh();
+    callback export-report();
+}
+
 export global MicroWin {
     in-out property <string> iso;
     in-out property <string> output;
@@ -3975,6 +3997,210 @@ component DriversView inherits VerticalLayout {
     }
 }
 
+component CertRowView inherits Rectangle {
+    in property <CertRow> c;
+    property <color> tint: c.state == 1 ? Theme.accent : (c.state == 2 ? Theme.ember-soft : Theme.ember);
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 11px;
+        padding-bottom: 11px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 66px;
+                height: 18px;
+                border-radius: 5px;
+                border-width: 1px;
+                border-color: root.tint;
+                background: root.tint.with-alpha(0.12);
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: c.state == 1 ? "OK" : (c.state == 2 ? "SOON" : "EXPIRED");
+                    color: root.tint;
+                    font-size: 9px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            Text {
+                text: c.subject;
+                color: Theme.text-body;
+                font-size: 13px;
+                overflow: elide;
+            }
+            Text {
+                text: "issued by " + c.issuer;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            Rectangle {
+                height: 16px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: c.expires;
+                    color: Theme.text-body;
+                    font-size: 12px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+            Rectangle {
+                height: 14px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: c.days-left < 0 ? (-c.days-left) + " days ago" : c.days-left + " days left";
+                    color: root.tint;
+                    font-size: 10px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component CertsView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "CERTIFICATES";
+        hint: Certs.loading ? "reading machine store…" : "LocalMachine\\My · soonest expiry first";
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Certs.refresh();
+            }
+        }
+    }
+    if Certs.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Reading the machine certificate store…";
+    }
+    if !Certs.loading && Certs.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No certificates in the machine store.";
+    }
+    if !Certs.loading && Certs.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for c in Certs.rows: CertRowView {
+            c: c;
+        }
+    }
+}
+
+component GpoLineRow inherits Rectangle {
+    in property <string> name;
+    height: 40px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 18px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 6px;
+                height: 6px;
+                border-radius: 3px;
+                background: Theme.accent;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: root.name;
+                color: Theme.text-body;
+                font-size: 12px;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component GpoView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "GROUP POLICY";
+        hint: Gpo.loading
+            ? "reading applied policy…"
+            : (Gpo.last-refresh != "" ? "last applied " + Gpo.last-refresh : "resultant set of policy");
+        PushButton {
+            w: 130px;
+            label: "EXPORT REPORT";
+            clicked => {
+                Gpo.export-report();
+            }
+        }
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Gpo.refresh();
+            }
+        }
+    }
+    if Gpo.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Reading applied policy…";
+    }
+    if !Gpo.loading && Gpo.applied.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No applied GPOs found (this PC may not be domain-joined).\nUse EXPORT REPORT for the full RSoP report.";
+    }
+    if !Gpo.loading && Gpo.applied.length > 0: VerticalLayout {
+        SubHeader {
+            label: "APPLIED GROUP POLICY OBJECTS";
+        }
+        ListView {
+            vertical-stretch: 1;
+            for name in Gpo.applied: GpoLineRow {
+                name: name;
+            }
+        }
+    }
+}
+
 component MicroWinOption inherits HorizontalLayout {
     in property <string> label;
     in-out property <bool> on;
@@ -4311,6 +4537,8 @@ export component AppWindow inherits Window {
                             NavItem { label: "PROFILES"; index: 21; icon: @image-url("icons/profiles.svg"); }
                             NavItem { label: "DISKS"; index: 22; icon: @image-url("icons/disk.svg"); }
                             NavItem { label: "DRIVERS"; index: 23; icon: @image-url("icons/driver.svg"); }
+                            NavItem { label: "CERTS"; index: 24; icon: @image-url("icons/cert.svg"); }
+                            NavItem { label: "GROUP POLICY"; index: 25; icon: @image-url("icons/gpo.svg"); }
                         }
                     }
                 }
@@ -4331,7 +4559,7 @@ export component AppWindow inherits Window {
                 content-col := Rectangle {
                     // Table panels (Network 11, Processes 13, Services 14) need room
                     // for their columns; everything else uses the cozy reading width.
-                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14 || Nav.page == 16 || Nav.page == 17 || Nav.page == 21 || Nav.page == 22 || Nav.page == 23;
+                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14 || Nav.page == 16 || Nav.page == 17 || Nav.page == 21 || Nav.page == 22 || Nav.page == 23 || Nav.page == 24;
                     width: min(parent.width, self.wide ? Theme.content-wide : Theme.content-max);
                     x: (parent.width - self.width) / 2;
                     height: parent.height;
@@ -4428,6 +4656,14 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 23: DriversView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 24: CertsView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 25: GpoView {
                     width: parent.width;
                     height: parent.height;
                 }

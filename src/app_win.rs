@@ -23,8 +23,8 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    asset, bundle, cleanup, config, debloat, devices, disks, dns, engine, eventlog, features,
-    firewall, installs, journal, localusers, microwin, modes, netmon, posture, power, printers,
+    asset, bundle, certs, cleanup, config, debloat, devices, disks, dns, engine, eventlog, features,
+    firewall, gpo, installs, journal, localusers, microwin, modes, netmon, posture, power, printers,
     privacy, procmon, profiles, quick, repair, services, settings, startup, tweaks,
 };
 
@@ -2361,6 +2361,121 @@ fn wire_devices(app: &AppWindow, notify: &Notify) -> Timer {
     timer
 }
 
+/// Certificates panel: machine-store certs by soonest expiry (unelevated).
+fn wire_certs(app: &AppWindow) -> Timer {
+    let source: Rc<VecModel<CertRow>> = Rc::new(VecModel::default());
+    app.global::<Certs>()
+        .set_rows(ModelRc::from(source.clone()));
+    app.global::<Certs>().set_loading(true);
+
+    let (tx, rx) = mpsc::channel::<Vec<certs::Cert>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(certs::list());
+            });
+        }
+    };
+    scan();
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Certs>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Certs>().set_loading(true);
+            }
+            scan();
+        });
+    }
+
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(v) = rx.try_recv() {
+            let rows: Vec<CertRow> = v
+                .iter()
+                .map(|c| CertRow {
+                    subject: c.subject.as_str().into(),
+                    issuer: c.issuer.as_str().into(),
+                    expires: c.expires.as_str().into(),
+                    days_left: c.days_left.clamp(i32::MIN as i64, i32::MAX as i64) as i32,
+                    state: c.state as i32,
+                })
+                .collect();
+            source2.set_vec(rows);
+            if let Some(app) = weak.upgrade() {
+                app.global::<Certs>().set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
+/// Group Policy (RSoP) panel: applied GPOs + last refresh via gpresult, plus a
+/// full HTML report export.
+fn wire_gpo(app: &AppWindow, notify: &Notify) -> Timer {
+    let applied: Rc<VecModel<slint::SharedString>> = Rc::new(VecModel::default());
+    app.global::<Gpo>()
+        .set_applied(ModelRc::from(applied.clone()));
+    app.global::<Gpo>().set_loading(true);
+
+    let (tx, rx) = mpsc::channel::<gpo::GpoInfo>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(gpo::info());
+            });
+        }
+    };
+    scan();
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Gpo>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Gpo>().set_loading(true);
+            }
+            scan();
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Gpo>().on_export_report(move || {
+            notify("info", "Generating the RSoP report…");
+            std::thread::spawn(move || {
+                let mut path =
+                    PathBuf::from(std::env::var("USERPROFILE").unwrap_or_else(|_| ".".into()));
+                path.push("neonprime-gpreport.html");
+                let p = path.to_string_lossy().to_string();
+                let _ = Command::new("gpresult").args(gpo::export_argv(&p)).status();
+                let _ = Command::new("cmd").args(["/c", "start", "", &p]).spawn();
+            });
+        });
+    }
+
+    let weak = app.as_weak();
+    let applied2 = applied.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(info) = rx.try_recv() {
+            let names: Vec<slint::SharedString> =
+                info.applied.iter().map(|s| s.as_str().into()).collect();
+            applied2.set_vec(names);
+            if let Some(app) = weak.upgrade() {
+                let g = app.global::<Gpo>();
+                g.set_last_refresh(info.last_refresh.as_str().into());
+                g.set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
 /// MicroWin, debloated-ISO builder. Generates an elevated build script + an
 /// autounattend, then runs them in a visible console. (Heavy, admin, ~20 GB.)
 fn wire_microwin(app: &AppWindow, notify: &Notify) {
@@ -3118,6 +3233,8 @@ fn main() -> Result<(), slint::PlatformError> {
     let _profiles_pump = wire_profiles(&app, &notify);
     let _disks_pump = wire_disks(&app);
     let _devices_pump = wire_devices(&app, &notify);
+    let _certs_pump = wire_certs(&app);
+    let _gpo_pump = wire_gpo(&app, &notify);
     wire_microwin(&app, &notify);
     wire_palette(&app);
     let power_refresh = wire_power(&app, &notify);

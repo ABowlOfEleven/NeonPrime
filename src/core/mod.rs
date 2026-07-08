@@ -26,6 +26,8 @@ pub mod asset;
 #[cfg(windows)]
 pub mod bundle;
 #[cfg(windows)]
+pub mod certs;
+#[cfg(windows)]
 pub mod engine;
 #[cfg(windows)]
 pub mod eventlog;
@@ -33,6 +35,8 @@ pub mod eventlog;
 pub mod features;
 #[cfg(windows)]
 pub mod firewall;
+#[cfg(windows)]
+pub mod gpo;
 #[cfg(windows)]
 pub mod installs;
 #[cfg(windows)]
