@@ -2949,24 +2949,6 @@ export component AppWindow inherits Window {
                             NavItem { label: "HISTORY"; index: 9; icon: @image-url("icons/history.svg"); }
                         }
                     }
-                    HorizontalLayout {
-                        padding-left: 18px;
-                        padding-top: 8px;
-                        spacing: 10px;
-                        alignment: start;
-                        Rectangle {
-                            width: 8px;
-                            height: 8px;
-                            border-radius: 4px;
-                            background: Theme.accent;
-                        }
-                        Text {
-                            text: "BROKER · linked";
-                            color: Theme.text-dim;
-                            vertical-alignment: center;
-                            font-size: 11px;
-                        }
-                    }
                 }
                 Rectangle {
                     x: parent.width - 1px;
@@ -3075,13 +3057,34 @@ export component AppWindow inherits Window {
                 height: 1px;
                 background: Theme.divider;
             }
-            // Just the system-status pill, bottom-right and vertically centered.
-            // (Broker/GPU state already lives in the sidebar, so it's not repeated
-            // here.) `alignment: end` packs the group against the right edge.
+            // Broker/GPU state on the left, system status on the right — both
+            // vertically centered.
             HorizontalLayout {
                 padding-left: 20px;
                 padding-right: 20px;
-                alignment: end;
+                VerticalLayout {
+                    alignment: center;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 6px;
+                                height: 6px;
+                                border-radius: 3px;
+                                background: Theme.accent;
+                            }
+                        }
+                        Text {
+                            text: Sys.gpu-available ? "BROKER · linked · GPU" : "BROKER · linked";
+                            color: Theme.text-dim;
+                            vertical-alignment: center;
+                            font-size: 10px;
+                            letter-spacing: 0.3px;
+                        }
+                    }
+                }
+                Rectangle { horizontal-stretch: 1; }
                 VerticalLayout {
                     alignment: center;
                     HorizontalLayout {
