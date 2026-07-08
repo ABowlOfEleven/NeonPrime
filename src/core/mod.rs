@@ -16,6 +16,10 @@ pub mod config;
 #[cfg(windows)]
 pub mod debloat;
 #[cfg(windows)]
+pub mod devices;
+#[cfg(windows)]
+pub mod disks;
+#[cfg(windows)]
 pub mod dns;
 #[cfg(windows)]
 pub mod asset;

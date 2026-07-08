@@ -23,9 +23,9 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    asset, bundle, cleanup, config, debloat, dns, engine, eventlog, features, firewall, installs,
-    journal, localusers, microwin, modes, netmon, posture, power, printers, privacy, procmon,
-    profiles, quick, repair, services, settings, startup, tweaks,
+    asset, bundle, cleanup, config, debloat, devices, disks, dns, engine, eventlog, features,
+    firewall, installs, journal, localusers, microwin, modes, netmon, posture, power, printers,
+    privacy, procmon, profiles, quick, repair, services, settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -2180,6 +2180,187 @@ fn wire_profiles(app: &AppWindow, notify: &Notify) -> Timer {
     timer
 }
 
+/// Write a text report to the user's profile folder and open it.
+fn write_text_report(name: &str, content: &str) -> io::Result<String> {
+    let mut path = PathBuf::from(std::env::var("USERPROFILE").unwrap_or_else(|_| ".".into()));
+    path.push(name);
+    std::fs::write(&path, content)?;
+    let p = path.to_string_lossy().to_string();
+    let _ = Command::new("cmd").args(["/c", "start", "", &p]).spawn();
+    Ok(p)
+}
+
+/// Disks panel: physical-disk health + per-volume free space (unelevated).
+fn wire_disks(app: &AppWindow) -> Timer {
+    let vol_src: Rc<VecModel<VolumeRow>> = Rc::new(VecModel::default());
+    let phys_src: Rc<VecModel<PhysRow>> = Rc::new(VecModel::default());
+    app.global::<Disks>()
+        .set_volumes(ModelRc::from(vol_src.clone()));
+    app.global::<Disks>()
+        .set_physical(ModelRc::from(phys_src.clone()));
+    app.global::<Disks>().set_loading(true);
+
+    let (tx, rx) = mpsc::channel::<(Vec<disks::PhysDisk>, Vec<disks::Volume>)>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send((disks::physical(), disks::volumes()));
+            });
+        }
+    };
+    scan();
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Disks>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Disks>().set_loading(true);
+            }
+            scan();
+        });
+    }
+
+    let weak = app.as_weak();
+    let vs = vol_src.clone();
+    let ps = phys_src.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok((phys, vols)) = rx.try_recv() {
+            let prows: Vec<PhysRow> = phys
+                .iter()
+                .map(|d| PhysRow {
+                    model: d.model.as_str().into(),
+                    media: d.media.as_str().into(),
+                    size_gb: d.size_gb.clamp(0, i32::MAX as i64) as i32,
+                    health: d.health.as_str().into(),
+                    state: d.state as i32,
+                })
+                .collect();
+            let vrows: Vec<VolumeRow> = vols
+                .iter()
+                .map(|v| VolumeRow {
+                    name: v.name.as_str().into(),
+                    label: v.label.as_str().into(),
+                    fs: v.fs.as_str().into(),
+                    total_gb: v.total_gb.clamp(0, i32::MAX as i64) as i32,
+                    free_gb: v.free_gb.clamp(0, i32::MAX as i64) as i32,
+                    used_frac: v.used_frac,
+                })
+                .collect();
+            ps.set_vec(prows);
+            vs.set_vec(vrows);
+            if let Some(app) = weak.upgrade() {
+                app.global::<Disks>().set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
+/// Drivers panel: signed-driver inventory with problem-device flagging, text
+/// filter, a problems-only toggle, and an export (unelevated).
+fn wire_devices(app: &AppWindow, notify: &Notify) -> Timer {
+    let source: Rc<VecModel<DeviceRow>> = Rc::new(VecModel::default());
+    // (lowercased text, problems-only).
+    let state = Rc::new(RefCell::new((String::new(), false)));
+    let filtered = Rc::new(FilterModel::new(ModelRc::from(source.clone()), {
+        let st = state.clone();
+        move |row: &DeviceRow| {
+            let (q, po) = &*st.borrow();
+            let prob_ok = !po || row.problem;
+            let text_ok = q.is_empty()
+                || row.name.to_lowercase().contains(q.as_str())
+                || row.class.to_lowercase().contains(q.as_str());
+            prob_ok && text_ok
+        }
+    }));
+    app.global::<Devices>()
+        .set_rows(ModelRc::from(filtered.clone()));
+    app.global::<Devices>().set_loading(true);
+
+    {
+        let weak = app.as_weak();
+        let st = state.clone();
+        let filtered = filtered.clone();
+        app.global::<Devices>().on_filter(move || {
+            if let Some(app) = weak.upgrade() {
+                let d = app.global::<Devices>();
+                *st.borrow_mut() = (d.get_filter_text().to_lowercase(), d.get_problems_only());
+                filtered.reset();
+            }
+        });
+    }
+
+    let raw = Rc::new(RefCell::new(Vec::<devices::Device>::new()));
+    {
+        let raw = raw.clone();
+        let notify = notify.clone();
+        app.global::<Devices>().on_export_list(move || {
+            let text = devices::to_text(&raw.borrow());
+            match write_text_report("neonprime-drivers.txt", &text) {
+                Ok(p) => notify("info", &format!("Saved driver inventory: {p}")),
+                Err(e) => notify("error", &format!("Export failed: {e}")),
+            }
+        });
+    }
+
+    let (tx, rx) = mpsc::channel::<Vec<devices::Device>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(devices::list());
+            });
+        }
+    };
+    scan();
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Devices>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Devices>().set_loading(true);
+            }
+            scan();
+        });
+    }
+
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let filtered2 = filtered.clone();
+    let raw2 = raw.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(devs) = rx.try_recv() {
+            let problems = devs.iter().filter(|d| d.problem).count();
+            let total = devs.len();
+            let rows: Vec<DeviceRow> = devs
+                .iter()
+                .map(|d| DeviceRow {
+                    name: d.name.as_str().into(),
+                    class: d.class.as_str().into(),
+                    version: d.version.as_str().into(),
+                    date: d.date.as_str().into(),
+                    problem: d.problem,
+                })
+                .collect();
+            *raw2.borrow_mut() = devs;
+            source2.set_vec(rows);
+            filtered2.reset();
+            if let Some(app) = weak.upgrade() {
+                let d = app.global::<Devices>();
+                d.set_total(total as i32);
+                d.set_problems(problems as i32);
+                d.set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
 /// MicroWin, debloated-ISO builder. Generates an elevated build script + an
 /// autounattend, then runs them in a visible console. (Heavy, admin, ~20 GB.)
 fn wire_microwin(app: &AppWindow, notify: &Notify) {
@@ -2935,6 +3116,8 @@ fn main() -> Result<(), slint::PlatformError> {
     let _support_pump = wire_support(&app, &notify);
     let _printers_pump = wire_printers(&app, &notify);
     let _profiles_pump = wire_profiles(&app, &notify);
+    let _disks_pump = wire_disks(&app);
+    let _devices_pump = wire_devices(&app, &notify);
     wire_microwin(&app, &notify);
     wire_palette(&app);
     let power_refresh = wire_power(&app, &notify);

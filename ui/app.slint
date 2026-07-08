@@ -390,6 +390,50 @@ export global Profiles {
     callback delete-profile(string);
 }
 
+export struct VolumeRow {
+    name: string,
+    label: string,
+    fs: string,
+    total-gb: int,
+    free-gb: int,
+    used-frac: float,
+}
+
+export struct PhysRow {
+    model: string,
+    media: string,
+    size-gb: int,
+    health: string,
+    state: int,
+}
+
+export global Disks {
+    in property <[VolumeRow]> volumes;
+    in property <[PhysRow]> physical;
+    in property <bool> loading: true;
+    callback refresh();
+}
+
+export struct DeviceRow {
+    name: string,
+    class: string,
+    version: string,
+    date: string,
+    problem: bool,
+}
+
+export global Devices {
+    in property <[DeviceRow]> rows;
+    in property <bool> loading: true;
+    in property <int> total;
+    in property <int> problems;
+    in-out property <string> filter-text;
+    in-out property <bool> problems-only;
+    callback filter();
+    callback refresh();
+    callback export-list();
+}
+
 export global MicroWin {
     in-out property <string> iso;
     in-out property <string> output;
@@ -3604,6 +3648,333 @@ component ProfilesView inherits VerticalLayout {
     }
 }
 
+component SubHeader inherits HorizontalLayout {
+    in property <string> label;
+    padding-left: 20px;
+    padding-top: 12px;
+    padding-bottom: 4px;
+    Text {
+        text: root.label;
+        color: Theme.text-dim;
+        font-size: 10px;
+        letter-spacing: 1px;
+    }
+}
+
+component PhysDiskRow inherits Rectangle {
+    in property <PhysRow> d;
+    property <color> tint: d.state == 1
+        ? Theme.accent
+        : (d.state == 2 ? Theme.ember-soft : (d.state == 3 ? Theme.ember : Theme.text-dim));
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 11px;
+        padding-bottom: 11px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 72px;
+                height: 18px;
+                border-radius: 5px;
+                border-width: 1px;
+                border-color: root.tint;
+                background: root.tint.with-alpha(0.12);
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: d.health != "" ? d.health : "Unknown";
+                    color: root.tint;
+                    font-size: 9px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            Text {
+                text: d.model;
+                color: Theme.text-body;
+                font-size: 13px;
+                overflow: elide;
+            }
+            Text {
+                text: d.size-gb + " GB  ·  " + (d.media != "" ? d.media : "disk");
+                color: Theme.text-dim;
+                font-size: 10px;
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component VolumeRowView inherits Rectangle {
+    in property <VolumeRow> v;
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 11px;
+        padding-bottom: 11px;
+        spacing: 14px;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40px;
+                height: 20px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: v.name;
+                    color: Theme.accent-soft;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 5px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: v.label != "" ? v.label : v.fs;
+                    color: Theme.text-body;
+                    font-size: 12px;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: v.free-gb + " GB free of " + v.total-gb + " GB";
+                    color: v.used-frac > 0.9 ? Theme.ember-soft : Theme.text-dim;
+                    font-size: 10px;
+                }
+            }
+            Rectangle {
+                height: 5px;
+                border-radius: 2.5px;
+                background: Theme.track;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * v.used-frac;
+                    height: parent.height;
+                    border-radius: 2.5px;
+                    background: v.used-frac > 0.9 ? Theme.ember : Theme.accent.with-alpha(0.75);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component DisksView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "DISKS";
+        hint: Disks.loading ? "reading disks…" : "physical health and volume space";
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Disks.refresh();
+            }
+        }
+    }
+    if Disks.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Reading disks…";
+    }
+    if !Disks.loading: Flickable {
+        vertical-stretch: 1;
+        VerticalLayout {
+            width: parent.width;
+            spacing: 0px;
+            if Disks.physical.length > 0: SubHeader {
+                label: "PHYSICAL DISKS";
+            }
+            for d in Disks.physical: PhysDiskRow {
+                d: d;
+            }
+            SubHeader {
+                label: "VOLUMES";
+            }
+            for v in Disks.volumes: VolumeRowView {
+                v: v;
+            }
+        }
+    }
+}
+
+component DeviceRowView inherits Rectangle {
+    in property <DeviceRow> dev;
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: dev.name;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                if dev.problem: Text {
+                    text: "· PROBLEM";
+                    color: Theme.ember-soft;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: dev.class
+                    + (dev.version != "" ? "  ·  v" + dev.version : "")
+                    + (dev.date != "" ? "  ·  " + dev.date : "");
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component DriversView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "DRIVERS";
+        hint: Devices.loading
+            ? "reading drivers…"
+            : Devices.total + " devices · " + Devices.problems + " problem(s)";
+        PushButton {
+            w: 84px;
+            label: "EXPORT";
+            clicked => {
+                Devices.export-list();
+            }
+        }
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Devices.refresh();
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 7px;
+        alignment: start;
+        FilterChip {
+            label: "ALL";
+            active: !Devices.problems-only;
+            clicked => {
+                Devices.problems-only = false;
+                Devices.filter();
+            }
+        }
+        FilterChip {
+            label: "PROBLEMS";
+            active: Devices.problems-only;
+            clicked => {
+                Devices.problems-only = true;
+                Devices.filter();
+            }
+        }
+        Rectangle { width: 8px; }
+        Rectangle {
+            height: 30px;
+            horizontal-stretch: 1;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Theme.divider;
+            background: Theme.track;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                TextInput {
+                    text <=> Devices.filter-text;
+                    color: Theme.text-body;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    single-line: true;
+                    edited => {
+                        Devices.filter();
+                    }
+                }
+            }
+            if Devices.filter-text == "": Text {
+                x: 11px;
+                text: "search devices…";
+                color: Theme.text-dim;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+    }
+    if Devices.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Reading drivers…";
+    }
+    if !Devices.loading && Devices.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No devices match.";
+    }
+    if !Devices.loading && Devices.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for d in Devices.rows: DeviceRowView {
+            dev: d;
+        }
+    }
+}
+
 component MicroWinOption inherits HorizontalLayout {
     in property <string> label;
     in-out property <bool> on;
@@ -3938,6 +4309,8 @@ export component AppWindow inherits Window {
                             NavItem { label: "SUPPORT"; index: 19; icon: @image-url("icons/support.svg"); }
                             NavItem { label: "PRINTERS"; index: 20; icon: @image-url("icons/printer.svg"); }
                             NavItem { label: "PROFILES"; index: 21; icon: @image-url("icons/profiles.svg"); }
+                            NavItem { label: "DISKS"; index: 22; icon: @image-url("icons/disk.svg"); }
+                            NavItem { label: "DRIVERS"; index: 23; icon: @image-url("icons/driver.svg"); }
                         }
                     }
                 }
@@ -3958,7 +4331,7 @@ export component AppWindow inherits Window {
                 content-col := Rectangle {
                     // Table panels (Network 11, Processes 13, Services 14) need room
                     // for their columns; everything else uses the cozy reading width.
-                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14 || Nav.page == 16 || Nav.page == 17 || Nav.page == 21;
+                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14 || Nav.page == 16 || Nav.page == 17 || Nav.page == 21 || Nav.page == 22 || Nav.page == 23;
                     width: min(parent.width, self.wide ? Theme.content-wide : Theme.content-max);
                     x: (parent.width - self.width) / 2;
                     height: parent.height;
@@ -4047,6 +4420,14 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 21: ProfilesView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 22: DisksView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 23: DriversView {
                     width: parent.width;
                     height: parent.height;
                 }
