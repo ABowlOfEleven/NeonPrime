@@ -564,7 +564,7 @@ component Sparkline inherits Rectangle {
     in property <color> tint;
     in property <string> label;
     in property <string> value;
-    height: 52px;
+    height: 46px;
     HorizontalLayout {
         spacing: 12px;
         VerticalLayout {
@@ -2758,10 +2758,12 @@ export component AppWindow inherits Window {
     // tight line box that clipped glyph tops (the recurring "borked text").
     default-font-family: "Segoe UI";
     default-font-size: 13px;
-    preferred-width: 760px;
-    preferred-height: 680px;
-    min-width: 640px;
-    min-height: 640px;
+    preferred-width: 820px;
+    preferred-height: 760px;
+    min-width: 720px;
+    // Tall enough that the Dashboard (its tallest fixed-content panel) fits without
+    // the content overrunning the pinned status bar.
+    min-height: 720px;
     background: Theme.bg;
     forward-focus: fs;
 
