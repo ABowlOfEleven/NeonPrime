@@ -23,8 +23,9 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    cleanup, config, debloat, dns, engine, features, firewall, installs, journal, microwin, modes,
-    netmon, power, privacy, procmon, quick, repair, services, settings, startup, tweaks,
+    cleanup, config, debloat, dns, engine, eventlog, features, firewall, installs, journal,
+    microwin, modes, netmon, power, privacy, procmon, quick, repair, services, settings, startup,
+    tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -1642,6 +1643,94 @@ fn wire_services(app: &AppWindow, notify: &Notify) -> Timer {
     timer
 }
 
+/// Event Viewer: recent System/Application errors and warnings, filtered by level
+/// and text. Read-only, scanned off-thread like Services.
+fn wire_events(app: &AppWindow) -> Timer {
+    let source: Rc<VecModel<EventRow>> = Rc::new(VecModel::default());
+    // (lowercased search text, level filter): 0 all, 1 warnings+errors, 2 errors.
+    let filter_state = Rc::new(RefCell::new((String::new(), 0i32)));
+    let filtered = Rc::new(FilterModel::new(ModelRc::from(source.clone()), {
+        let st = filter_state.clone();
+        move |row: &EventRow| {
+            let (q, lvl) = &*st.borrow();
+            let level_ok = match lvl {
+                2 => row.level == 2,
+                1 => row.level >= 1,
+                _ => true,
+            };
+            let text_ok = q.is_empty()
+                || row.source.to_lowercase().contains(q.as_str())
+                || row.message.to_lowercase().contains(q.as_str());
+            level_ok && text_ok
+        }
+    }));
+    app.global::<Events>()
+        .set_rows(ModelRc::from(filtered.clone()));
+    app.global::<Events>().set_loading(true);
+
+    {
+        let weak = app.as_weak();
+        let st = filter_state.clone();
+        let filtered = filtered.clone();
+        app.global::<Events>().on_filter(move || {
+            if let Some(app) = weak.upgrade() {
+                let ev = app.global::<Events>();
+                *st.borrow_mut() = (ev.get_filter_text().to_lowercase(), ev.get_level_filter());
+                filtered.reset();
+            }
+        });
+    }
+
+    let (tx, rx) = mpsc::channel::<Vec<eventlog::EventEntry>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(eventlog::recent(300));
+            });
+        }
+    };
+    scan();
+
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Events>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Events>().set_loading(true);
+            }
+            scan();
+        });
+    }
+
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let filtered2 = filtered.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(events) = rx.try_recv() {
+            let rows: Vec<EventRow> = events
+                .iter()
+                .map(|e| EventRow {
+                    time: e.time.as_str().into(),
+                    level: e.level as i32,
+                    source: e.source.as_str().into(),
+                    id: e.id as i32,
+                    log: e.log.as_str().into(),
+                    message: e.message.as_str().into(),
+                })
+                .collect();
+            source2.set_vec(rows);
+            filtered2.reset();
+            if let Some(app) = weak.upgrade() {
+                app.global::<Events>().set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
 /// MicroWin, debloated-ISO builder. Generates an elevated build script + an
 /// autounattend, then runs them in a visible console. (Heavy, admin, ~20 GB.)
 fn wire_microwin(app: &AppWindow, notify: &Notify) {
@@ -2391,6 +2480,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let net_refresh = wire_network(&app, &notify);
     let proc_refresh = wire_proc(&app, &notify);
     let _services_pump = wire_services(&app, &notify);
+    let _events_pump = wire_events(&app);
     wire_microwin(&app, &notify);
     wire_palette(&app);
     let power_refresh = wire_power(&app, &notify);

@@ -20,6 +20,8 @@ pub mod dns;
 #[cfg(windows)]
 pub mod engine;
 #[cfg(windows)]
+pub mod eventlog;
+#[cfg(windows)]
 pub mod features;
 #[cfg(windows)]
 pub mod firewall;

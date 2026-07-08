@@ -291,6 +291,24 @@ export global Services {
     callback refresh();
 }
 
+export struct EventRow {
+    time: string,
+    level: int, // 0 info, 1 warning, 2 error/critical
+    source: string,
+    id: int,
+    log: string,
+    message: string,
+}
+
+export global Events {
+    in property <[EventRow]> rows;
+    in property <bool> loading: true;
+    in-out property <string> filter-text;
+    in-out property <int> level-filter: 0; // 0 all, 1 warnings+errors, 2 errors only
+    callback filter();
+    callback refresh();
+}
+
 export global MicroWin {
     in-out property <string> iso;
     in-out property <string> output;
@@ -2747,6 +2765,159 @@ component ServicesView inherits VerticalLayout {
     }
 }
 
+component EventRowView inherits Rectangle {
+    in property <EventRow> ev;
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        // Severity badge.
+        VerticalLayout {
+            alignment: start;
+            Rectangle {
+                width: 60px;
+                height: 18px;
+                border-radius: 5px;
+                border-width: 1px;
+                border-color: ev.level == 2 ? Theme.ember : (ev.level == 1 ? Theme.accent-soft : Theme.divider);
+                background: (ev.level == 2 ? Theme.ember : (ev.level == 1 ? Theme.accent-soft : Theme.text-dim)).with-alpha(0.12);
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: ev.level == 2 ? "ERROR" : (ev.level == 1 ? "WARN" : "INFO");
+                    color: ev.level == 2 ? Theme.ember-soft : (ev.level == 1 ? Theme.accent-soft : Theme.text-dim);
+                    font-size: 9px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: ev.source;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                Text {
+                    text: ev.log + " · id " + ev.id;
+                    color: Theme.text-dim;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            ExpandableDesc {
+                text: ev.message;
+                size: 11px;
+            }
+        }
+        VerticalLayout {
+            alignment: start;
+            Rectangle {
+                height: 16px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: ev.time;
+                    color: Theme.text-dim;
+                    font-size: 10px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component EventLogView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "EVENTS";
+        hint: Events.loading ? "reading event logs…" : "System + Application errors and warnings";
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Events.refresh();
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 7px;
+        alignment: start;
+        FilterChip { label: "ALL"; active: Events.level-filter == 0; clicked => { Events.level-filter = 0; Events.filter(); } }
+        FilterChip { label: "WARN+"; active: Events.level-filter == 1; clicked => { Events.level-filter = 1; Events.filter(); } }
+        FilterChip { label: "ERRORS"; active: Events.level-filter == 2; clicked => { Events.level-filter = 2; Events.filter(); } }
+        Rectangle { width: 8px; }
+        Rectangle {
+            height: 30px;
+            horizontal-stretch: 1;
+            border-radius: 6px;
+            border-width: 1px;
+            border-color: Theme.divider;
+            background: Theme.track;
+            HorizontalLayout {
+                padding-left: 10px;
+                padding-right: 10px;
+                TextInput {
+                    text <=> Events.filter-text;
+                    color: Theme.text-body;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    single-line: true;
+                    edited => {
+                        Events.filter();
+                    }
+                }
+            }
+            if Events.filter-text == "": Text {
+                x: 11px;
+                text: "search events…";
+                color: Theme.text-dim;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+    }
+    if Events.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Reading event logs…";
+    }
+    if !Events.loading && Events.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No matching events.";
+    }
+    if !Events.loading && Events.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for e in Events.rows: EventRowView {
+            ev: e;
+        }
+    }
+}
+
 component MicroWinOption inherits HorizontalLayout {
     in property <string> label;
     in-out property <bool> on;
@@ -3054,6 +3225,7 @@ export component AppWindow inherits Window {
                             NavItem { label: "DASHBOARD"; index: 0; icon: @image-url("icons/dashboard.svg"); }
                             NavItem { label: "NETWORK"; index: 11; icon: @image-url("icons/network.svg"); }
                             NavItem { label: "PROCESSES"; index: 13; icon: @image-url("icons/processes.svg"); }
+                            NavItem { label: "EVENTS"; index: 16; icon: @image-url("icons/events.svg"); }
 
                             NavSection { label: "OPTIMIZE"; }
                             NavItem { label: Theme.tweaks-label; index: 1; icon: Theme.hev ? @image-url("icons/crowbar.svg") : @image-url("icons/tweaks.svg"); }
@@ -3093,7 +3265,7 @@ export component AppWindow inherits Window {
                 content-col := Rectangle {
                     // Table panels (Network 11, Processes 13, Services 14) need room
                     // for their columns; everything else uses the cozy reading width.
-                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14;
+                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14 || Nav.page == 16;
                     width: min(parent.width, self.wide ? Theme.content-wide : Theme.content-max);
                     x: (parent.width - self.width) / 2;
                     height: parent.height;
@@ -3158,6 +3330,10 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 15: MicroWinView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 16: EventLogView {
                     width: parent.width;
                     height: parent.height;
                 }
