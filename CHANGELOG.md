@@ -2,6 +2,60 @@
 
 All notable changes to NeonPrime. Dates are UTC.
 
+## 3.3.0 — 2026-07-08
+
+The IT and sysadmin release: a full helpdesk and diagnostics toolkit on top of the
+existing deck, provisioning profiles, an expanded PowerShell profile, and a
+security-hardening pass.
+
+### Added
+
+- **IT & helpdesk panels** (grouped in a new IT nav section):
+  - **Compliance & posture**: a read-only security board (Defender real-time and
+    signature age, firewall profiles, BitLocker, TPM, Secure Boot, UAC, and patch
+    age) rated OK / warn / risk, with a one-click HTML compliance report for audits.
+  - **Support bundle**: a one-click machine snapshot for a ticket. Gathers specs,
+    security posture, recent event-log errors, services, network config, installed
+    apps, top processes, and drivers into a timestamped folder with an HTML index,
+    and shows the asset (make, model, serial) with a vendor warranty-lookup link.
+  - **Events**: recent System and Application errors and warnings, filterable by
+    level and text with expandable messages.
+  - **Users**: local accounts and Administrators membership, with enable/disable,
+    admin and password-never-expires toggles, and a password reset that is typed
+    into a Windows console rather than the app.
+  - **Printers**: queue depth per printer, clear a stuck queue, restart the spooler.
+  - **Profiles**: local user profiles with size and last-use, delete stale ones.
+  - **Disks**: physical-disk SMART/health with per-volume free-space bars.
+  - **Drivers**: signed-driver inventory with version and date, problem devices
+    flagged and sorted first, with filter and export.
+  - **Certificates**: the machine certificate store sorted by soonest expiry.
+  - **Group Policy**: applied GPOs and last refresh (RSoP), with HTML report export.
+- **Provisioning profiles**: Config export/import now bundles tweaks, hardening,
+  active mode, and the installed app set, and "apply to this machine" replays the
+  tweaks and installs the apps in one step.
+- **Expanded Quick Actions**: SFC, DISM, chkdsk, gpupdate, enable Remote Desktop,
+  full network reset, battery and system-info reports, and one-click launchers for
+  the management consoles (Event Viewer, Services, Task Scheduler, Disk Management,
+  Device Manager, Local Users, Group Policy).
+- **PowerShell sysadmin toolkit**: the installed profile adds event-log tails,
+  port-to-process, service restart, pending-reboot check, network reset, DNS
+  lookup, disk usage, large-file finder, hotfix list, logged-on sessions, an RDP
+  shortcut, and an SFC + DISM repair launcher.
+
+### Changed
+
+- The dashboard GPU-load label now shows a percent sign, matching CPU.
+
+### Security
+
+- Provisioning import now treats an imported profile as untrusted: it installs only
+  apps present in NeonPrime's own catalog, and the install script additionally
+  rejects any id that is not a plain Publisher.Package token. This blocks command
+  injection and arbitrary-package installs from a malicious profile.
+- The report and warranty-link "open" paths now open through `explorer` instead of
+  a shell `start`, so a crafted path or BIOS serial cannot inject shell
+  metacharacters.
+
 ## 3.2.1 — 2026-07-07
 
 A deep UI/UX polish pass on both the Windows and Linux decks, so the app feels

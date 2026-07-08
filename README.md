@@ -15,6 +15,10 @@ Built in **Rust**, drawn in **Slint** (with a **ratatui** terminal UI on Linux).
   <em>Cyan reports. Ember warns. Everything reverts.</em>
 </div>
 
+<div align="center">
+  <img src="assets/screenshots/dashboard.png" width="880" alt="NeonPrime dashboard: a live telemetry HUD with a GPU-load gauge, CPU / RAM / temperature meters, and rolling CPU and GPU sparklines">
+</div>
+
 ---
 
 ## Download
@@ -39,6 +43,7 @@ WinUtil walked so this could fly. NeonPrime keeps the one-stop Windows-control i
 - every tweak reversible, backed by a rollback journal (debloat without the dread)
 - one-click system modes that swap your machine's whole personality
 - your entire tuned setup exportable to a fresh install
+- a proper IT toolkit on top: security posture, one-click support bundles, event logs, users, printers, disks, drivers, certs, and Group Policy
 
 ## The three modes
 
@@ -54,6 +59,10 @@ Every mode is a reversible bundle. Click the active one again to turn it back of
 
 *(Three of them. We counted.)*
 
+<div align="center">
+  <img src="assets/screenshots/modes.png" width="880" alt="System modes panel: AI / Inference, Game, and Work cards with a power-plan switcher">
+</div>
+
 ---
 
 ## Features
@@ -63,6 +72,7 @@ Every mode is a reversible bundle. Click the active one again to turn it back of
 - **Telemetry HUD:** live GPU load, VRAM, CPU, and temps with rolling CPU and GPU sparklines. Vendor-neutral GPU stats (NVIDIA, AMD, Intel) via DXGI and PDH; GPU temp via NVML; best-effort CPU temp via WMI. Plus an OS / CPU / GPU / RAM / uptime strip.
 - **Network monitor:** live outbound TCP connections per process (remote IP:port and state), refreshing while open, so you can see what is phoning home. One click blocks any app at the firewall. Includes a DNS switcher (Cloudflare, Google, Quad9, or automatic).
 - **Process manager:** top processes by CPU and RAM, with per-process GPU% and VRAM, plus a kill button.
+- **Event viewer:** recent System and Application errors and warnings from the Windows event log, filterable by level and text, each with an expandable message.
 
 **Optimize**
 
@@ -82,9 +92,26 @@ Every mode is a reversible bundle. Click the active one again to turn it back of
 
 - **System modes & power plans:** one-click AI, Game, and Work that actually do things (see above), plus a Balanced / High-Performance / Ultimate switcher.
 - **Services manager:** a searchable list of every service, with start/stop and start-type control (auto, manual, disabled).
-- **Quick Actions:** restart Explorer, flush DNS, clear temp, empty the Recycle Bin, create a restore point, install or remove a WinUtil/CTT-style PowerShell profile (with prompt, prediction, and handy functions), enable the OpenSSH server, fix the clock over NTP, back up the registry, toggle the legacy F8 boot menu, set up auto sign-in, and open the classic control-panel applets.
-- **Config:** export your whole setup to TOML and replay it on a clean install, plus repair fixes (SFC, DISM, network reset, Windows Update reset), Windows Update modes, and restore points.
+- **Quick Actions:** restart Explorer, flush DNS, clear temp, empty the Recycle Bin, create a restore point, run repairs (SFC, DISM, chkdsk, gpupdate, network reset), enable Remote Desktop or the OpenSSH server, generate a battery or system-info report, fix the clock over NTP, back up the registry, and open any of the management consoles (Event Viewer, Services, Task Scheduler, Disk Management, Device Manager, Local Users, Group Policy). Plus install a WinUtil/CTT-style PowerShell profile that now ships a full sysadmin toolkit: event-log tails, port-to-process, service restart, pending-reboot check, network reset, disk usage, hotfix list, and more.
+- **Config & provisioning:** export your whole setup to a TOML profile (tweaks, hardening, active mode, and your installed app set) and replay it on a clean machine, applying the tweaks and installing the apps in one step. Plus repair fixes (SFC, DISM, network reset, Windows Update reset), Windows Update modes, and restore points.
 - **History:** a full timeline over the action journal. Revert any past change, or all of them, not just the last.
+
+**IT & helpdesk** *(new in 3.3)*
+
+- **Compliance & posture:** a read-only security board covering Defender (real-time and signature age), firewall profiles, BitLocker, TPM, Secure Boot, UAC, and patch age, each rated OK / warn / risk, with a one-click HTML compliance report for audits.
+- **Support bundle:** a one-click machine snapshot to attach to a ticket. It gathers specs, security posture, recent event-log errors, services, network config, installed apps, top processes, and drivers into a timestamped folder with an HTML index, and shows the asset (make, model, serial) with a vendor warranty-lookup link.
+- **Users:** local accounts and Administrators membership, with enable/disable, admin and password-never-expires toggles, and a password reset that is typed into a Windows console, never into the app.
+- **Printers:** every printer with its queue depth, a one-click "clear a stuck queue", and a spooler restart.
+- **Profiles:** local user profiles with their size and last-use date, so you can delete stale ones and reclaim disk.
+- **Disks:** physical-disk SMART/health with per-volume free-space bars.
+- **Drivers:** the signed-driver inventory with version and date, problem (yellow-bang) devices flagged and sorted first, with filter and export.
+- **Certificates:** the machine certificate store sorted by soonest expiry, flagged OK / soon / expired.
+- **Group Policy:** the applied GPOs and when policy last refreshed (RSoP), plus a full HTML report export.
+
+<div align="center">
+  <img src="assets/screenshots/tweaks.png" width="430" alt="Tweaks panel: reversible toggles with search and category filters">
+  <img src="assets/screenshots/actions.png" width="430" alt="Quick Actions: one-click maintenance and sysadmin tasks">
+</div>
 
 **Everywhere**
 
@@ -139,7 +166,7 @@ cargo run --release
 cargo run --release --bin neonprime-linux
 cargo run --release --bin neonprime-tui
 
-cargo test --all      # 54 unit + integration tests
+cargo test --all      # 82 unit + integration tests
 ```
 
 One source tree, split by `cfg`: the Windows backend is gated to `cfg(windows)`, the Linux backend to `cfg(target_os = "linux")`, and each platform compiles its own Slint UI (`ui/app.slint` vs `ui/linux.slint`). Building the Linux GUI needs Slint's usual deps (`fontconfig`, `xcb`, `xkbcommon`).
@@ -147,7 +174,7 @@ One source tree, split by `cfg`: the Windows backend is gated to `cfg(windows)`,
 ### Installer (MSI)
 
 ```sh
-./build-installer.ps1 -Version 3.1.1   # -> NeonPrime-3.1.1-Setup.msi
+./build-installer.ps1 -Version 3.3.0   # -> NeonPrime-3.3.0-Setup.msi
 ```
 
 Produces a Windows MSI (via WiX 5: `dotnet tool install --global wix --version 5.0.2`) that installs `neonprime.exe`, the elevated `broker.exe`, and the self-contained sensor sidecar to `Program Files\NeonPrime`, with a Start-Menu shortcut, an uninstaller, and major-upgrade handling. No runtime prerequisites on the target.
@@ -170,11 +197,11 @@ Build a self-contained sidecar (bundles the .NET runtime, nothing to install on 
 
 ## Status
 
-**Windows:** 16 panels (Dashboard, Network, Processes, Tweaks, Privacy, Debloat, Cleanup, Startup, Install, Features, MicroWin, Modes, Services, Actions, Config, History) grouped Monitor / Optimize / Software / System. Elevated work runs off the UI thread, so a UAC prompt never freezes the window.
+**Windows:** 26 panels (Dashboard, Network, Processes, Events, Tweaks, Privacy, Debloat, Cleanup, Startup, Install, Features, MicroWin, Modes, Services, Users, Compliance, Actions, Config, History, plus an IT section: Support, Printers, Profiles, Disks, Drivers, Certificates, Group Policy) grouped Monitor / Optimize / Software / System / IT. Elevated work runs off the UI thread, so a UAC prompt never freezes the window.
 
 **Linux:** a 16-panel GUI plus a headless TUI over the same backend. Compiles and passes CI (fmt / clippy / test) on every push; runtime testing on real hardware is ongoing.
 
-54 tests pass, with a Windows + Linux CI matrix on every push (clippy runs with warnings denied on both).
+82 tests pass, with a Windows + Linux CI matrix on every push (clippy runs with warnings denied on both).
 
 **Notes and caveats:**
 
