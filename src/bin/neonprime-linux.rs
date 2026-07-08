@@ -76,6 +76,9 @@ mod ui {
     pub fn run() -> Result<(), slint::PlatformError> {
         let app = AppWindow::new()?;
 
+        app.global::<Build>()
+            .set_version(env!("CARGO_PKG_VERSION").into());
+
         wire_specs(&app);
         let tele = wire_telemetry(&app);
         let refresh_procs = wire_procs(&app);

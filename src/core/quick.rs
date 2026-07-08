@@ -1,12 +1,12 @@
-//! Quick Actions — one-click system maintenance. Each action is a process
+//! Quick Actions, one-click system maintenance. Each action is a process
 //! invocation (optionally elevated via UAC). Unlike tweaks these are not part of
-//! the reversible model — they're fire-and-forget maintenance.
+//! the reversible model, they're fire-and-forget maintenance.
 
 pub struct QuickAction {
     pub id: &'static str,
     pub name: &'static str,
     pub desc: &'static str,
-    /// Destructive-ish (deletes data) — surfaced with a warning accent.
+    /// Destructive-ish (deletes data), surfaced with a warning accent.
     pub danger: bool,
     /// Needs administrator rights (launched via UAC).
     pub elevated: bool,
@@ -24,7 +24,7 @@ pub fn catalog() -> Vec<QuickAction> {
         QuickAction {
             id: "restart-explorer",
             name: "Restart Explorer",
-            desc: "Restart the Windows shell — applies taskbar / context-menu tweaks.",
+            desc: "Restart the Windows shell, applies taskbar / context-menu tweaks.",
             danger: false,
             elevated: false,
         },
@@ -81,7 +81,7 @@ pub fn catalog() -> Vec<QuickAction> {
         QuickAction {
             id: "ntp-fix",
             name: "Fix system clock (NTP resync)",
-            desc: "Point the time service at pool.ntp.org and force a resync — fixes a wrong or drifting clock.",
+            desc: "Point the time service at pool.ntp.org and force a resync, fixes a wrong or drifting clock.",
             danger: false,
             elevated: true,
         },

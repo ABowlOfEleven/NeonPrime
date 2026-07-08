@@ -1,4 +1,4 @@
-//! System repair fixes and Windows Update modes — elevated command scripts run
+//! System repair fixes and Windows Update modes, elevated command scripts run
 //! by the Config panel. These aren't part of the reversible action model (they
 //! invoke SFC/DISM/netsh/reg), so they run in an elevated PowerShell.
 

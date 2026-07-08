@@ -1,4 +1,4 @@
-// NeonPrime — Linux UI.
+// NeonPrime, Linux UI.
 //
 // Shares the holographic visual language of the Windows deck but drives the
 // Linux backend (crate::core::linux). Panels: Dashboard, Processes, Network,
@@ -24,18 +24,18 @@ export global Theme {
 // ── Data globals (set from Rust) ────────────────────────────────────────────
 export global Sys {
     in property <float> cpu-ratio: 0;
-    in property <string> cpu-text: "—";
+    in property <string> cpu-text: "-";
     in property <float> ram-ratio: 0;
-    in property <string> ram-text: "—";
+    in property <string> ram-text: "-";
     in property <float> temp-ratio: 0;
-    in property <string> temp-text: "—";
+    in property <string> temp-text: "-";
     in property <bool> temp-warn: false;
-    in property <string> load-text: "—";
-    in property <string> spec-os: "—";
-    in property <string> spec-kernel: "—";
-    in property <string> spec-cpu: "—";
-    in property <string> spec-ram: "—";
-    in property <string> spec-uptime: "—";
+    in property <string> load-text: "-";
+    in property <string> spec-os: "-";
+    in property <string> spec-kernel: "-";
+    in property <string> spec-cpu: "-";
+    in property <string> spec-ram: "-";
+    in property <string> spec-uptime: "-";
     in property <[float]> cpu-history;
 }
 
@@ -124,7 +124,7 @@ export struct DnsProv {
 
 export global Dns {
     in property <[DnsProv]> providers;
-    in property <string> link: "—";
+    in property <string> link: "-";
     callback set(int);
 }
 
@@ -279,6 +279,11 @@ export global Nav {
     callback changed(int);
 }
 
+// Build/version info, set from Rust (CARGO_PKG_VERSION).
+export global Build {
+    in property <string> version: "0.0.0";
+}
+
 // ── Base components ─────────────────────────────────────────────────────────
 component PushButton inherits Rectangle {
     in property <string> label;
@@ -293,7 +298,12 @@ component PushButton inherits Rectangle {
     background: touch.pressed
         ? (root.danger ? Theme.warn : Theme.accent).with-alpha(0.25)
         : (touch.has-hover ? (root.danger ? Theme.warn : Theme.accent).with-alpha(0.14) : transparent);
+    animate background { duration: 110ms; easing: ease-out; }
+    // Fill the button so vertical-alignment actually centers the glyphs
+    // (a Text child of a plain Rectangle otherwise sits at the top and can clip).
     Text {
+        width: 100%;
+        height: 100%;
         text: root.label;
         color: root.danger ? Theme.ember-soft : Theme.accent-soft;
         font-size: 11px;
@@ -301,6 +311,7 @@ component PushButton inherits Rectangle {
         vertical-alignment: center;
     }
     touch := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             root.clicked();
         }
@@ -351,16 +362,22 @@ component FilterChip inherits Rectangle {
     width: txt.preferred-width + 20px;
     border-radius: 6px;
     border-width: 1px;
-    border-color: root.active ? Theme.accent : Theme.divider;
-    background: (root.active ? Theme.accent : Theme.text-dim).with-alpha(root.active ? 0.16 : 0.05);
+    border-color: root.active ? Theme.accent : (touch.has-hover ? Theme.accent-soft : Theme.divider);
+    background: root.active
+        ? Theme.accent.with-alpha(0.16)
+        : (touch.has-hover ? Theme.accent.with-alpha(0.08) : Theme.text-dim.with-alpha(0.05));
+    animate background, border-color { duration: 110ms; easing: ease-out; }
     txt := Text {
+        width: 100%;
+        height: 100%;
         text: root.label;
-        color: root.active ? Theme.accent-soft : Theme.text-dim;
+        color: root.active ? Theme.accent-soft : (touch.has-hover ? Theme.text-body : Theme.text-dim);
         font-size: 10px;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
-    TouchArea {
+    touch := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             root.clicked();
         }
@@ -438,7 +455,10 @@ component NavItem inherits Rectangle {
     in property <int> page;
     height: 34px;
     property <bool> sel: Nav.page == root.page;
-    background: sel ? Theme.accent.with-alpha(0.14) : (touch.has-hover ? Theme.accent.with-alpha(0.07) : transparent);
+    background: sel
+        ? Theme.accent.with-alpha(0.14)
+        : (touch.has-hover ? Theme.accent.with-alpha(0.09) : transparent);
+    animate background { duration: 110ms; easing: ease-out; }
     Rectangle {
         x: 0;
         width: 3px;
@@ -450,15 +470,65 @@ component NavItem inherits Rectangle {
         alignment: start;
         Text {
             text: root.label;
-            color: sel ? Theme.accent-soft : Theme.text-body;
+            color: sel ? Theme.accent-soft : (touch.has-hover ? Theme.accent-soft : Theme.text-body);
             font-size: 12px;
             vertical-alignment: center;
         }
     }
     touch := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             Nav.page = root.page;
             Nav.changed(root.page);
+        }
+    }
+}
+
+// A wrapping description that stays readable: it clamps to about two lines and,
+// when the full text is taller, offers a "read more" toggle that grows the row to
+// show everything (and "read less" to collapse it). Rows that embed this derive
+// their height from content (not a fixed height) so the expansion is visible.
+component ExpandableDesc inherits VerticalLayout {
+    in property <string> text;
+    in property <color> text-color: Theme.text-dim;
+    in property <length> size: 11px;
+    // Roughly two lines tall for the given font size.
+    property <length> collapsed-max: root.size * 2.7;
+    property <bool> expanded: false;
+    property <bool> overflowing: measure.preferred-height > root.collapsed-max + 0.5px;
+    spacing: 1px;
+
+    Rectangle {
+        clip: true;
+        height: (root.expanded || !root.overflowing) ? measure.preferred-height : root.collapsed-max;
+        animate height { duration: 120ms; easing: ease-out; }
+        measure := Text {
+            width: 100%;
+            text: root.text;
+            color: root.text-color;
+            font-size: root.size;
+            wrap: word-wrap;
+        }
+    }
+    // Read more / less toggle. Kept in the tree unconditionally (no structural
+    // `if`, which would form a layout binding loop) and collapsed to zero height
+    // when the text already fits.
+    Rectangle {
+        height: root.overflowing ? 15px : 0px;
+        clip: true;
+        HorizontalLayout {
+            alignment: start;
+            Text {
+                text: root.expanded ? "read less" : "read more";
+                color: Theme.accent-soft;
+                font-size: 10px;
+                rm-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.expanded = !root.expanded;
+                    }
+                }
+            }
         }
     }
 }
@@ -962,10 +1032,15 @@ component PackagesView inherits VerticalLayout {
         ListView {
             vertical-stretch: 1;
             for a in Packages.catalog: Rectangle {
-                height: 50px;
-                HorizontalLayout {
+                height: pk-body.preferred-height;
+                background: pk-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+                animate background { duration: 110ms; easing: ease-out; }
+                pk-touch := TouchArea { }
+                pk-body := HorizontalLayout {
                     padding-left: 18px;
                     padding-right: 18px;
+                    padding-top: 9px;
+                    padding-bottom: 9px;
                     spacing: 10px;
                     VerticalLayout {
                         alignment: center;
@@ -977,11 +1052,9 @@ component PackagesView inherits VerticalLayout {
                             font-size: 13px;
                             overflow: elide;
                         }
-                        Text {
+                        ExpandableDesc {
                             text: a.desc;
-                            color: Theme.text-dim;
-                            font-size: 10px;
-                            overflow: elide;
+                            size: 10px;
                         }
                     }
                     VerticalLayout {
@@ -1055,10 +1128,15 @@ component DnsView inherits VerticalLayout {
 
 component CleanupRowView inherits Rectangle {
     in property <CleanRow> target;
-    height: 56px;
-    HorizontalLayout {
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -1080,11 +1158,9 @@ component CleanupRowView inherits Rectangle {
                     vertical-alignment: center;
                 }
             }
-            Text {
+            ExpandableDesc {
                 text: root.target.desc;
-                color: Theme.text-dim;
-                font-size: 10px;
-                overflow: elide;
+                size: 10px;
             }
             Rectangle {
                 height: 3px;
@@ -1219,10 +1295,15 @@ component QuickView inherits VerticalLayout {
     ListView {
         vertical-stretch: 1;
         for a in Quick.actions: Rectangle {
-            height: 56px;
-            HorizontalLayout {
+            height: qk-body.preferred-height;
+            background: qk-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+            animate background { duration: 110ms; easing: ease-out; }
+            qk-touch := TouchArea { }
+            qk-body := HorizontalLayout {
                 padding-left: 18px;
                 padding-right: 18px;
+                padding-top: 10px;
+                padding-bottom: 10px;
                 spacing: 12px;
                 VerticalLayout {
                     alignment: center;
@@ -1243,11 +1324,9 @@ component QuickView inherits VerticalLayout {
                             vertical-alignment: center;
                         }
                     }
-                    Text {
+                    ExpandableDesc {
                         text: a.desc;
-                        color: Theme.text-dim;
-                        font-size: 10px;
-                        overflow: elide;
+                        size: 10px;
                     }
                 }
                 VerticalLayout {
@@ -1423,8 +1502,9 @@ component Toggle inherits Rectangle {
     height: 22px;
     border-radius: 11px;
     border-width: 1px;
-    border-color: root.on ? Theme.accent : Theme.divider;
-    background: (root.on ? Theme.accent : Theme.text-dim).with-alpha(0.16);
+    border-color: root.on ? Theme.accent : (touch.has-hover ? Theme.text-dim : Theme.divider);
+    background: (root.on ? Theme.accent : Theme.text-dim).with-alpha(touch.has-hover ? 0.22 : 0.16);
+    animate background, border-color { duration: 110ms; easing: ease-out; }
     Rectangle {
         width: 16px;
         height: 16px;
@@ -1434,7 +1514,8 @@ component Toggle inherits Rectangle {
         background: root.on ? Theme.accent-soft : Theme.text-dim;
         animate x { duration: 120ms; easing: ease-out; }
     }
-    TouchArea {
+    touch := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             root.toggled();
         }
@@ -1479,10 +1560,15 @@ component TweaksView inherits VerticalLayout {
     if Tweaks.rows.length > 0: ListView {
         vertical-stretch: 1;
         for t in Tweaks.rows: Rectangle {
-            height: t.warn != "" ? 88px : 56px;
-            HorizontalLayout {
+            height: tw-body.preferred-height;
+            background: tw-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+            animate background { duration: 110ms; easing: ease-out; }
+            tw-touch := TouchArea { }
+            tw-body := HorizontalLayout {
                 padding-left: 18px;
                 padding-right: 18px;
+                padding-top: 10px;
+                padding-bottom: 10px;
                 spacing: 12px;
                 VerticalLayout {
                     alignment: center;
@@ -1504,11 +1590,9 @@ component TweaksView inherits VerticalLayout {
                             vertical-alignment: center;
                         }
                     }
-                    Text {
+                    ExpandableDesc {
                         text: t.desc;
-                        color: Theme.text-dim;
-                        font-size: 10px;
-                        overflow: elide;
+                        size: 10px;
                     }
                     if t.warn != "": Text {
                         text: "⚠ " + t.warn;
@@ -1568,10 +1652,15 @@ component DebloatView inherits VerticalLayout {
     if !Debloat.scanning: ListView {
         vertical-stretch: 1;
         for b in Debloat.rows: Rectangle {
-            height: 56px;
-            HorizontalLayout {
+            height: db-body.preferred-height;
+            background: db-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+            animate background { duration: 110ms; easing: ease-out; }
+            db-touch := TouchArea { }
+            db-body := HorizontalLayout {
                 padding-left: 18px;
                 padding-right: 18px;
+                padding-top: 10px;
+                padding-bottom: 10px;
                 spacing: 10px;
                 VerticalLayout {
                     alignment: center;
@@ -1583,11 +1672,9 @@ component DebloatView inherits VerticalLayout {
                         font-size: 13px;
                         overflow: elide;
                     }
-                    Text {
+                    ExpandableDesc {
                         text: b.desc;
-                        color: Theme.text-dim;
-                        font-size: 10px;
-                        overflow: elide;
+                        size: 10px;
                     }
                 }
                 VerticalLayout {
@@ -1914,6 +2001,7 @@ component ServersView inherits VerticalLayout {
 // ── Root window ─────────────────────────────────────────────────────────────
 export component AppWindow inherits Window {
     title: "NeonPrime";
+    default-font-size: 13px;
     preferred-width: 940px;
     preferred-height: 640px;
     min-width: 820px;
@@ -1940,7 +2028,7 @@ export component AppWindow inherits Window {
                             letter-spacing: 2px;
                         }
                         Text {
-                            text: "linux · v3.0";
+                            text: "linux · v" + Build.version;
                             color: Theme.text-dim;
                             font-size: 10px;
                         }

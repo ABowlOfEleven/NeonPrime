@@ -2,6 +2,30 @@
 
 All notable changes to NeonPrime. Dates are UTC.
 
+## 3.2.1 — 2026-07-07
+
+A deep UI/UX polish pass on both the Windows and Linux decks, so the app feels
+faster, cleaner, and more readable, with the two platforms sharing one look.
+
+### Changed
+
+- **Windows deck redesign.** Content now sits in a centered, max-width column,
+  with a wider adaptive layout for the table panels (Processes, Network,
+  Services). Reworked dashboard, a simplified status bar aligned to the content,
+  and the broker indicator moved down into the status bar.
+- **Readable everywhere.** Fixed text that clipped or truncated across buttons,
+  chips, badges, panel headers, the dashboard gauge and sparklines, the title-bar
+  wordmark and version, and every list description. Long row descriptions now wrap
+  and offer a "read more" / "read less" toggle that grows the row instead of
+  cutting the text off.
+- **Interactive feel.** Hover feedback on nav items, buttons, toggles, pills,
+  chips, and every list and table row, with a pointer cursor and subtle motion.
+- **Consistent window behavior.** The window fills correctly when maximized, and
+  is sized so the dashboard always fits without overrunning the status bar.
+- **Linux UI brought in line with the Windows deck**: the same hover feedback,
+  expandable row descriptions, and text-clip fixes, plus the real build version in
+  the sidebar (it was hardcoded before).
+
 ## 3.1.1 — 2026-07-07
 
 Windows bug fixes from driving 3.1.0, plus a big push toward WinUtil parity: the

@@ -1,8 +1,8 @@
 //! Spawning and talking to the broker process from the UI.
 //!
 //! Two modes:
-//!   * unelevated — a plain child process, used for HKCU-only work and tests;
-//!   * elevated — launched via `Start-Process -Verb RunAs`, which triggers UAC.
+//!   * unelevated, a plain child process, used for HKCU-only work and tests;
+//!   * elevated, launched via `Start-Process -Verb RunAs`, which triggers UAC.
 //!
 //! The elevated path needs an interactive UAC approval and so cannot be
 //! exercised headlessly.

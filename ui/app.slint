@@ -1,4 +1,4 @@
-// NeonPrime UI — P3: nav-driven views + the Tweaks panel.
+// NeonPrime UI, P3: nav-driven views + the Tweaks panel.
 // Themes via `Theme.hev`; live telemetry via `Sys`; tweak rows via `Tweaks`.
 
 import { ListView } from "std-widgets.slint";
@@ -20,32 +20,40 @@ export global Theme {
     out property <color> text-body: hev ? #c9a766 : #a9c6d6;
 
     out property <string> overview-title: hev ? "HAZARD SYSTEMS ONLINE" : "SYSTEM OVERVIEW";
-    out property <string> tweaks-label: hev ? "PRY BLOAT" : "TWEAKS";
-    out property <string> tagline: hev ? "HEV · v3.0" : "v3.0.0";
+    // Nav/panel labels stay accurate in both themes (the HEV flavor lives in the
+    // crowbar icon and the dashboard title, not in a confusing "PRY BLOAT" rename).
+    out property <string> tweaks-label: "TWEAKS";
     out property <string> toggle-label: hev ? "THEME: HEV" : "THEME: HOLO";
+
+    // Layout rhythm. List/toggle panels sit in a cozy centered column so controls
+    // hug their labels; table panels (Processes/Network/Services) get a wider cap
+    // so columns are not cramped. Spacing scale keeps vertical rhythm consistent.
+    out property <length> content-max: 900px;
+    out property <length> content-wide: 1280px;
+    out property <length> gutter: 24px;
 }
 
 export global Sys {
     in-out property <float> cpu-ratio: 0;
-    in-out property <string> cpu-text: "—";
+    in-out property <string> cpu-text: "-";
     in-out property <float> cpu-temp-ratio: 0;
-    in-out property <string> cpu-temp-text: "—";
+    in-out property <string> cpu-temp-text: "-";
     in-out property <bool> cpu-temp-warn: false;
-    in-out property <string> gpu-name: "—";
+    in-out property <string> gpu-name: "-";
     in-out property <float> ram-ratio: 0;
-    in-out property <string> ram-text: "—";
+    in-out property <string> ram-text: "-";
     in-out property <bool> gpu-available: false;
     in-out property <float> gpu-ratio: 0;
-    in-out property <string> gpu-text: "—";
+    in-out property <string> gpu-text: "-";
     in-out property <float> vram-ratio: 0;
-    in-out property <string> vram-text: "—";
+    in-out property <string> vram-text: "-";
     in-out property <float> temp-ratio: 0;
-    in-out property <string> temp-text: "—";
+    in-out property <string> temp-text: "-";
     in-out property <bool> temp-warn: false;
-    in-out property <string> spec-os: "—";
-    in-out property <string> spec-cpu: "—";
-    in-out property <string> spec-ram: "—";
-    in-out property <string> spec-uptime: "—";
+    in-out property <string> spec-os: "-";
+    in-out property <string> spec-cpu: "-";
+    in-out property <string> spec-ram: "-";
+    in-out property <string> spec-uptime: "-";
     // Rolling-history samples (0..1), newest last. Rendered as bar sparklines.
     in-out property <[float]> cpu-history;
     in-out property <[float]> gpu-history;
@@ -333,7 +341,11 @@ component NavItem inherits Rectangle {
     in property <image> icon;
     property <bool> active: Nav.page == root.index;
     height: 31px;
-    background: active ? Theme.accent.with-alpha(0.08) : (fscope.has-focus ? Theme.accent.with-alpha(0.04) : transparent);
+    background: active
+        ? Theme.accent.with-alpha(0.08)
+        : (nav-touch.has-hover ? Theme.accent.with-alpha(0.10)
+            : (fscope.has-focus ? Theme.accent.with-alpha(0.04) : transparent));
+    animate background { duration: 110ms; easing: ease-out; }
     border-width: fscope.has-focus ? 1px : 0px;
     border-color: Theme.accent-soft;
     border-radius: 4px;
@@ -361,12 +373,12 @@ component NavItem inherits Rectangle {
                 width: 20px;
                 height: 20px;
                 source: root.icon;
-                colorize: active ? Theme.accent : Theme.text-dim;
+                colorize: active ? Theme.accent : (nav-touch.has-hover ? Theme.text-body : Theme.text-dim);
             }
         }
         Text {
             text: root.label;
-            color: active ? Theme.accent-soft : Theme.text-dim;
+            color: active ? Theme.accent-soft : (nav-touch.has-hover ? Theme.text-body : Theme.text-dim);
             vertical-alignment: center;
             font-size: 12px;
         }
@@ -383,7 +395,8 @@ component NavItem inherits Rectangle {
             return EventResult.reject;
         }
     }
-    TouchArea {
+    nav-touch := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             fscope.focus();
             Nav.page = root.index;
@@ -414,16 +427,23 @@ component ModePill inherits Rectangle {
     height: 26px;
     border-radius: 8px;
     border-width: fscope.has-focus ? 2px : 1px;
-    border-color: fscope.has-focus ? Theme.accent-soft : (active ? Theme.accent : Theme.divider);
-    background: active ? Theme.accent.with-alpha(0.16) : transparent;
+    border-color: fscope.has-focus
+        ? Theme.accent-soft
+        : (active ? Theme.accent : (pill-touch.has-hover ? Theme.accent-soft : Theme.divider));
+    background: active
+        ? Theme.accent.with-alpha(0.16)
+        : (pill-touch.has-hover ? Theme.accent.with-alpha(0.08) : transparent);
+    animate background, border-color { duration: 110ms; easing: ease-out; }
     accessible-role: button;
     accessible-label: root.label;
     accessible-action-default => {
         root.clicked();
     }
     Text {
+        width: 100%;
+        height: 100%;
         text: root.label;
-        color: active ? Theme.accent-soft : Theme.text-dim;
+        color: active ? Theme.accent-soft : (pill-touch.has-hover ? Theme.text-body : Theme.text-dim);
         horizontal-alignment: center;
         vertical-alignment: center;
         font-size: 11px;
@@ -439,7 +459,8 @@ component ModePill inherits Rectangle {
             return EventResult.reject;
         }
     }
-    TouchArea {
+    pill-touch := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             fscope.focus();
             root.clicked();
@@ -452,31 +473,38 @@ component Meter inherits VerticalLayout {
     in property <string> value;
     in property <float> ratio;
     in property <bool> warn;
-    spacing: 4px;
+    spacing: 6px;
 
     HorizontalLayout {
+        alignment: stretch;
         Text {
             text: root.label;
             color: Theme.text-dim;
             font-size: 11px;
+            letter-spacing: 0.4px;
+            vertical-alignment: center;
         }
         Rectangle { horizontal-stretch: 1; }
         Text {
             text: root.value;
-            color: root.warn ? Theme.ember-soft : Theme.accent;
-            font-size: 11px;
+            color: root.warn ? Theme.ember-soft : Theme.accent-soft;
+            font-size: 12px;
+            font-weight: 600;
+            vertical-alignment: center;
         }
     }
+    // Thin, precise track. A tiny min-width keeps a nub visible near 0 so the
+    // meter never looks empty/broken.
     Rectangle {
-        height: 10px;
-        border-radius: 5px;
+        height: 5px;
+        border-radius: 2.5px;
         background: Theme.track;
         Rectangle {
             x: 0;
             y: 0;
-            width: parent.width * clamp(root.ratio, 0, 1);
+            width: max(parent.height, parent.width * clamp(root.ratio, 0, 1));
             height: parent.height;
-            border-radius: 5px;
+            border-radius: 2.5px;
             background: root.warn ? Theme.ember : Theme.accent;
         }
     }
@@ -527,12 +555,16 @@ component Gauge inherits Rectangle {
             text: root.value-text;
             color: root.warn ? Theme.ember-soft : Theme.accent-soft;
             horizontal-alignment: center;
+            vertical-alignment: center;
+            height: 40px;
             font-size: 30px;
         }
         Text {
             text: root.caption;
             color: Theme.text-dim;
             horizontal-alignment: center;
+            vertical-alignment: center;
+            height: 15px;
             font-size: 11px;
         }
     }
@@ -550,18 +582,30 @@ component Sparkline inherits Rectangle {
             width: 76px;
             alignment: center;
             spacing: 2px;
-            Text {
-                text: root.label;
-                color: Theme.text-dim;
-                font-size: 10px;
+            Rectangle {
+                height: 13px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: root.label;
+                    color: Theme.text-dim;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
             }
-            Text {
-                text: root.value;
-                color: root.tint;
-                font-size: 14px;
+            Rectangle {
+                height: 21px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: root.value;
+                    color: root.tint;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                }
             }
         }
-        // Bar histogram — fills the full width via layout, newest on the right.
+        // Bar histogram, fills the full width via layout, newest on the right.
         Rectangle {
             horizontal-stretch: 1;
             clip: true;
@@ -595,8 +639,13 @@ component Toggle inherits Rectangle {
     height: 22px;
     border-radius: 11px;
     border-width: fscope.has-focus ? 2px : 1px;
-    border-color: fscope.has-focus ? Theme.accent-soft : (on ? Theme.accent : Theme.divider);
-    background: on ? Theme.accent.with-alpha(0.2) : transparent;
+    border-color: fscope.has-focus
+        ? Theme.accent-soft
+        : (on ? Theme.accent : (tgl-touch.has-hover ? Theme.text-dim : Theme.divider));
+    background: on
+        ? Theme.accent.with-alpha(0.2)
+        : (tgl-touch.has-hover ? Theme.accent.with-alpha(0.06) : transparent);
+    animate background, border-color { duration: 110ms; easing: ease-out; }
     accessible-role: checkbox;
     accessible-label: root.a11y-label;
     accessible-checked: root.on;
@@ -624,7 +673,8 @@ component Toggle inherits Rectangle {
             return EventResult.reject;
         }
     }
-    TouchArea {
+    tgl-touch := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             fscope.focus();
             root.toggled(!root.on);
@@ -643,14 +693,22 @@ component PushButton inherits Rectangle {
     height: 26px;
     border-radius: 7px;
     border-width: fscope.has-focus ? 2px : 1px;
-    border-color: fscope.has-focus ? tint-soft : tint;
-    background: touch.pressed ? tint.with-alpha(0.28) : tint.with-alpha(0.12);
+    border-color: fscope.has-focus ? tint-soft : (touch.has-hover ? tint-soft : tint);
+    background: touch.pressed
+        ? tint.with-alpha(0.30)
+        : (touch.has-hover ? tint.with-alpha(0.20) : tint.with-alpha(0.12));
+    animate background, border-color { duration: 110ms; easing: ease-out; }
     accessible-role: button;
     accessible-label: root.label;
     accessible-action-default => {
         root.clicked();
     }
+    // The label must fill the button, or `vertical-alignment: center` is a no-op
+    // (a Text child of a plain Rectangle takes its glyph size and sits at the top,
+    // clipping against the border). Filling makes both alignments actually center.
     Text {
+        width: 100%;
+        height: 100%;
         text: root.label;
         color: tint-soft;
         horizontal-alignment: center;
@@ -669,6 +727,7 @@ component PushButton inherits Rectangle {
         }
     }
     touch := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             fscope.focus();
             root.clicked();
@@ -676,9 +735,62 @@ component PushButton inherits Rectangle {
     }
 }
 
+// A wrapping description that stays readable: it clamps to about two lines and,
+// when the full text is taller than that, offers a "read more" toggle that grows
+// the row to show everything (and "read less" to collapse it again). Rows that
+// embed this must derive their own height from content (not a fixed height) so
+// the expansion is actually visible.
+component ExpandableDesc inherits VerticalLayout {
+    in property <string> text;
+    in property <color> text-color: Theme.text-dim;
+    in property <length> size: 11px;
+    // Roughly two lines tall for the given font size.
+    property <length> collapsed-max: root.size * 2.7;
+    property <bool> expanded: false;
+    property <bool> overflowing: measure.preferred-height > root.collapsed-max + 0.5px;
+    spacing: 1px;
+
+    Rectangle {
+        clip: true;
+        height: (root.expanded || !root.overflowing) ? measure.preferred-height : root.collapsed-max;
+        animate height { duration: 120ms; easing: ease-out; }
+        measure := Text {
+            width: 100%;
+            text: root.text;
+            color: root.text-color;
+            font-size: root.size;
+            wrap: word-wrap;
+        }
+    }
+    // Read more / less toggle. Kept in the tree unconditionally (no structural
+    // `if`, which would form a layout binding loop) and collapsed to zero height
+    // when the text already fits.
+    Rectangle {
+        height: root.overflowing ? 15px : 0px;
+        clip: true;
+        HorizontalLayout {
+            alignment: start;
+            Text {
+                text: root.expanded ? "read less" : "read more";
+                color: Theme.accent-soft;
+                font-size: 10px;
+                rm-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.expanded = !root.expanded;
+                    }
+                }
+            }
+        }
+    }
+}
+
 component QuickActionRow inherits Rectangle {
     in property <QuickRow> qa;
     height: 56px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -740,20 +852,32 @@ component PanelHeader inherits HorizontalLayout {
     spacing: 10px;
     VerticalLayout {
         alignment: center;
-        Text {
-            text: root.title;
-            color: Theme.accent-soft;
-            font-size: 14px;
+        Rectangle {
+            height: 20px;
+            Text {
+                width: 100%;
+                height: 100%;
+                text: root.title;
+                color: Theme.accent-soft;
+                font-size: 14px;
+                vertical-alignment: center;
+            }
         }
     }
     Rectangle { horizontal-stretch: 1; }
     VerticalLayout {
         alignment: center;
-        Text {
-            text: root.hint;
-            color: Theme.text-dim;
-            font-size: 11px;
-            horizontal-alignment: right;
+        Rectangle {
+            height: 16px;
+            Text {
+                width: 100%;
+                height: 100%;
+                text: root.hint;
+                color: Theme.text-dim;
+                font-size: 11px;
+                horizontal-alignment: right;
+                vertical-alignment: center;
+            }
         }
     }
     @children
@@ -821,6 +945,9 @@ component QuickActionsView inherits VerticalLayout {
 component AppRowView inherits Rectangle {
     in property <AppRow> app;
     height: 54px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -857,7 +984,7 @@ component AppRowView inherits Rectangle {
             Text {
                 text: root.app.known
                     ? (root.app.installed ? "● INSTALLED" : "AVAILABLE")
-                    : (Installer.scanning ? "scanning…" : "—");
+                    : (Installer.scanning ? "scanning…" : "-");
                 color: root.app.installed ? Theme.accent : Theme.text-dim;
                 font-size: 10px;
                 horizontal-alignment: right;
@@ -965,12 +1092,13 @@ component ModeCardView inherits Rectangle {
     in property <ModeCard> card;
     in property <bool> active;
     callback activate;
-    height: 96px;
     border-radius: 12px;
     border-width: active ? 2px : 1px;
     border-color: active ? Theme.accent : Theme.divider;
     background: active ? Theme.accent.with-alpha(0.08) : transparent;
-    HorizontalLayout {
+    // Keep the card proportions, but let it grow if the description is expanded.
+    height: max(96px, body.preferred-height);
+    body := HorizontalLayout {
         padding: 16px;
         spacing: 14px;
         VerticalLayout {
@@ -998,11 +1126,9 @@ component ModeCardView inherits Rectangle {
                 color: Theme.text-body;
                 font-size: 12px;
             }
-            Text {
+            ExpandableDesc {
                 text: root.card.desc;
-                color: Theme.text-dim;
-                font-size: 11px;
-                wrap: word-wrap;
+                size: 11px;
             }
         }
         VerticalLayout {
@@ -1054,11 +1180,19 @@ component ModesView inherits VerticalLayout {
 
 component TweakRowView inherits Rectangle {
     in property <TweakRow> tw;
-    height: 60px;
+    // Height follows the content so the description can expand (see ExpandableDesc).
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    // Row-spanning hover tint. Placed first so it sits beneath the content; the
+    // Toggle's own TouchArea stays on top and keeps handling clicks.
+    row-touch := TouchArea { }
 
-    HorizontalLayout {
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 11px;
+        padding-bottom: 11px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -1086,11 +1220,9 @@ component TweakRowView inherits Rectangle {
                     vertical-alignment: center;
                 }
             }
-            Text {
+            ExpandableDesc {
                 text: root.tw.desc;
-                color: Theme.text-dim;
-                font-size: 11px;
-                wrap: word-wrap;
+                size: 11px;
             }
         }
         VerticalLayout {
@@ -1142,10 +1274,16 @@ component DashboardView inherits VerticalLayout {
         alignment: stretch;
         VerticalLayout {
             alignment: center;
-            Text {
-                text: Theme.overview-title;
-                color: Theme.accent-soft;
-                font-size: 14px;
+            Rectangle {
+                height: 20px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: Theme.overview-title;
+                    color: Theme.accent-soft;
+                    font-size: 14px;
+                    vertical-alignment: center;
+                }
             }
         }
         Rectangle { horizontal-stretch: 1; }
@@ -1153,26 +1291,36 @@ component DashboardView inherits VerticalLayout {
         ModePill { label: "GAME"; active: Modes.active == 1; clicked => { Modes.activate(1); } }
         ModePill { label: "WORK"; active: Modes.active == 2; clicked => { Modes.activate(2); } }
     }
-    HorizontalLayout {
-        spacing: 26px;
-        alignment: stretch;
-        VerticalLayout {
-            alignment: center;
-            Gauge {
-                ratio: Sys.gpu-ratio;
-                value-text: Sys.gpu-text;
-                caption: "GPU LOAD";
+    // Live overview card: GPU gauge alongside the memory / load / temp meters.
+    Rectangle {
+        border-radius: 12px;
+        border-width: 1px;
+        border-color: Theme.divider;
+        background: Theme.track;
+        HorizontalLayout {
+            padding: 20px;
+            spacing: 28px;
+            alignment: stretch;
+            VerticalLayout {
+                alignment: center;
+                Gauge {
+                    ratio: Sys.gpu-ratio;
+                    value-text: Sys.gpu-text;
+                    caption: "GPU LOAD";
+                }
             }
-        }
-        VerticalLayout {
-            horizontal-stretch: 1;
-            alignment: center;
-            spacing: 8px;
-            Meter { label: "VRAM"; value: Sys.vram-text; ratio: Sys.vram-ratio; }
-            Meter { label: "RAM"; value: Sys.ram-text; ratio: Sys.ram-ratio; }
-            Meter { label: "CPU"; value: Sys.cpu-text; ratio: Sys.cpu-ratio; }
-            Meter { label: "CPU TEMP"; value: Sys.cpu-temp-text; ratio: Sys.cpu-temp-ratio; warn: Sys.cpu-temp-warn; }
-            Meter { label: "GPU TEMP"; value: Sys.temp-text; ratio: Sys.temp-ratio; warn: Sys.temp-warn; }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                alignment: center;
+                spacing: 13px;
+                Meter { label: "VRAM"; value: Sys.vram-text; ratio: Sys.vram-ratio; }
+                Meter { label: "RAM"; value: Sys.ram-text; ratio: Sys.ram-ratio; }
+                Meter { label: "CPU"; value: Sys.cpu-text; ratio: Sys.cpu-ratio; }
+                // Temperature meters, visually separated from the load meters.
+                Rectangle { height: 1px; background: Theme.divider; }
+                Meter { label: "CPU TEMP"; value: Sys.cpu-temp-text; ratio: Sys.cpu-temp-ratio; warn: Sys.cpu-temp-warn; }
+                Meter { label: "GPU TEMP"; value: Sys.temp-text; ratio: Sys.temp-ratio; warn: Sys.temp-warn; }
+            }
         }
     }
     // Live history sparklines
@@ -1237,8 +1385,13 @@ component FilterChip inherits Rectangle {
     width: chip-txt.preferred-width + 18px;
     border-radius: 6px;
     border-width: fscope.has-focus ? 2px : 1px;
-    border-color: fscope.has-focus ? Theme.accent-soft : (active ? Theme.accent : Theme.divider);
-    background: active ? Theme.accent.with-alpha(0.16) : transparent;
+    border-color: fscope.has-focus
+        ? Theme.accent-soft
+        : (active ? Theme.accent : (chip-touch.has-hover ? Theme.accent-soft : Theme.divider));
+    background: active
+        ? Theme.accent.with-alpha(0.16)
+        : (chip-touch.has-hover ? Theme.accent.with-alpha(0.08) : transparent);
+    animate background, border-color { duration: 110ms; easing: ease-out; }
     accessible-role: button;
     accessible-label: root.label;
     accessible-action-default => {
@@ -1246,8 +1399,9 @@ component FilterChip inherits Rectangle {
     }
     chip-txt := Text {
         x: 9px;
+        height: 100%;
         text: root.label;
-        color: active ? Theme.accent-soft : Theme.text-dim;
+        color: active ? Theme.accent-soft : (chip-touch.has-hover ? Theme.text-body : Theme.text-dim);
         vertical-alignment: center;
         font-size: 10px;
     }
@@ -1262,7 +1416,8 @@ component FilterChip inherits Rectangle {
             return EventResult.reject;
         }
     }
-    TouchArea {
+    chip-touch := TouchArea {
+        mouse-cursor: pointer;
         clicked => {
             fscope.focus();
             root.clicked();
@@ -1275,7 +1430,7 @@ component TweaksView inherits VerticalLayout {
     padding-bottom: 8px;
     spacing: 10px;
     PanelHeader {
-        title: Theme.hev ? "PRY THE BLOAT" : "TWEAKS";
+        title: "TWEAKS";
         PushButton {
             w: 104px;
             label: "ESSENTIALS";
@@ -1425,7 +1580,7 @@ component ConfigView inherits VerticalLayout {
         padding-right: 20px;
         spacing: 12px;
         Text {
-            text: "Elevated repairs — each opens a console and asks for admin (UAC).";
+            text: "Elevated repairs, each opens a console and asks for admin (UAC).";
             color: Theme.text-dim;
             font-size: 12px;
             wrap: word-wrap;
@@ -1486,10 +1641,15 @@ component ConfigView inherits VerticalLayout {
 
 component StartupRowView inherits Rectangle {
     in property <StartupRow> entry;
-    height: 52px;
-    HorizontalLayout {
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 9px;
+        padding-bottom: 9px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -1501,11 +1661,9 @@ component StartupRowView inherits Rectangle {
                 font-size: 13px;
                 overflow: elide;
             }
-            Text {
+            ExpandableDesc {
                 text: root.entry.command;
-                color: Theme.text-dim;
-                font-size: 10px;
-                overflow: elide;
+                size: 10px;
             }
         }
         VerticalLayout {
@@ -1557,10 +1715,15 @@ component StartupView inherits VerticalLayout {
 
 component FeatureRowView inherits Rectangle {
     in property <FeatureRow> entry;
-    height: 56px;
-    HorizontalLayout {
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -1582,11 +1745,9 @@ component FeatureRowView inherits Rectangle {
                     vertical-alignment: center;
                 }
             }
-            Text {
+            ExpandableDesc {
                 text: root.entry.desc;
-                color: Theme.text-dim;
-                font-size: 10px;
-                overflow: elide;
+                size: 10px;
             }
         }
         VerticalLayout {
@@ -1645,10 +1806,15 @@ component FeaturesView inherits VerticalLayout {
 
 component PrivacyCheckView inherits Rectangle {
     in property <PrivacyCheck> check;
-    height: root.check.warn != "" ? 92px : 56px;
-    HorizontalLayout {
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -1670,11 +1836,9 @@ component PrivacyCheckView inherits Rectangle {
                     vertical-alignment: center;
                 }
             }
-            Text {
+            ExpandableDesc {
                 text: root.check.desc;
-                color: Theme.text-dim;
-                font-size: 10px;
-                overflow: elide;
+                size: 10px;
             }
             if root.check.warn != "": Text {
                 text: "⚠ " + root.check.warn;
@@ -1694,6 +1858,8 @@ component PrivacyCheckView inherits Rectangle {
                 border-color: root.check.hardened ? Theme.accent : Theme.ember;
                 background: (root.check.hardened ? Theme.accent : Theme.ember).with-alpha(0.12);
                 Text {
+                    width: 100%;
+                    height: 100%;
                     text: root.check.hardened ? "HARDENED" : "EXPOSED";
                     color: root.check.hardened ? Theme.accent-soft : Theme.ember-soft;
                     font-size: 10px;
@@ -1777,10 +1943,15 @@ component PrivacyView inherits VerticalLayout {
 
 component HistoryRowView inherits Rectangle {
     in property <HistoryRow> entry;
-    height: 56px;
-    HorizontalLayout {
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -1802,11 +1973,9 @@ component HistoryRowView inherits Rectangle {
                     vertical-alignment: center;
                 }
             }
-            Text {
+            ExpandableDesc {
                 text: root.entry.when + "  ·  " + root.entry.detail;
-                color: Theme.text-dim;
-                font-size: 10px;
-                overflow: elide;
+                size: 10px;
             }
         }
         VerticalLayout {
@@ -1868,10 +2037,15 @@ component HistoryView inherits VerticalLayout {
 
 component DebloatRowView inherits Rectangle {
     in property <DebloatRow> entry;
-    height: 56px;
-    HorizontalLayout {
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -1883,11 +2057,9 @@ component DebloatRowView inherits Rectangle {
                 font-size: 13px;
                 overflow: elide;
             }
-            Text {
+            ExpandableDesc {
                 text: root.entry.desc;
-                color: Theme.text-dim;
-                font-size: 10px;
-                overflow: elide;
+                size: 10px;
             }
         }
         // Status badge (only once probed).
@@ -1901,6 +2073,8 @@ component DebloatRowView inherits Rectangle {
                 border-color: root.entry.present ? Theme.ember : Theme.divider;
                 background: root.entry.present ? Theme.ember.with-alpha(0.12) : transparent;
                 Text {
+                    width: 100%;
+                    height: 100%;
                     text: root.entry.present ? "INSTALLED" : "REMOVED";
                     color: root.entry.present ? Theme.ember-soft : Theme.text-dim;
                     font-size: 10px;
@@ -1961,10 +2135,15 @@ component DebloatView inherits VerticalLayout {
 
 component CleanupRowView inherits Rectangle {
     in property <CleanRow> target;
-    height: 56px;
-    HorizontalLayout {
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -1986,11 +2165,9 @@ component CleanupRowView inherits Rectangle {
                     vertical-alignment: center;
                 }
             }
-            Text {
+            ExpandableDesc {
                 text: root.target.desc;
-                color: Theme.text-dim;
-                font-size: 10px;
-                overflow: elide;
+                size: 10px;
             }
             // Reclaimable-size bar, relative to the largest target.
             Rectangle {
@@ -2066,6 +2243,9 @@ component CleanupView inherits VerticalLayout {
 component NetRowView inherits Rectangle {
     in property <NetRow> conn;
     height: 48px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -2097,6 +2277,8 @@ component NetRowView inherits Rectangle {
                 border-color: root.conn.state == "ESTABLISHED" ? Theme.accent : Theme.divider;
                 background: (root.conn.state == "ESTABLISHED" ? Theme.accent : Theme.text-dim).with-alpha(0.1);
                 Text {
+                    width: 100%;
+                    height: 100%;
                     text: root.conn.state;
                     color: root.conn.state == "ESTABLISHED" ? Theme.accent-soft : Theme.text-dim;
                     font-size: 10px;
@@ -2260,6 +2442,9 @@ component ProcStat inherits VerticalLayout {
 component ProcRowView inherits Rectangle {
     in property <ProcRow> proc;
     height: 44px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -2418,6 +2603,9 @@ component ProcessesView inherits VerticalLayout {
 component ServiceRowView inherits Rectangle {
     in property <ServiceRow> svc;
     height: 56px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -2458,6 +2646,8 @@ component ServiceRowView inherits Rectangle {
                 border-color: root.svc.running ? Theme.accent : Theme.divider;
                 background: (root.svc.running ? Theme.accent : Theme.text-dim).with-alpha(0.1);
                 Text {
+                    width: 100%;
+                    height: 100%;
                     text: root.svc.running ? "RUNNING" : "STOPPED";
                     color: root.svc.running ? Theme.accent-soft : Theme.text-dim;
                     font-size: 10px;
@@ -2603,7 +2793,7 @@ component MicroWinView inherits VerticalLayout {
         padding-right: 20px;
         spacing: 10px;
         Text {
-            text: "Builds a slimmed Windows ISO from a stock one. Needs admin, ~20 GB free, and several minutes — watch the elevated console.";
+            text: "Builds a slimmed Windows ISO from a stock one. Needs admin, ~20 GB free, and several minutes, watch the elevated console.";
             color: Theme.text-dim;
             font-size: 12px;
             wrap: word-wrap;
@@ -2623,7 +2813,7 @@ component MicroWinView inherits VerticalLayout {
         Text { text: "OUTPUT ISO"; color: Theme.text-dim; font-size: 10px; }
         TextField {
             text <=> MicroWin.output;
-            placeholder: "auto — set when you choose a source";
+            placeholder: "auto, set when you choose a source";
         }
         HorizontalLayout {
             spacing: 12px;
@@ -2679,15 +2869,22 @@ component Toast inherits Rectangle {
 
 export component AppWindow inherits Window {
     title: "NeonPrime";
+    // Pin a font with proper vertical metrics. The renderer's fallback font has a
+    // tight line box that clipped glyph tops (the recurring "borked text").
+    default-font-family: "Segoe UI";
     default-font-size: 13px;
-    preferred-width: 760px;
-    preferred-height: 680px;
-    min-width: 640px;
-    min-height: 640px;
+    preferred-width: 820px;
+    preferred-height: 760px;
+    min-width: 720px;
+    // Tall enough that the Dashboard (its tallest fixed-content panel) fits without
+    // the content overrunning the pinned status bar.
+    min-height: 720px;
     background: Theme.bg;
     forward-focus: fs;
 
     fs := FocusScope {
+        width: root.width;
+        height: root.height;
         key-pressed(e) => {
             if (e.text == "k" && e.modifiers.control) {
                 Palette.open = !Palette.open;
@@ -2715,15 +2912,21 @@ export component AppWindow inherits Window {
             }
             return EventResult.reject;
         }
-    VerticalLayout {
+    Rectangle {
+        width: root.width;
+        height: root.height;
         // ── Title bar ──────────────────────────────────────────────
         Rectangle {
+            y: 0;
+            width: parent.width;
             height: 44px;
             HorizontalLayout {
                 padding-left: 20px;
                 padding-right: 14px;
                 spacing: 12px;
-                alignment: start;
+                // No `alignment: start`, that collapses the stretch spacer below,
+                // which clustered the SEARCH/THEME pills next to the logo instead
+                // of pushing them to the right edge on a wide window.
                 VerticalLayout {
                     alignment: center;
                     Image {
@@ -2735,65 +2938,90 @@ export component AppWindow inherits Window {
                 }
                 VerticalLayout {
                     alignment: center;
-                    Text {
-                        text: "NEONPRIME";
-                        color: Theme.accent-soft;
-                        font-size: 16px;
+                    Rectangle {
+                        height: 24px;
+                        Text {
+                            width: 100%;
+                            height: 100%;
+                            text: "NEONPRIME";
+                            color: Theme.accent-soft;
+                            font-size: 16px;
+                            vertical-alignment: center;
+                        }
                     }
                 }
                 VerticalLayout {
                     alignment: center;
-                    Text {
-                        text: (Theme.hev ? "HEV · v" : "v") + Build.version;
-                        color: Theme.text-dim;
-                        font-size: 11px;
+                    Rectangle {
+                        height: 16px;
+                        Text {
+                            width: 100%;
+                            height: 100%;
+                            text: (Theme.hev ? "HEV · v" : "v") + Build.version;
+                            color: Theme.text-dim;
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
                     }
                 }
                 Rectangle { horizontal-stretch: 1; }
-                Rectangle {
-                    width: 120px;
-                    height: 26px;
-                    border-radius: 8px;
-                    border-width: 1px;
-                    border-color: Theme.divider;
-                    background: Theme.track;
-                    Text {
-                        text: "SEARCH · CTRL+K";
-                        color: Theme.text-dim;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        font-size: 10px;
-                    }
-                    TouchArea {
-                        clicked => {
-                            Palette.open = !Palette.open;
-                            if (Palette.open) {
-                                Palette.query = "";
-                                Palette.selected = 0;
-                                Palette.filter();
-                            } else {
-                                fs.focus();
+                // Pills wrapped in centering VerticalLayouts so they sit at the row
+                // middle (a bare fixed-height child of the HorizontalLayout aligns to
+                // the top, which left them sitting too high).
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 120px;
+                        height: 26px;
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: Theme.divider;
+                        background: Theme.track;
+                        Text {
+                            width: 100%;
+                            height: 100%;
+                            text: "SEARCH · CTRL+K";
+                            color: Theme.text-dim;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            font-size: 10px;
+                        }
+                        TouchArea {
+                            clicked => {
+                                Palette.open = !Palette.open;
+                                if (Palette.open) {
+                                    Palette.query = "";
+                                    Palette.selected = 0;
+                                    Palette.filter();
+                                } else {
+                                    fs.focus();
+                                }
                             }
                         }
                     }
                 }
-                Rectangle {
-                    width: 112px;
-                    height: 26px;
-                    border-radius: 8px;
-                    border-width: 1px;
-                    border-color: Theme.divider;
-                    background: Theme.accent.with-alpha(0.08);
-                    Text {
-                        text: Theme.toggle-label;
-                        color: Theme.accent-soft;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                        font-size: 11px;
-                    }
-                    TouchArea {
-                        clicked => {
-                            Ui.toggle-theme();
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 112px;
+                        height: 26px;
+                        border-radius: 8px;
+                        border-width: 1px;
+                        border-color: Theme.divider;
+                        background: Theme.accent.with-alpha(0.08);
+                        Text {
+                            width: 100%;
+                            height: 100%;
+                            text: Theme.toggle-label;
+                            color: Theme.accent-soft;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                            font-size: 11px;
+                        }
+                        TouchArea {
+                            clicked => {
+                                Ui.toggle-theme();
+                            }
                         }
                     }
                 }
@@ -2807,8 +3035,11 @@ export component AppWindow inherits Window {
             }
         }
 
-        // ── Body ───────────────────────────────────────────────────
+        // ── Body: fills between the title bar and the status bar. ──────
         HorizontalLayout {
+            y: 44px;
+            width: parent.width;
+            height: parent.height - 44px - 28px;
             Rectangle {
                 width: 160px;
                 VerticalLayout {
@@ -2844,24 +3075,6 @@ export component AppWindow inherits Window {
                             NavItem { label: "HISTORY"; index: 9; icon: @image-url("icons/history.svg"); }
                         }
                     }
-                    HorizontalLayout {
-                        padding-left: 18px;
-                        padding-top: 8px;
-                        spacing: 10px;
-                        alignment: start;
-                        Rectangle {
-                            width: 8px;
-                            height: 8px;
-                            border-radius: 4px;
-                            background: Theme.accent;
-                        }
-                        Text {
-                            text: "BROKER · linked";
-                            color: Theme.text-dim;
-                            vertical-alignment: center;
-                            font-size: 11px;
-                        }
-                    }
                 }
                 Rectangle {
                     x: parent.width - 1px;
@@ -2872,9 +3085,18 @@ export component AppWindow inherits Window {
                 }
             }
 
-            // Main content — switches on Nav.page.
+            // Main content, switches on Nav.page.
             Rectangle {
                 horizontal-stretch: 1;
+                // Centered content column: panels never sprawl past Theme.content-max,
+                // so controls sit near their labels instead of stranding at the edge.
+                content-col := Rectangle {
+                    // Table panels (Network 11, Processes 13, Services 14) need room
+                    // for their columns; everything else uses the cozy reading width.
+                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14;
+                    width: min(parent.width, self.wide ? Theme.content-wide : Theme.content-max);
+                    x: (parent.width - self.width) / 2;
+                    height: parent.height;
                 if Nav.page == 0: DashboardView {
                     width: parent.width;
                     height: parent.height;
@@ -2939,6 +3161,7 @@ export component AppWindow inherits Window {
                     width: parent.width;
                     height: parent.height;
                 }
+                } // content-col
 
                 Toast {
                     message: Ui.toast-message;
@@ -2950,9 +3173,11 @@ export component AppWindow inherits Window {
             }
         }
 
-        // ── Status bar ─────────────────────────────────────────────
+        // ── Status bar (pinned to the bottom) ──────────────────────
         Rectangle {
-            height: 32px;
+            y: parent.height - 28px;
+            width: parent.width;
+            height: 28px;
             Rectangle {
                 x: 0;
                 y: 0;
@@ -2960,33 +3185,54 @@ export component AppWindow inherits Window {
                 height: 1px;
                 background: Theme.divider;
             }
+            // Broker/GPU state on the left, system status on the right, both
+            // vertically centered.
             HorizontalLayout {
                 padding-left: 20px;
                 padding-right: 20px;
-                Text {
-                    text: Sys.gpu-available ? "BROKER CONNECTED · GPU LINKED" : "BROKER CONNECTED · NO GPU";
-                    color: Theme.text-dim;
-                    vertical-alignment: center;
-                    font-size: 11px;
-                }
-                Rectangle { horizontal-stretch: 1; }
-                HorizontalLayout {
-                    spacing: 7px;
-                    alignment: end;
-                    VerticalLayout {
-                        alignment: center;
-                        Rectangle {
-                            width: 6px;
-                            height: 6px;
-                            border-radius: 3px;
-                            background: Theme.accent;
+                VerticalLayout {
+                    alignment: center;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 6px;
+                                height: 6px;
+                                border-radius: 3px;
+                                background: Theme.accent;
+                            }
+                        }
+                        Text {
+                            text: Sys.gpu-available ? "BROKER · linked · GPU" : "BROKER · linked";
+                            color: Theme.text-dim;
+                            vertical-alignment: center;
+                            font-size: 10px;
+                            letter-spacing: 0.3px;
                         }
                     }
-                    Text {
-                        text: "NOMINAL";
-                        color: Theme.accent-soft;
-                        vertical-alignment: center;
-                        font-size: 11px;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                VerticalLayout {
+                    alignment: center;
+                    HorizontalLayout {
+                        spacing: 7px;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 6px;
+                                height: 6px;
+                                border-radius: 3px;
+                                background: Theme.accent;
+                            }
+                        }
+                        Text {
+                            text: "NOMINAL";
+                            color: Theme.accent-soft;
+                            vertical-alignment: center;
+                            font-size: 10px;
+                            letter-spacing: 0.3px;
+                        }
                     }
                 }
             }

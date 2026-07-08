@@ -1,4 +1,4 @@
-// NeonPrime — a holographic system control deck.
+// NeonPrime, a holographic system control deck.
 //
 // Windows keeps the full desktop UI (in `app_win.rs`, included below). The Linux
 // port is scaffolded: the cross-platform backend lives in the library

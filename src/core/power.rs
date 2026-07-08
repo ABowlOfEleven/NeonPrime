@@ -58,7 +58,7 @@ pub fn active_index() -> i32 {
 }
 
 /// Activate an existing power scheme by GUID (unelevated, best-effort). Used by
-/// System Modes — standard schemes switch without a UAC prompt.
+/// System Modes, standard schemes switch without a UAC prompt.
 pub fn set_active(guid: &str) -> bool {
     Command::new("powercfg")
         .args(["/setactive", guid])

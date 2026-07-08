@@ -1,4 +1,4 @@
-//! Startup apps manager — enable/disable per-user (HKCU) startup entries.
+//! Startup apps manager, enable/disable per-user (HKCU) startup entries.
 //!
 //! Disabling moves the entry out of the `Run` key into a NeonPrime backup key
 //! and deletes it from `Run`; enabling restores it. This is fully reversible and

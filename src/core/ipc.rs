@@ -1,6 +1,6 @@
 //! Broker IPC: newline-delimited JSON over a localhost TCP connection.
 //!
-//! The transport is loopback TCP guarded by a one-time token handshake — it
+//! The transport is loopback TCP guarded by a one-time token handshake, it
 //! works across integrity levels (unelevated UI ↔ elevated broker) without
 //! named-pipe DACL plumbing. Token is passed on the broker's command line and
 //! is single-use per session.

@@ -1,4 +1,4 @@
-//! Process & resource monitor — top processes by CPU/RAM plus per-process GPU%
+//! Process & resource monitor, top processes by CPU/RAM plus per-process GPU%
 //! and dedicated VRAM, the latter via the same PDH counters Task Manager uses
 //! (parsed per `pid_*` instance). Read-only except for `kill`.
 

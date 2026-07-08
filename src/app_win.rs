@@ -1,4 +1,4 @@
-// NeonPrime — the Windows desktop UI binary.
+// NeonPrime, the Windows desktop UI binary.
 //
 // This file is `include!`d at the crate root by `src/main.rs` only on Windows,
 // so every Windows-only module and dependency below is gated by construction.
@@ -32,7 +32,7 @@ use telemetry::{Sample, Telemetry};
 slint::include_modules!();
 
 type SharedJournal = Rc<RefCell<Journal>>;
-/// `notify(kind, message)` — kind is "success" | "error" | "info".
+/// `notify(kind, message)`, kind is "success" | "error" | "info".
 type Notify = Rc<dyn Fn(&str, &str)>;
 
 /// Result of an off-thread elevated tweak, marshalled back to the UI thread.
@@ -323,7 +323,7 @@ fn wire_tweaks(
         });
     }
 
-    // One-click "Essential Tweaks" — applies the curated no-elevation set.
+    // One-click "Essential Tweaks", applies the curated no-elevation set.
     {
         let cat = catalog.clone();
         let model = model.clone();
@@ -368,7 +368,7 @@ fn wire_tweaks(
                 let mut r = make_row(id as usize, t);
                 r.applied = want;
                 model.set_row_data(id as usize, r);
-                notify("info", "Requesting elevation — approve the UAC prompt…");
+                notify("info", "Requesting elevation, approve the UAC prompt…");
 
                 let actions: Vec<Action> = if want { t.on.clone() } else { t.off.clone() };
                 std::thread::spawn({
@@ -627,7 +627,7 @@ fn wire_installs(app: &AppWindow, notify: &Notify) -> Timer {
         let notify = notify2.clone();
         app.global::<Installer>().on_update_all(move || {
             match launch_console("winget upgrade --all --include-unknown") {
-                Ok(()) => notify("info", "Updating all apps — see the console window."),
+                Ok(()) => notify("info", "Updating all apps, see the console window."),
                 Err(e) => notify("error", &format!("winget: {e}")),
             }
         });
@@ -776,7 +776,7 @@ fn wire_config(
         });
     }
 
-    // Fixes — elevated repair commands run in a visible console.
+    // Fixes, elevated repair commands run in a visible console.
     {
         let notify = notify.clone();
         app.global::<Configuration>().on_run_fix(move |idx| {
@@ -786,14 +786,14 @@ fn wire_config(
             match launch_elevated_ps(script, true) {
                 Ok(()) => notify(
                     "info",
-                    &format!("{name} — approve UAC; progress shows in the console."),
+                    &format!("{name}, approve UAC; progress shows in the console."),
                 ),
                 Err(e) => notify("error", &format!("{name} failed: {e}")),
             }
         });
     }
 
-    // Windows Update mode — elevated registry/service changes, run hidden.
+    // Windows Update mode, elevated registry/service changes, run hidden.
     {
         let notify = notify.clone();
         app.global::<Configuration>()
@@ -808,7 +808,7 @@ fn wire_config(
             });
     }
 
-    // Restore points — create one (elevated) or open the Windows wizard.
+    // Restore points, create one (elevated) or open the Windows wizard.
     {
         let notify = notify.clone();
         app.global::<Configuration>()
@@ -819,7 +819,7 @@ fn wire_config(
                 match launch_elevated_ps(script, true) {
                     Ok(()) => notify(
                         "info",
-                        "Creating restore point — approve UAC; see the console.",
+                        "Creating restore point, approve UAC; see the console.",
                     ),
                     Err(e) => notify("error", &format!("Restore point: {e}")),
                 }
@@ -1120,7 +1120,7 @@ fn wire_features(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
             Ok(()) => notify(
                 "info",
                 &format!(
-                    "{verb} {} — approve UAC; DISM progress shows in the console.",
+                    "{verb} {}, approve UAC; DISM progress shows in the console.",
                     f.name
                 ),
             ),
@@ -1193,7 +1193,7 @@ fn wire_debloat(app: &AppWindow, notify: &Notify) -> Timer {
             match launch_elevated_ps(&debloat::disable_tasks_script(), false) {
                 Ok(()) => notify(
                     "info",
-                    "Disabling telemetry tasks — approve the UAC prompt…",
+                    "Disabling telemetry tasks, approve the UAC prompt…",
                 ),
                 Err(e) => notify("error", &format!("Failed: {e}")),
             }
@@ -1267,7 +1267,7 @@ fn wire_power(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
         match launch_elevated_ps(&script, false) {
             Ok(()) => notify(
                 "info",
-                &format!("Switching to {name} — approve the UAC prompt…"),
+                &format!("Switching to {name}, approve the UAC prompt…"),
             ),
             Err(e) => notify("error", &format!("Power plan failed: {e}")),
         }
@@ -1286,7 +1286,7 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
             id: i as i32,
             name: t.name.into(),
             desc: t.desc.into(),
-            size: "—".into(),
+            size: "-".into(),
             frac: 0.0,
             elevated: t.elevated,
         })
@@ -1338,7 +1338,7 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
                     match launch_elevated_ps(&script, false) {
                         Ok(()) => notify(
                             "info",
-                            &format!("Clearing {} — approve UAC, then RESCAN.", t.name),
+                            &format!("Clearing {}, approve UAC, then RESCAN.", t.name),
                         ),
                         Err(e) => notify("error", &format!("{}: {e}", t.name)),
                     }
@@ -1427,7 +1427,7 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
     timer
 }
 
-/// Process & resource monitor — top processes by CPU with per-process GPU/VRAM,
+/// Process & resource monitor, top processes by CPU with per-process GPU/VRAM,
 /// plus a kill action. Returns a refresh closure (nav + telemetry-tick driven).
 fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     let model: Rc<VecModel<ProcRow>> = Rc::new(VecModel::default());
@@ -1465,12 +1465,12 @@ fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
                     let gpu = if p.gpu >= 0.5 {
                         format!("{:.0}%", p.gpu)
                     } else {
-                        "—".into()
+                        "-".into()
                     };
                     let vram = if p.vram > 0 {
                         cleanup::human(p.vram)
                     } else {
-                        "—".into()
+                        "-".into()
                     };
                     ProcRow {
                         pid: p.pid as i32,
@@ -1522,7 +1522,7 @@ fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     refresh
 }
 
-/// Services manager — list (unelevated, off-thread) with search; start/stop and
+/// Services manager, list (unelevated, off-thread) with search; start/stop and
 /// start-type changes go through the elevated shell. Returns the load pump.
 fn wire_services(app: &AppWindow, notify: &Notify) -> Timer {
     let source: Rc<VecModel<ServiceRow>> = Rc::new(VecModel::default());
@@ -1582,7 +1582,7 @@ fn wire_services(app: &AppWindow, notify: &Notify) -> Timer {
             match launch_elevated_ps(&services::start_script(&name), false) {
                 Ok(()) => notify(
                     "info",
-                    &format!("Starting {name} (approve UAC) — then REFRESH"),
+                    &format!("Starting {name} (approve UAC), then REFRESH"),
                 ),
                 Err(e) => notify("error", &format!("{name}: {e}")),
             }
@@ -1594,7 +1594,7 @@ fn wire_services(app: &AppWindow, notify: &Notify) -> Timer {
             match launch_elevated_ps(&services::stop_script(&name), false) {
                 Ok(()) => notify(
                     "info",
-                    &format!("Stopping {name} (approve UAC) — then REFRESH"),
+                    &format!("Stopping {name} (approve UAC), then REFRESH"),
                 ),
                 Err(e) => notify("error", &format!("{name}: {e}")),
             }
@@ -1606,7 +1606,7 @@ fn wire_services(app: &AppWindow, notify: &Notify) -> Timer {
             match launch_elevated_ps(&services::startup_script(&name, code), false) {
                 Ok(()) => notify(
                     "info",
-                    &format!("{name}: start-type change (approve UAC) — then REFRESH"),
+                    &format!("{name}: start-type change (approve UAC), then REFRESH"),
                 ),
                 Err(e) => notify("error", &format!("{name}: {e}")),
             }
@@ -1639,7 +1639,7 @@ fn wire_services(app: &AppWindow, notify: &Notify) -> Timer {
     timer
 }
 
-/// MicroWin — debloated-ISO builder. Generates an elevated build script + an
+/// MicroWin, debloated-ISO builder. Generates an elevated build script + an
 /// autounattend, then runs them in a visible console. (Heavy, admin, ~20 GB.)
 fn wire_microwin(app: &AppWindow, notify: &Notify) {
     let osc = microwin::oscdimg_path();
@@ -1647,9 +1647,9 @@ fn wire_microwin(app: &AppWindow, notify: &Notify) {
         let m = app.global::<MicroWin>();
         m.set_oscdimg_ok(osc.is_some());
         m.set_oscdimg_hint(match &osc {
-            Some(p) => format!("oscdimg ready — {p}").as_str().into(),
+            Some(p) => format!("oscdimg ready, {p}").as_str().into(),
             None => {
-                "oscdimg NOT found — install the Windows ADK 'Deployment Tools' to build.".into()
+                "oscdimg NOT found, install the Windows ADK 'Deployment Tools' to build.".into()
             }
         });
     }
@@ -1676,13 +1676,13 @@ fn wire_microwin(app: &AppWindow, notify: &Notify) {
             let m = app.global::<MicroWin>();
             let iso = m.get_iso().to_string();
             if iso.trim().is_empty() || !Path::new(&iso).exists() {
-                notify("error", "Source ISO not found — check the path.");
+                notify("error", "Source ISO not found, check the path.");
                 return;
             }
             let Some(oscdimg) = microwin::oscdimg_path() else {
                 notify(
                     "error",
-                    "oscdimg not found — install the Windows ADK Deployment Tools.",
+                    "oscdimg not found, install the Windows ADK Deployment Tools.",
                 );
                 return;
             };
@@ -1718,7 +1718,7 @@ fn wire_microwin(app: &AppWindow, notify: &Notify) {
             match launch_elevated_file(&ps1, false) {
                 Ok(()) => notify(
                     "info",
-                    "MicroWin started — approve UAC; the build runs in the console (10+ min).",
+                    "MicroWin started, approve UAC; the build runs in the console (10+ min).",
                 ),
                 Err(e) => notify("error", &format!("MicroWin: {e}")),
             }
@@ -1726,7 +1726,7 @@ fn wire_microwin(app: &AppWindow, notify: &Notify) {
     }
 }
 
-/// Network monitor — snapshot active outbound TCP connections per process.
+/// Network monitor, snapshot active outbound TCP connections per process.
 /// Returns a refresh closure (driven by nav + the telemetry tick while visible).
 fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
     let model: Rc<VecModel<NetRow>> = Rc::new(VecModel::default());
@@ -1804,7 +1804,7 @@ fn wire_network(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
             let Some(script) = firewall::block_script(&name, &path) else {
                 notify(
                     "error",
-                    "No executable path for that process — can't block.",
+                    "No executable path for that process, can't block.",
                 );
                 return;
             };
@@ -1862,7 +1862,7 @@ fn fuzzy_score(hay: &str, needle: &str) -> Option<i32> {
 }
 
 /// Command palette (Ctrl+K): fuzzy list of panels to jump to + actions to run.
-/// id encodes the target — `<1000` nav page, `1000+` quick action, `2000+` mode.
+/// id encodes the target, `<1000` nav page, `1000+` quick action, `2000+` mode.
 fn wire_palette(app: &AppWindow) {
     const NAV: &[(&str, i32)] = &[
         ("Dashboard", 0),
@@ -1957,7 +1957,7 @@ fn wire_palette(app: &AppWindow) {
     }
 }
 
-/// Privacy/Hardening score — a view over the tweak catalog. Reads live state to
+/// Privacy/Hardening score, a view over the tweak catalog. Reads live state to
 /// score exposure (no elevation needed just to view), and hardens via the same
 /// reversible apply path as the Tweaks panel. Returns the elevated-result pump.
 fn wire_privacy(
@@ -2033,7 +2033,7 @@ fn wire_privacy(
                 return;
             };
             if t.needs_elevation() {
-                notify("info", "Requesting elevation — approve the UAC prompt…");
+                notify("info", "Requesting elevation, approve the UAC prompt…");
                 let (broker, tx, name, on) =
                     (broker.clone(), tx.clone(), t.name.to_string(), t.on.clone());
                 std::thread::spawn(move || elevated_worker(broker, tx, on, id, name, true));
@@ -2249,7 +2249,7 @@ fn wire_history(
             let entry = jrnl.borrow().get(id).filter(|e| e.active).cloned();
             let Some(entry) = entry else { return };
             if entry.reversal.needs_elevation() {
-                notify("info", "Requesting elevation — approve the UAC prompt…");
+                notify("info", "Requesting elevation, approve the UAC prompt…");
                 let (broker, tx, rev, label) = (
                     broker.clone(),
                     tx.clone(),
@@ -2324,7 +2324,7 @@ fn wire_history(
 }
 
 fn main() -> Result<(), slint::PlatformError> {
-    // Single-instance guard — a second launch exits rather than racing the journal.
+    // Single-instance guard, a second launch exits rather than racing the journal.
     let instance = single_instance::SingleInstance::new("neonprime-singleton").ok();
     if let Some(inst) = &instance {
         if !inst.is_single() {

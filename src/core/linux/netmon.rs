@@ -74,7 +74,7 @@ pub fn connections() -> Vec<Conn> {
         let (pid, name) = inode_map
             .get(&inode)
             .cloned()
-            .unwrap_or((0, "—".to_string()));
+            .unwrap_or((0, "-".to_string()));
         out.push(Conn {
             proc_name: name,
             pid,

@@ -1,7 +1,7 @@
 //! Telemetry sampling for the NeonPrime HUD.
 //!
-//! CPU + RAM come from `sysinfo`. GPU VRAM + name come from DXGI (vendor-neutral
-//! — NVIDIA / AMD / Intel). GPU utilization comes from the PDH "GPU Engine"
+//! CPU + RAM come from `sysinfo`. GPU VRAM + name come from DXGI (vendor-neutral,
+//! NVIDIA / AMD / Intel). GPU utilization comes from the PDH "GPU Engine"
 //! counter (also vendor-neutral), falling back to NVML. GPU temperature comes
 //! from NVML (NVIDIA only). CPU temperature is a best-effort WMI reading on a
 //! background thread.
@@ -13,7 +13,7 @@ use sysinfo::System;
 use crate::cputemp::CpuTempMonitor;
 use crate::gpu::{self, GpuCounters};
 
-/// Bytes per binary gigabyte (GiB) — what users mean by "64 GB of RAM".
+/// Bytes per binary gigabyte (GiB), what users mean by "64 GB of RAM".
 const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
 
 #[derive(Default, Clone)]
@@ -53,7 +53,7 @@ pub struct Telemetry {
     nvml: Option<Nvml>,
     gpu_counters: GpuCounters,
     cpu_temp: CpuTempMonitor,
-    /// Background (unelevated) LHM sidecar — started for non-NVIDIA GPUs so their
+    /// Background (unelevated) LHM sidecar, started for non-NVIDIA GPUs so their
     /// GPU temperature is available without a UAC prompt. Killed on drop.
     sidecar: Option<std::process::Child>,
 }

@@ -2,7 +2,7 @@
 //!
 //! The sidecar writes a JSON snapshot of all sensors to a temp file each second.
 //! We poll that file (works even when the sidecar is elevated and we aren't) and
-//! pull out the readings we care about — chiefly the CPU package temperature,
+//! pull out the readings we care about, chiefly the CPU package temperature,
 //! which needs the elevated LHM driver and so is unavailable any other way.
 
 use std::path::PathBuf;

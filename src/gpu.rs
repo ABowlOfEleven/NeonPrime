@@ -1,6 +1,6 @@
 //! Vendor-neutral GPU info via DXGI (NVIDIA / AMD / Intel, no vendor SDK) plus
 //! GPU utilization via the PDH "GPU Engine" performance counter (also
-//! vendor-neutral — the same source Task Manager uses).
+//! vendor-neutral, the same source Task Manager uses).
 
 use windows::core::PCWSTR;
 use windows::Win32::Graphics::Dxgi::*;
@@ -93,7 +93,7 @@ unsafe fn read_sum(counter: isize) -> Option<f64> {
     Some(sum)
 }
 
-/// Live PDH counters for vendor-neutral GPU load + dedicated VRAM usage — the
+/// Live PDH counters for vendor-neutral GPU load + dedicated VRAM usage, the
 /// same sources Task Manager reads, so they work for NVIDIA / AMD / Intel.
 pub struct GpuCounters {
     query: isize,
@@ -135,7 +135,7 @@ impl GpuCounters {
         }
     }
 
-    /// `(utilization 0..1, dedicated VRAM used in bytes)` — either may be `None`.
+    /// `(utilization 0..1, dedicated VRAM used in bytes)`, either may be `None`.
     pub fn sample(&self) -> (Option<f32>, Option<u64>) {
         if !self.ready {
             return (None, None);
