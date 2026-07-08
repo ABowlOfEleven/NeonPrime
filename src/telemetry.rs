@@ -157,7 +157,7 @@ impl Telemetry {
         match util {
             Some(u) => {
                 s.gpu_ratio = u;
-                s.gpu_text = format!("{}", (u * 100.0).round() as u32);
+                s.gpu_text = format!("{}%", (u * 100.0).round() as u32);
             }
             None => s.gpu_text = "N/A".into(),
         }
