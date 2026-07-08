@@ -709,30 +709,29 @@ fn wire_config(
     tweaks_catalog: &Rc<Vec<tweaks::Tweak>>,
     tweaks_model: &Rc<VecModel<TweakRow>>,
     modes_catalog: &Rc<Vec<modes::Mode>>,
-) {
+) -> Timer {
     let cfg_path = config::default_path();
+    // Export runs off-thread (it scans winget for the app set); results come back
+    // as (toml, tweak count, app count, mode) and land on the UI via the timer.
+    let (etx, erx) = mpsc::channel::<(String, usize, usize, Option<String>)>();
 
     {
         let weak = app.as_weak();
         let cfg_path = cfg_path.clone();
-        let notify = notify.clone();
+        let etx = etx.clone();
         app.global::<Configuration>().on_export_config(move || {
-            let cfg = config::capture();
-            let toml = cfg.to_toml().unwrap_or_default();
-            let _ = std::fs::write(&cfg_path, &toml);
             if let Some(app) = weak.upgrade() {
-                let c = app.global::<Configuration>();
-                c.set_preview(toml.as_str().into());
-                c.set_status(format!("Exported → {}", cfg_path.display()).as_str().into());
+                app.global::<Configuration>()
+                    .set_status("Capturing provisioning profile (scanning apps)…".into());
             }
-            notify(
-                "success",
-                &format!(
-                    "Exported {} tweak(s), mode {}",
-                    cfg.tweaks.len(),
-                    cfg.mode.as_deref().unwrap_or("none")
-                ),
-            );
+            let cfg_path = cfg_path.clone();
+            let etx = etx.clone();
+            std::thread::spawn(move || {
+                let cfg = config::capture_profile();
+                let toml = cfg.to_toml().unwrap_or_default();
+                let _ = std::fs::write(&cfg_path, &toml);
+                let _ = etx.send((toml, cfg.tweaks.len(), cfg.apps.len(), cfg.mode));
+            });
         });
     }
 
@@ -744,6 +743,7 @@ fn wire_config(
         let tcat = tweaks_catalog.clone();
         let tmodel = tweaks_model.clone();
         let mcat = modes_catalog.clone();
+        let cfg_path = cfg_path.clone();
         app.global::<Configuration>().on_import_config(move || {
             let toml = match std::fs::read_to_string(&cfg_path) {
                 Ok(s) => s,
@@ -774,6 +774,20 @@ fn wire_config(
                     cfg.mode.as_deref().unwrap_or("none")
                 ),
             );
+            // Provisioning: install the profile's app set in a visible elevated
+            // console (winget). Skipped when the profile lists no apps.
+            if !cfg.apps.is_empty() {
+                match launch_elevated_ps(&installs::install_many_script(&cfg.apps), true) {
+                    Ok(()) => notify(
+                        "info",
+                        &format!(
+                            "Installing {} app(s) from the profile (approve UAC), see the console.",
+                            cfg.apps.len()
+                        ),
+                    ),
+                    Err(e) => notify("error", &format!("App install failed: {e}")),
+                }
+            }
         });
     }
 
@@ -834,6 +848,29 @@ fn wire_config(
                 Err(e) => notify("error", &format!("Couldn't open System Restore: {e}")),
             });
     }
+
+    // Pump async export results back to the UI.
+    let weak = app.as_weak();
+    let cfg_path2 = cfg_path.clone();
+    let notify2 = notify.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok((toml, ntweaks, napps, mode)) = erx.try_recv() {
+            if let Some(app) = weak.upgrade() {
+                let c = app.global::<Configuration>();
+                c.set_preview(toml.as_str().into());
+                c.set_status(format!("Exported → {}", cfg_path2.display()).as_str().into());
+            }
+            notify2(
+                "success",
+                &format!(
+                    "Exported {ntweaks} tweak(s), {napps} app(s), mode {}",
+                    mode.as_deref().unwrap_or("none")
+                ),
+            );
+        }
+    });
+    timer
 }
 
 // ── Theme + Undo ────────────────────────────────────────────────────
@@ -3254,7 +3291,7 @@ fn main() -> Result<(), slint::PlatformError> {
         &tweaks_catalog,
         &tweaks_model,
     );
-    wire_config(
+    let _config_pump = wire_config(
         &app,
         &jrnl,
         &journal_path,

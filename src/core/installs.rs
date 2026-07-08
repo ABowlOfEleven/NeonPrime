@@ -244,6 +244,15 @@ pub fn uninstall_cmd(id: &str) -> String {
     format!("winget uninstall --id {id} -e")
 }
 
+/// One elevated console script that installs every id in turn (for applying a
+/// provisioning profile's app set). Empty when there are no ids.
+pub fn install_many_script(ids: &[String]) -> String {
+    ids.iter()
+        .map(|id| install_cmd(id))
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
