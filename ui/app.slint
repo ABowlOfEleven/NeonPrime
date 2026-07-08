@@ -738,6 +738,9 @@ component PushButton inherits Rectangle {
 component QuickActionRow inherits Rectangle {
     in property <QuickRow> qa;
     height: 56px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -892,6 +895,9 @@ component QuickActionsView inherits VerticalLayout {
 component AppRowView inherits Rectangle {
     in property <AppRow> app;
     height: 54px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -1126,6 +1132,11 @@ component ModesView inherits VerticalLayout {
 component TweakRowView inherits Rectangle {
     in property <TweakRow> tw;
     height: 60px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    // Row-spanning hover tint. Placed first so it sits beneath the content; the
+    // Toggle's own TouchArea stays on top and keeps handling clicks.
+    row-touch := TouchArea { }
 
     HorizontalLayout {
         padding-left: 18px;
@@ -1581,6 +1592,9 @@ component ConfigView inherits VerticalLayout {
 component StartupRowView inherits Rectangle {
     in property <StartupRow> entry;
     height: 52px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -1652,6 +1666,9 @@ component StartupView inherits VerticalLayout {
 component FeatureRowView inherits Rectangle {
     in property <FeatureRow> entry;
     height: 56px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -1874,6 +1891,9 @@ component PrivacyView inherits VerticalLayout {
 component HistoryRowView inherits Rectangle {
     in property <HistoryRow> entry;
     height: 56px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -1965,6 +1985,9 @@ component HistoryView inherits VerticalLayout {
 component DebloatRowView inherits Rectangle {
     in property <DebloatRow> entry;
     height: 56px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -2060,6 +2083,9 @@ component DebloatView inherits VerticalLayout {
 component CleanupRowView inherits Rectangle {
     in property <CleanRow> target;
     height: 56px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -2164,6 +2190,9 @@ component CleanupView inherits VerticalLayout {
 component NetRowView inherits Rectangle {
     in property <NetRow> conn;
     height: 48px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -2360,6 +2389,9 @@ component ProcStat inherits VerticalLayout {
 component ProcRowView inherits Rectangle {
     in property <ProcRow> proc;
     height: 44px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
@@ -2518,6 +2550,9 @@ component ProcessesView inherits VerticalLayout {
 component ServiceRowView inherits Rectangle {
     in property <ServiceRow> svc;
     height: 56px;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
     HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
