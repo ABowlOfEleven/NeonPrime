@@ -34,11 +34,9 @@ fn ps(cmd: &str) -> String {
 
 /// Fixed volumes with a drive letter (unelevated).
 pub fn volumes() -> Vec<Volume> {
-    let out = ps(
-        "Get-Volume | Where-Object DriveLetter | ForEach-Object { \
+    let out = ps("Get-Volume | Where-Object DriveLetter | ForEach-Object { \
          \"$($_.DriveLetter)`t$($_.FileSystemLabel)`t$($_.FileSystem)`t\
-         $([math]::Round($_.Size/1GB))`t$([math]::Round($_.SizeRemaining/1GB))\" }",
-    );
+         $([math]::Round($_.Size/1GB))`t$([math]::Round($_.SizeRemaining/1GB))\" }");
     out.lines()
         .filter_map(|line| {
             let mut p = line.splitn(5, '\t');

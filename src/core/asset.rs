@@ -22,8 +22,7 @@ pub fn info() -> AssetInfo {
              \"$($c.Manufacturer)`t$($c.Model)`t$($b.SerialNumber)\"",
         ])
         .output();
-    let (mut manufacturer, mut model, mut serial) =
-        (String::new(), String::new(), String::new());
+    let (mut manufacturer, mut model, mut serial) = (String::new(), String::new(), String::new());
     if let Ok(o) = out {
         let line = String::from_utf8_lossy(&o.stdout);
         let mut p = line.trim().splitn(3, '\t');

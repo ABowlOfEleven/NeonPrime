@@ -23,7 +23,10 @@ pub fn info() -> GpoInfo {
     let last_refresh = raw
         .lines()
         .find(|l| l.contains("Last time Group Policy was applied"))
-        .and_then(|l| l.find("applied:").map(|i| l[i + "applied:".len()..].trim().to_string()))
+        .and_then(|l| {
+            l.find("applied:")
+                .map(|i| l[i + "applied:".len()..].trim().to_string())
+        })
         .unwrap_or_default();
 
     GpoInfo {
