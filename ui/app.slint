@@ -2766,6 +2766,8 @@ export component AppWindow inherits Window {
     forward-focus: fs;
 
     fs := FocusScope {
+        width: root.width;
+        height: root.height;
         key-pressed(e) => {
             if (e.text == "k" && e.modifiers.control) {
                 Palette.open = !Palette.open;
@@ -2793,9 +2795,13 @@ export component AppWindow inherits Window {
             }
             return EventResult.reject;
         }
-    VerticalLayout {
+    Rectangle {
+        width: root.width;
+        height: root.height;
         // ── Title bar ──────────────────────────────────────────────
         Rectangle {
+            y: 0;
+            width: parent.width;
             height: 44px;
             HorizontalLayout {
                 padding-left: 20px;
@@ -2912,8 +2918,11 @@ export component AppWindow inherits Window {
             }
         }
 
-        // ── Body ───────────────────────────────────────────────────
+        // ── Body: fills between the title bar and the status bar. ──────
         HorizontalLayout {
+            y: 44px;
+            width: parent.width;
+            height: parent.height - 44px - 28px;
             Rectangle {
                 width: 160px;
                 VerticalLayout {
@@ -3047,8 +3056,10 @@ export component AppWindow inherits Window {
             }
         }
 
-        // ── Status bar ─────────────────────────────────────────────
+        // ── Status bar (pinned to the bottom) ──────────────────────
         Rectangle {
+            y: parent.height - 28px;
+            width: parent.width;
             height: 28px;
             Rectangle {
                 x: 0;
