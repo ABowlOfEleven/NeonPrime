@@ -1015,14 +1015,17 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
 
         let result = if inv.elevated {
             // Launch elevated via UAC (Start-Process -Verb RunAs). Returns at once.
+            // `visible` actions (SFC/DISM and other repairs) keep their console up so
+            // the user can watch; the rest run hidden.
             let arglist = inv
                 .args
                 .iter()
                 .map(|s| format!("'{}'", s.replace('\'', "''")))
                 .collect::<Vec<_>>()
                 .join(",");
+            let window = if inv.visible { "" } else { " -WindowStyle Hidden" };
             let ps = format!(
-                "Start-Process -FilePath '{}' -ArgumentList {arglist} -Verb RunAs -WindowStyle Hidden",
+                "Start-Process -FilePath '{}' -ArgumentList {arglist} -Verb RunAs{window}",
                 inv.program
             );
             Command::new("powershell")

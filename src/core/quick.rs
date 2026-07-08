@@ -17,6 +17,9 @@ pub struct Invocation {
     pub program: String,
     pub args: Vec<String>,
     pub elevated: bool,
+    /// Keep a visible console open (long repairs like SFC/DISM the user watches).
+    /// Ignored for non-elevated actions.
+    pub visible: bool,
 }
 
 pub fn catalog() -> Vec<QuickAction> {
@@ -184,6 +187,113 @@ pub fn catalog() -> Vec<QuickAction> {
             danger: false,
             elevated: false,
         },
+        // ── Repair & diagnostics (elevated, visible console) ─────────
+        QuickAction {
+            id: "sfc-scan",
+            name: "Scan system files (SFC)",
+            desc: "Run sfc /scannow to scan and repair protected system files, in an elevated console you can watch.",
+            danger: false,
+            elevated: true,
+        },
+        QuickAction {
+            id: "dism-health",
+            name: "Repair component store (DISM)",
+            desc: "Run DISM /Online /Cleanup-Image /RestoreHealth to repair the Windows image, in an elevated console.",
+            danger: false,
+            elevated: true,
+        },
+        QuickAction {
+            id: "chkdsk-scan",
+            name: "Check disk (read-only)",
+            desc: "Run a read-only chkdsk on the system drive. Use /f from an admin prompt to fix (needs a reboot).",
+            danger: false,
+            elevated: true,
+        },
+        QuickAction {
+            id: "gpupdate",
+            name: "Refresh Group Policy",
+            desc: "Run gpupdate /force to reapply computer and user policy.",
+            danger: false,
+            elevated: true,
+        },
+        QuickAction {
+            id: "enable-rdp",
+            name: "Enable Remote Desktop",
+            desc: "Allow inbound RDP connections and open the Remote Desktop firewall group.",
+            danger: false,
+            elevated: true,
+        },
+        QuickAction {
+            id: "network-reset",
+            name: "Reset network stack",
+            desc: "Reset Winsock and TCP/IP, then release, renew, and flush DNS. Finish with a reboot.",
+            danger: false,
+            elevated: true,
+        },
+        QuickAction {
+            id: "battery-report",
+            name: "Battery health report",
+            desc: "Generate a powercfg battery report to your user folder and open it.",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "system-report",
+            name: "System information report",
+            desc: "Write full systeminfo output to your user folder and open it.",
+            danger: false,
+            elevated: false,
+        },
+        // ── Management consoles (MMC snap-ins) ───────────────────────
+        QuickAction {
+            id: "open-eventvwr",
+            name: "Open Event Viewer",
+            desc: "The full Windows event log console (eventvwr.msc).",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-services",
+            name: "Open Services console",
+            desc: "The services.msc management console.",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-taskschd",
+            name: "Open Task Scheduler",
+            desc: "The taskschd.msc console for scheduled tasks.",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-diskmgmt",
+            name: "Open Disk Management",
+            desc: "The diskmgmt.msc console for partitions and volumes.",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-devmgmt",
+            name: "Open Device Manager",
+            desc: "The devmgmt.msc console for hardware and drivers.",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-lusrmgr",
+            name: "Open Local Users & Groups",
+            desc: "The lusrmgr.msc console for local accounts and groups.",
+            danger: false,
+            elevated: false,
+        },
+        QuickAction {
+            id: "open-gpedit",
+            name: "Open Group Policy Editor",
+            desc: "The gpedit.msc console (not present on Windows Home).",
+            danger: false,
+            elevated: false,
+        },
     ]
 }
 
@@ -192,6 +302,14 @@ pub fn invocation(id: &str) -> Option<Invocation> {
         program: program.into(),
         args: args.iter().map(|s| s.to_string()).collect(),
         elevated,
+        visible: false,
+    };
+    // Elevated action that keeps a visible console open (long-running repairs).
+    let invc = |program: &str, args: &[&str]| Invocation {
+        program: program.into(),
+        args: args.iter().map(|s| s.to_string()).collect(),
+        elevated: true,
+        visible: true,
     };
     Some(match id {
         "restart-explorer" => inv(
@@ -280,6 +398,60 @@ pub fn invocation(id: &str) -> Option<Invocation> {
         "open-datetime" => inv("control", &["timedate.cpl"], false),
         "open-printers" => inv("control", &["printers"], false),
         "open-restore" => inv("rstrui", &[], false),
+
+        // ── Repair & diagnostics (elevated, visible console) ─────────
+        // `invc` keeps the elevated console open; cmd /k holds it after the tool
+        // exits so the user can read the result.
+        "sfc-scan" => invc("cmd", &["/k", "sfc /scannow"]),
+        "dism-health" => invc("cmd", &["/k", "DISM /Online /Cleanup-Image /RestoreHealth"]),
+        "chkdsk-scan" => invc("cmd", &["/k", "chkdsk"]),
+        "gpupdate" => invc("cmd", &["/k", "gpupdate /force"]),
+        "enable-rdp" => invc(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-Command",
+                "Set-ItemProperty -Path \"HKLM:\\System\\CurrentControlSet\\Control\\Terminal Server\" \
+                 -Name fDenyTSConnections -Value 0; \
+                 Enable-NetFirewallRule -DisplayGroup \"Remote Desktop\"; \
+                 Write-Host \"Remote Desktop enabled.\"",
+            ],
+        ),
+        "network-reset" => invc(
+            "cmd",
+            &[
+                "/k",
+                "netsh winsock reset & netsh int ip reset & ipconfig /release & \
+                 ipconfig /renew & ipconfig /flushdns & echo. & echo Reboot to finish.",
+            ],
+        ),
+        "battery-report" => inv(
+            "cmd",
+            &[
+                "/c",
+                "powercfg /batteryreport /output \"%USERPROFILE%\\battery-report.html\" & \
+                 start \"\" \"%USERPROFILE%\\battery-report.html\"",
+            ],
+            false,
+        ),
+        "system-report" => inv(
+            "cmd",
+            &[
+                "/c",
+                "systeminfo > \"%USERPROFILE%\\systeminfo.txt\" & \
+                 notepad \"%USERPROFILE%\\systeminfo.txt\"",
+            ],
+            false,
+        ),
+
+        // ── Management consoles (MMC snap-ins) ───────────────────────
+        "open-eventvwr" => inv("eventvwr", &[], false),
+        "open-services" => inv("mmc", &["services.msc"], false),
+        "open-taskschd" => inv("mmc", &["taskschd.msc"], false),
+        "open-diskmgmt" => inv("mmc", &["diskmgmt.msc"], false),
+        "open-devmgmt" => inv("mmc", &["devmgmt.msc"], false),
+        "open-lusrmgr" => inv("mmc", &["lusrmgr.msc"], false),
+        "open-gpedit" => inv("mmc", &["gpedit.msc"], false),
 
         _ => return None,
     })

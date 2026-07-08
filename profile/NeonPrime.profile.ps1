@@ -119,6 +119,113 @@ function sysinfo { Get-ComputerInfo | Select-Object CsName, WindowsProductName, 
 function cleanup { Remove-Item "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue; 'Temp cleared.' }
 function update-all { winget upgrade --all --accept-source-agreements --accept-package-agreements }
 
+# ─────────────────────────── Sysadmin toolkit ──────────────────────────────
+# Recent errors/warnings from an event log (Critical/Error/Warning).
+function errlog {
+    param([string]$Log = 'System', [int]$Count = 20)
+    Get-WinEvent -FilterHashtable @{ LogName = $Log; Level = 1, 2, 3 } -MaxEvents $Count -ErrorAction SilentlyContinue |
+        Select-Object TimeCreated,
+            @{ n = 'Level'; e = { $_.LevelDisplayName } },
+            Id, ProviderName,
+            @{ n = 'Message'; e = { ($_.Message -split "`r?`n")[0] } } |
+        Format-Table -AutoSize -Wrap
+}
+function syserr { errlog System @args }
+function apperr { errlog Application @args }
+
+# Which process owns a TCP port; list listeners; kill by port.
+function port {
+    param([Parameter(Mandatory)][int]$Number)
+    Get-NetTCPConnection -LocalPort $Number -ErrorAction SilentlyContinue |
+        Select-Object LocalAddress, LocalPort, RemoteAddress, State,
+            @{ n = 'PID'; e = { $_.OwningProcess } },
+            @{ n = 'Process'; e = { (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName } } |
+        Format-Table -AutoSize
+}
+function ports {
+    Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+        Select-Object LocalAddress, LocalPort,
+            @{ n = 'PID'; e = { $_.OwningProcess } },
+            @{ n = 'Process'; e = { (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName } } |
+        Sort-Object LocalPort | Format-Table -AutoSize
+}
+function portkill {
+    param([Parameter(Mandatory)][int]$Number)
+    $pids = Get-NetTCPConnection -LocalPort $Number -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique
+    if (-not $pids) { "nothing listening on port $Number"; return }
+    foreach ($procId in $pids) {
+        Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+        "killed PID $procId on port $Number"
+    }
+}
+function Test-Port {
+    param([Parameter(Mandatory)][string]$ComputerName, [Parameter(Mandatory)][int]$Number)
+    Test-NetConnection -ComputerName $ComputerName -Port $Number -InformationLevel Detailed
+}
+
+# Services: find, restart, list auto-services that are stopped.
+function svc { param([string]$Name = '') Get-Service -Name "*$Name*" -ErrorAction SilentlyContinue | Format-Table -AutoSize Status, Name, DisplayName }
+function svcrestart { param([Parameter(Mandatory)][string]$Name) Restart-Service -Name $Name -Force -ErrorAction Stop; "restarted $Name" }
+function svcfailed { Get-Service | Where-Object { $_.Status -eq 'Stopped' -and $_.StartType -eq 'Automatic' } | Format-Table -AutoSize Status, Name, DisplayName }
+
+# Is a reboot pending?
+function Test-PendingReboot {
+    $pending = $false
+    if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') { $pending = $true }
+    if (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') { $pending = $true }
+    $pfro = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -ErrorAction SilentlyContinue).PendingFileRenameOperations
+    if ($pfro) { $pending = $true }
+    if ($pending) { Write-Host 'Reboot PENDING' -ForegroundColor Yellow } else { Write-Host 'No reboot pending' -ForegroundColor Green }
+}
+
+# Network config + reset + DNS lookup.
+function ipinfo { Get-NetIPConfiguration | Format-List }
+function Reset-Network {
+    ipconfig /release | Out-Null
+    ipconfig /renew | Out-Null
+    ipconfig /flushdns | Out-Null
+    'Released, renewed, flushed. For a full winsock reset run NeonPrime -> Quick Actions -> Network reset (elevated).'
+}
+function Resolve-Name { param([Parameter(Mandatory)][string]$Name) Resolve-DnsName $Name -ErrorAction SilentlyContinue | Format-Table -AutoSize }
+
+# Group Policy refresh.
+function gpup { gpupdate /force }
+
+# Disk usage of a folder's immediate children; biggest files under a path.
+function duf {
+    param([string]$Path = '.')
+    Get-ChildItem -LiteralPath $Path -Directory -Force -ErrorAction SilentlyContinue | ForEach-Object {
+        $bytes = (Get-ChildItem -LiteralPath $_.FullName -Recurse -File -Force -ErrorAction SilentlyContinue |
+            Measure-Object Length -Sum).Sum
+        [pscustomobject]@{ Folder = $_.Name; 'Size(MB)' = [math]::Round(($bytes) / 1MB, 1) }
+    } | Sort-Object 'Size(MB)' -Descending | Format-Table -AutoSize
+}
+function Get-LargeFiles {
+    param([string]$Path = '.', [int]$Top = 20)
+    Get-ChildItem -LiteralPath $Path -Recurse -File -Force -ErrorAction SilentlyContinue |
+        Sort-Object Length -Descending | Select-Object -First $Top FullName,
+            @{ n = 'Size(MB)'; e = { [math]::Round($_.Length / 1MB, 1) } } | Format-Table -AutoSize
+}
+
+# Installed updates / hotfixes (most recent first).
+function patches { Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 25 HotFixID, Description, InstalledOn | Format-Table -AutoSize }
+
+# Logged-on sessions.
+function who { quser 2>$null }
+
+# Remote desktop to a host.
+function rdp { param([Parameter(Mandatory)][string]$ComputerName) mstsc /v:$ComputerName }
+
+# Elevated SFC + DISM repair in a new admin console.
+function Repair-System {
+    Start-Process powershell -Verb RunAs -ArgumentList '-NoExit', '-Command', 'sfc /scannow; DISM /Online /Cleanup-Image /RestoreHealth'
+}
+
+# Restart / shut down (optional delay in seconds).
+function reboot { param([int]$Seconds = 0) shutdown /r /t $Seconds }
+function poweroff { param([int]$Seconds = 0) shutdown /s /t $Seconds }
+
 # ─────────────────────────────── Git ───────────────────────────────────────
 function gs { git status @args }
 function ga { git add . }
@@ -196,6 +303,14 @@ ${s}System / net${r}
   ${c}uptime${r}  ${c}sysinfo${r}  ${c}cleanup${r} ${d}clear %TEMP%${r}  ${c}update-all${r} ${d}winget upgrade${r}
   ${c}Get-PubIP${r}  ${c}flushdns${r}  ${c}weather [loc]${r}  ${c}cpy${r} ${d}copy${r}  ${c}pst${r} ${d}paste${r}
   ${c}export <n> <v>${r}  ${c}reload${r} ${d}re-source${r}  ${c}ep${r} ${d}edit profile${r}  ${c}su${r} ${d}elevated shell${r}
+
+${s}Sysadmin${r}
+  ${c}syserr / apperr [n]${r} ${d}recent event-log errors${r}   ${c}errlog <log> [n]${r}
+  ${c}port <n>${r} ${d}who owns a port${r}  ${c}ports${r} ${d}listeners${r}  ${c}portkill <n>${r}  ${c}Test-Port <host> <n>${r}
+  ${c}svc [name]${r} ${d}status${r}  ${c}svcrestart <name>${r}  ${c}svcfailed${r} ${d}stopped auto-services${r}
+  ${c}Test-PendingReboot${r}  ${c}ipinfo${r}  ${c}Reset-Network${r}  ${c}Resolve-Name <host>${r}  ${c}gpup${r} ${d}gpupdate /force${r}
+  ${c}duf [path]${r} ${d}folder sizes${r}  ${c}Get-LargeFiles [path] [n]${r}  ${c}patches${r} ${d}hotfixes${r}  ${c}who${r} ${d}sessions${r}
+  ${c}rdp <host>${r}  ${c}Repair-System${r} ${d}sfc + DISM (admin)${r}  ${c}reboot [s]${r}  ${c}poweroff [s]${r}
 
 ${m}──────────────────────────────────────────────────────────${r}
 "@
