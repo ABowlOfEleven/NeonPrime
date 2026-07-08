@@ -24,8 +24,8 @@ use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
     asset, bundle, cleanup, config, debloat, dns, engine, eventlog, features, firewall, installs,
-    journal, localusers, microwin, modes, netmon, posture, power, privacy, procmon, quick, repair,
-    services, settings, startup, tweaks,
+    journal, localusers, microwin, modes, netmon, posture, power, printers, privacy, procmon,
+    profiles, quick, repair, services, settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -2045,6 +2045,141 @@ fn wire_support(app: &AppWindow, notify: &Notify) -> Timer {
     timer
 }
 
+/// Printers panel: list printers + queue depth (unelevated), clear a queue or
+/// restart the spooler (elevated).
+fn wire_printers(app: &AppWindow, notify: &Notify) -> Timer {
+    let source: Rc<VecModel<PrinterRow>> = Rc::new(VecModel::default());
+    app.global::<Printers>()
+        .set_rows(ModelRc::from(source.clone()));
+    app.global::<Printers>().set_loading(true);
+
+    let (tx, rx) = mpsc::channel::<Vec<printers::Printer>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(printers::list());
+            });
+        }
+    };
+    scan();
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Printers>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Printers>().set_loading(true);
+            }
+            scan();
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Printers>().on_clear_queue(move |name| {
+            match launch_elevated_ps(&printers::clear_queue_script(&name), false) {
+                Ok(()) => notify("info", &format!("Clearing {name} queue (approve UAC), then REFRESH")),
+                Err(e) => notify("error", &format!("{name}: {e}")),
+            }
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Printers>().on_restart_spooler(move || {
+            match launch_elevated_ps(&printers::restart_spooler_script(), false) {
+                Ok(()) => notify("info", "Restarting Print Spooler (approve UAC), then REFRESH"),
+                Err(e) => notify("error", &format!("Spooler: {e}")),
+            }
+        });
+    }
+
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(v) = rx.try_recv() {
+            let rows: Vec<PrinterRow> = v
+                .iter()
+                .map(|p| PrinterRow {
+                    name: p.name.as_str().into(),
+                    status: p.status.as_str().into(),
+                    jobs: p.jobs as i32,
+                    is_default: p.is_default,
+                })
+                .collect();
+            source2.set_vec(rows);
+            if let Some(app) = weak.upgrade() {
+                app.global::<Printers>().set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
+/// Profiles panel: local user profiles with size + last-use (unelevated), delete
+/// a stale profile (elevated).
+fn wire_profiles(app: &AppWindow, notify: &Notify) -> Timer {
+    let source: Rc<VecModel<ProfileRow>> = Rc::new(VecModel::default());
+    app.global::<Profiles>()
+        .set_rows(ModelRc::from(source.clone()));
+    app.global::<Profiles>().set_loading(true);
+
+    let (tx, rx) = mpsc::channel::<Vec<profiles::Profile>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(profiles::list());
+            });
+        }
+    };
+    scan();
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Profiles>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Profiles>().set_loading(true);
+            }
+            scan();
+        });
+    }
+    {
+        let notify = notify.clone();
+        app.global::<Profiles>().on_delete_profile(move |sid| {
+            match launch_elevated_ps(&profiles::delete_script(&sid), false) {
+                Ok(()) => notify("info", "Removing profile (approve UAC), then REFRESH"),
+                Err(e) => notify("error", &format!("Profile: {e}")),
+            }
+        });
+    }
+
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(v) = rx.try_recv() {
+            let rows: Vec<ProfileRow> = v
+                .iter()
+                .map(|p| ProfileRow {
+                    account: p.account.as_str().into(),
+                    path: p.path.as_str().into(),
+                    size_mb: p.size_mb.clamp(-1, i32::MAX as i64) as i32,
+                    last_use: p.last_use.as_str().into(),
+                    loaded: p.loaded,
+                    sid: p.sid.as_str().into(),
+                })
+                .collect();
+            source2.set_vec(rows);
+            if let Some(app) = weak.upgrade() {
+                app.global::<Profiles>().set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
 /// MicroWin, debloated-ISO builder. Generates an elevated build script + an
 /// autounattend, then runs them in a visible console. (Heavy, admin, ~20 GB.)
 fn wire_microwin(app: &AppWindow, notify: &Notify) {
@@ -2798,6 +2933,8 @@ fn main() -> Result<(), slint::PlatformError> {
     let _users_pump = wire_users(&app, &notify);
     let _posture_pump = wire_posture(&app, &notify);
     let _support_pump = wire_support(&app, &notify);
+    let _printers_pump = wire_printers(&app, &notify);
+    let _profiles_pump = wire_profiles(&app, &notify);
     wire_microwin(&app, &notify);
     wire_palette(&app);
     let power_refresh = wire_power(&app, &notify);

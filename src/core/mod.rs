@@ -48,9 +48,13 @@ pub mod posture;
 #[cfg(windows)]
 pub mod power;
 #[cfg(windows)]
+pub mod printers;
+#[cfg(windows)]
 pub mod privacy;
 #[cfg(windows)]
 pub mod procmon;
+#[cfg(windows)]
+pub mod profiles;
 #[cfg(windows)]
 pub mod quick;
 #[cfg(windows)]

@@ -359,6 +359,37 @@ export global Support {
     callback warranty-lookup();
 }
 
+export struct PrinterRow {
+    name: string,
+    status: string,
+    jobs: int,
+    is-default: bool,
+}
+
+export global Printers {
+    in property <[PrinterRow]> rows;
+    in property <bool> loading: true;
+    callback refresh();
+    callback clear-queue(string);
+    callback restart-spooler();
+}
+
+export struct ProfileRow {
+    account: string,
+    path: string,
+    size-mb: int,
+    last-use: string,
+    loaded: bool,
+    sid: string,
+}
+
+export global Profiles {
+    in property <[ProfileRow]> rows;
+    in property <bool> loading: true;
+    callback refresh();
+    callback delete-profile(string);
+}
+
 export global MicroWin {
     in-out property <string> iso;
     in-out property <string> output;
@@ -3351,6 +3382,228 @@ component SupportView inherits VerticalLayout {
     }
 }
 
+component PrinterRowView inherits Rectangle {
+    in property <PrinterRow> pr;
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: pr.name;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                if pr.is-default: Text {
+                    text: "· DEFAULT";
+                    color: Theme.accent-soft;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: pr.status + "  ·  " + pr.jobs + " job(s) queued";
+                color: pr.jobs > 0 ? Theme.ember-soft : Theme.text-dim;
+                font-size: 10px;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 120px;
+            if pr.jobs > 0: PushButton {
+                w: 114px;
+                danger: true;
+                label: "CLEAR QUEUE";
+                clicked => {
+                    Printers.clear-queue(pr.name);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component PrintersView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "PRINTERS";
+        hint: Printers.loading ? "reading printers…" : "queues and the Print Spooler";
+        PushButton {
+            w: 150px;
+            label: "RESTART SPOOLER";
+            clicked => {
+                Printers.restart-spooler();
+            }
+        }
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Printers.refresh();
+            }
+        }
+    }
+    if Printers.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Reading printers…";
+    }
+    if !Printers.loading && Printers.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No printers installed.";
+    }
+    if !Printers.loading && Printers.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for p in Printers.rows: PrinterRowView {
+            pr: p;
+        }
+    }
+}
+
+component ProfileRowView inherits Rectangle {
+    in property <ProfileRow> pf;
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Text {
+                    text: pf.account;
+                    color: Theme.text-body;
+                    font-size: 13px;
+                    overflow: elide;
+                }
+                if pf.loaded: Text {
+                    text: "· LOADED";
+                    color: Theme.accent-soft;
+                    font-size: 10px;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: pf.path;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 74px;
+            Rectangle {
+                height: 18px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: pf.size-mb >= 0 ? pf.size-mb + " MB" : "-";
+                    color: Theme.accent-soft;
+                    font-size: 13px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 84px;
+            Rectangle {
+                height: 16px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: pf.last-use != "" ? pf.last-use : "-";
+                    color: Theme.text-dim;
+                    font-size: 10px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            width: 84px;
+            if !pf.loaded: PushButton {
+                w: 78px;
+                danger: true;
+                label: "DELETE";
+                clicked => {
+                    Profiles.delete-profile(pf.sid);
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component ProfilesView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "PROFILES";
+        hint: Profiles.loading ? "measuring profiles…" : "local user profiles · delete stale to reclaim disk";
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Profiles.refresh();
+            }
+        }
+    }
+    if Profiles.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Measuring user profiles…";
+    }
+    if !Profiles.loading && Profiles.rows.length == 0: EmptyState {
+        vertical-stretch: 1;
+        text: "No removable user profiles.";
+    }
+    if !Profiles.loading && Profiles.rows.length > 0: ListView {
+        vertical-stretch: 1;
+        for p in Profiles.rows: ProfileRowView {
+            pf: p;
+        }
+    }
+}
+
 component MicroWinOption inherits HorizontalLayout {
     in property <string> label;
     in-out property <bool> on;
@@ -3683,6 +3936,8 @@ export component AppWindow inherits Window {
 
                             NavSection { label: "IT"; }
                             NavItem { label: "SUPPORT"; index: 19; icon: @image-url("icons/support.svg"); }
+                            NavItem { label: "PRINTERS"; index: 20; icon: @image-url("icons/printer.svg"); }
+                            NavItem { label: "PROFILES"; index: 21; icon: @image-url("icons/profiles.svg"); }
                         }
                     }
                 }
@@ -3703,7 +3958,7 @@ export component AppWindow inherits Window {
                 content-col := Rectangle {
                     // Table panels (Network 11, Processes 13, Services 14) need room
                     // for their columns; everything else uses the cozy reading width.
-                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14 || Nav.page == 16 || Nav.page == 17;
+                    property <bool> wide: Nav.page == 11 || Nav.page == 13 || Nav.page == 14 || Nav.page == 16 || Nav.page == 17 || Nav.page == 21;
                     width: min(parent.width, self.wide ? Theme.content-wide : Theme.content-max);
                     x: (parent.width - self.width) / 2;
                     height: parent.height;
@@ -3784,6 +4039,14 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 19: SupportView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 20: PrintersView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 21: ProfilesView {
                     width: parent.width;
                     height: parent.height;
                 }
