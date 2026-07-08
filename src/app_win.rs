@@ -775,14 +775,24 @@ fn wire_config(
                 ),
             );
             // Provisioning: install the profile's app set in a visible elevated
-            // console (winget). Skipped when the profile lists no apps.
-            if !cfg.apps.is_empty() {
-                match launch_elevated_ps(&installs::install_many_script(&cfg.apps), true) {
+            // console (winget). Security: an imported profile is untrusted, so only
+            // ids that exist in our own catalog are ever installed (and the script
+            // builder additionally rejects non-token ids). This blocks command
+            // injection and arbitrary-package installs from a malicious profile.
+            let known = installs::catalog();
+            let apps: Vec<String> = cfg
+                .apps
+                .iter()
+                .filter(|id| known.iter().any(|a| a.id == **id))
+                .cloned()
+                .collect();
+            if !apps.is_empty() {
+                match launch_elevated_ps(&installs::install_many_script(&apps), true) {
                     Ok(()) => notify(
                         "info",
                         &format!(
                             "Installing {} app(s) from the profile (approve UAC), see the console.",
-                            cfg.apps.len()
+                            apps.len()
                         ),
                     ),
                     Err(e) => notify("error", &format!("App install failed: {e}")),
@@ -1918,7 +1928,7 @@ fn write_compliance_report(items: &[posture::PostureItem]) -> io::Result<String>
     path.push(format!("neonprime-compliance-{machine}.html"));
     std::fs::write(&path, html)?;
     let p = path.to_string_lossy().to_string();
-    let _ = Command::new("cmd").args(["/c", "start", "", &p]).spawn();
+    let _ = Command::new("explorer").arg(&p).spawn();
     Ok(p)
 }
 
@@ -2045,7 +2055,7 @@ fn wire_support(app: &AppWindow, notify: &Notify) -> Timer {
         app.global::<Support>().on_warranty_lookup(move || {
             let url = warranty.borrow().clone();
             if !url.is_empty() {
-                let _ = Command::new("cmd").args(["/c", "start", "", &url]).spawn();
+                let _ = Command::new("explorer").arg(&url).spawn();
             }
         });
     }
@@ -2223,7 +2233,7 @@ fn write_text_report(name: &str, content: &str) -> io::Result<String> {
     path.push(name);
     std::fs::write(&path, content)?;
     let p = path.to_string_lossy().to_string();
-    let _ = Command::new("cmd").args(["/c", "start", "", &p]).spawn();
+    let _ = Command::new("explorer").arg(&p).spawn();
     Ok(p)
 }
 
@@ -2490,7 +2500,7 @@ fn wire_gpo(app: &AppWindow, notify: &Notify) -> Timer {
                 path.push("neonprime-gpreport.html");
                 let p = path.to_string_lossy().to_string();
                 let _ = Command::new("gpresult").args(gpo::export_argv(&p)).status();
-                let _ = Command::new("cmd").args(["/c", "start", "", &p]).spawn();
+                let _ = Command::new("explorer").arg(&p).spawn();
             });
         });
     }

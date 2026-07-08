@@ -244,10 +244,23 @@ pub fn uninstall_cmd(id: &str) -> String {
     format!("winget uninstall --id {id} -e")
 }
 
+/// True for a syntactically valid winget id (Publisher.Package tokens only).
+/// Guards the elevated install script against injection from an imported profile.
+pub fn is_safe_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 100
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+' | '_'))
+}
+
 /// One elevated console script that installs every id in turn (for applying a
-/// provisioning profile's app set). Empty when there are no ids.
+/// provisioning profile's app set). Unsafe-looking ids are dropped, so this must
+/// only ever run on ids that also passed the catalog whitelist at the call site.
+/// Empty when there are no installable ids.
 pub fn install_many_script(ids: &[String]) -> String {
     ids.iter()
+        .filter(|id| is_safe_id(id))
         .map(|id| install_cmd(id))
         .collect::<Vec<_>>()
         .join("; ")
@@ -256,6 +269,23 @@ pub fn install_many_script(ids: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn safe_id_rejects_injection() {
+        assert!(is_safe_id("Microsoft.PowerShell"));
+        assert!(is_safe_id("Git.Git"));
+        assert!(!is_safe_id("x; calc.exe"));
+        assert!(!is_safe_id("a && b"));
+        assert!(!is_safe_id("id`whoami`"));
+        assert!(!is_safe_id(""));
+    }
+
+    #[test]
+    fn install_many_drops_unsafe_ids() {
+        let script = install_many_script(&["Git.Git".into(), "evil; calc".into()]);
+        assert!(script.contains("Git.Git"));
+        assert!(!script.contains("calc"));
+    }
 
     #[test]
     fn catalog_parses_many_apps() {
