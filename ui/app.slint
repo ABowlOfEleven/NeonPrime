@@ -735,6 +735,56 @@ component PushButton inherits Rectangle {
     }
 }
 
+// A wrapping description that stays readable: it clamps to about two lines and,
+// when the full text is taller than that, offers a "read more" toggle that grows
+// the row to show everything (and "read less" to collapse it again). Rows that
+// embed this must derive their own height from content (not a fixed height) so
+// the expansion is actually visible.
+component ExpandableDesc inherits VerticalLayout {
+    in property <string> text;
+    in property <color> text-color: Theme.text-dim;
+    in property <length> size: 11px;
+    // Roughly two lines tall for the given font size.
+    property <length> collapsed-max: root.size * 2.7;
+    property <bool> expanded: false;
+    property <bool> overflowing: measure.preferred-height > root.collapsed-max + 0.5px;
+    spacing: 1px;
+
+    Rectangle {
+        clip: true;
+        height: (root.expanded || !root.overflowing) ? measure.preferred-height : root.collapsed-max;
+        animate height { duration: 120ms; easing: ease-out; }
+        measure := Text {
+            width: 100%;
+            text: root.text;
+            color: root.text-color;
+            font-size: root.size;
+            wrap: word-wrap;
+        }
+    }
+    // Read more / less toggle. Kept in the tree unconditionally (no structural
+    // `if`, which would form a layout binding loop) and collapsed to zero height
+    // when the text already fits.
+    Rectangle {
+        height: root.overflowing ? 15px : 0px;
+        clip: true;
+        HorizontalLayout {
+            alignment: start;
+            Text {
+                text: root.expanded ? "read less" : "read more";
+                color: Theme.accent-soft;
+                font-size: 10px;
+                rm-touch := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.expanded = !root.expanded;
+                    }
+                }
+            }
+        }
+    }
+}
+
 component QuickActionRow inherits Rectangle {
     in property <QuickRow> qa;
     height: 56px;
@@ -1042,12 +1092,13 @@ component ModeCardView inherits Rectangle {
     in property <ModeCard> card;
     in property <bool> active;
     callback activate;
-    height: 96px;
     border-radius: 12px;
     border-width: active ? 2px : 1px;
     border-color: active ? Theme.accent : Theme.divider;
     background: active ? Theme.accent.with-alpha(0.08) : transparent;
-    HorizontalLayout {
+    // Keep the card proportions, but let it grow if the description is expanded.
+    height: max(96px, body.preferred-height);
+    body := HorizontalLayout {
         padding: 16px;
         spacing: 14px;
         VerticalLayout {
@@ -1075,11 +1126,9 @@ component ModeCardView inherits Rectangle {
                 color: Theme.text-body;
                 font-size: 12px;
             }
-            Text {
+            ExpandableDesc {
                 text: root.card.desc;
-                color: Theme.text-dim;
-                font-size: 11px;
-                wrap: word-wrap;
+                size: 11px;
             }
         }
         VerticalLayout {
@@ -1131,16 +1180,19 @@ component ModesView inherits VerticalLayout {
 
 component TweakRowView inherits Rectangle {
     in property <TweakRow> tw;
-    height: 60px;
+    // Height follows the content so the description can expand (see ExpandableDesc).
+    height: body.preferred-height;
     background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
     animate background { duration: 110ms; easing: ease-out; }
     // Row-spanning hover tint. Placed first so it sits beneath the content; the
     // Toggle's own TouchArea stays on top and keeps handling clicks.
     row-touch := TouchArea { }
 
-    HorizontalLayout {
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 11px;
+        padding-bottom: 11px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -1168,11 +1220,9 @@ component TweakRowView inherits Rectangle {
                     vertical-alignment: center;
                 }
             }
-            Text {
+            ExpandableDesc {
                 text: root.tw.desc;
-                color: Theme.text-dim;
-                font-size: 11px;
-                wrap: word-wrap;
+                size: 11px;
             }
         }
         VerticalLayout {
@@ -1591,13 +1641,15 @@ component ConfigView inherits VerticalLayout {
 
 component StartupRowView inherits Rectangle {
     in property <StartupRow> entry;
-    height: 52px;
+    height: body.preferred-height;
     background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
     animate background { duration: 110ms; easing: ease-out; }
     row-touch := TouchArea { }
-    HorizontalLayout {
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 9px;
+        padding-bottom: 9px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -1609,11 +1661,9 @@ component StartupRowView inherits Rectangle {
                 font-size: 13px;
                 overflow: elide;
             }
-            Text {
+            ExpandableDesc {
                 text: root.entry.command;
-                color: Theme.text-dim;
-                font-size: 10px;
-                overflow: elide;
+                size: 10px;
             }
         }
         VerticalLayout {
@@ -1665,13 +1715,15 @@ component StartupView inherits VerticalLayout {
 
 component FeatureRowView inherits Rectangle {
     in property <FeatureRow> entry;
-    height: 56px;
+    height: body.preferred-height;
     background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
     animate background { duration: 110ms; easing: ease-out; }
     row-touch := TouchArea { }
-    HorizontalLayout {
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -1693,11 +1745,9 @@ component FeatureRowView inherits Rectangle {
                     vertical-alignment: center;
                 }
             }
-            Text {
+            ExpandableDesc {
                 text: root.entry.desc;
-                color: Theme.text-dim;
-                font-size: 10px;
-                overflow: elide;
+                size: 10px;
             }
         }
         VerticalLayout {
@@ -1756,10 +1806,15 @@ component FeaturesView inherits VerticalLayout {
 
 component PrivacyCheckView inherits Rectangle {
     in property <PrivacyCheck> check;
-    height: root.check.warn != "" ? 92px : 56px;
-    HorizontalLayout {
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -1781,11 +1836,9 @@ component PrivacyCheckView inherits Rectangle {
                     vertical-alignment: center;
                 }
             }
-            Text {
+            ExpandableDesc {
                 text: root.check.desc;
-                color: Theme.text-dim;
-                font-size: 10px;
-                overflow: elide;
+                size: 10px;
             }
             if root.check.warn != "": Text {
                 text: "⚠ " + root.check.warn;
@@ -1890,13 +1943,15 @@ component PrivacyView inherits VerticalLayout {
 
 component HistoryRowView inherits Rectangle {
     in property <HistoryRow> entry;
-    height: 56px;
+    height: body.preferred-height;
     background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
     animate background { duration: 110ms; easing: ease-out; }
     row-touch := TouchArea { }
-    HorizontalLayout {
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -1918,11 +1973,9 @@ component HistoryRowView inherits Rectangle {
                     vertical-alignment: center;
                 }
             }
-            Text {
+            ExpandableDesc {
                 text: root.entry.when + "  ·  " + root.entry.detail;
-                color: Theme.text-dim;
-                font-size: 10px;
-                overflow: elide;
+                size: 10px;
             }
         }
         VerticalLayout {
@@ -1984,13 +2037,15 @@ component HistoryView inherits VerticalLayout {
 
 component DebloatRowView inherits Rectangle {
     in property <DebloatRow> entry;
-    height: 56px;
+    height: body.preferred-height;
     background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
     animate background { duration: 110ms; easing: ease-out; }
     row-touch := TouchArea { }
-    HorizontalLayout {
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -2002,11 +2057,9 @@ component DebloatRowView inherits Rectangle {
                 font-size: 13px;
                 overflow: elide;
             }
-            Text {
+            ExpandableDesc {
                 text: root.entry.desc;
-                color: Theme.text-dim;
-                font-size: 10px;
-                overflow: elide;
+                size: 10px;
             }
         }
         // Status badge (only once probed).
@@ -2082,13 +2135,15 @@ component DebloatView inherits VerticalLayout {
 
 component CleanupRowView inherits Rectangle {
     in property <CleanRow> target;
-    height: 56px;
+    height: body.preferred-height;
     background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
     animate background { duration: 110ms; easing: ease-out; }
     row-touch := TouchArea { }
-    HorizontalLayout {
+    body := HorizontalLayout {
         padding-left: 18px;
         padding-right: 18px;
+        padding-top: 10px;
+        padding-bottom: 10px;
         spacing: 14px;
         VerticalLayout {
             alignment: center;
@@ -2110,11 +2165,9 @@ component CleanupRowView inherits Rectangle {
                     vertical-alignment: center;
                 }
             }
-            Text {
+            ExpandableDesc {
                 text: root.target.desc;
-                color: Theme.text-dim;
-                font-size: 10px;
-                overflow: elide;
+                size: 10px;
             }
             // Reclaimable-size bar, relative to the largest target.
             Rectangle {
