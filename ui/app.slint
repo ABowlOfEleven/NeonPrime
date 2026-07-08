@@ -330,6 +330,23 @@ export global Users {
     callback reset-password(string);
 }
 
+export struct PostureRow {
+    name: string,
+    status: string,
+    state: int, // 0 unknown, 1 good, 2 warn, 3 risk
+    detail: string,
+}
+
+export global Posture {
+    in property <[PostureRow]> rows;
+    in property <bool> loading: true;
+    in property <int> good;
+    in property <int> warn;
+    in property <int> bad;
+    callback refresh();
+    callback export-report();
+}
+
 export global MicroWin {
     in-out property <string> iso;
     in-out property <string> output;
@@ -3096,6 +3113,119 @@ component UsersView inherits VerticalLayout {
     }
 }
 
+component PostureRowView inherits Rectangle {
+    in property <PostureRow> item;
+    property <color> tint: item.state == 1
+        ? Theme.accent
+        : (item.state == 2 ? Theme.ember-soft : (item.state == 3 ? Theme.ember : Theme.text-dim));
+    height: body.preferred-height;
+    background: row-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    animate background { duration: 110ms; easing: ease-out; }
+    row-touch := TouchArea { }
+    body := HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        padding-top: 11px;
+        padding-bottom: 11px;
+        spacing: 12px;
+        VerticalLayout {
+            alignment: start;
+            Rectangle {
+                width: 60px;
+                height: 18px;
+                border-radius: 5px;
+                border-width: 1px;
+                border-color: root.tint;
+                background: root.tint.with-alpha(0.12);
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: item.state == 1 ? "OK" : (item.state == 2 ? "WARN" : (item.state == 3 ? "RISK" : "?"));
+                    color: root.tint;
+                    font-size: 9px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3px;
+            horizontal-stretch: 1;
+            Text {
+                text: item.name;
+                color: Theme.text-body;
+                font-size: 13px;
+                overflow: elide;
+            }
+            Text {
+                text: item.detail;
+                color: Theme.text-dim;
+                font-size: 10px;
+                overflow: elide;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                height: 18px;
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: item.status;
+                    color: Theme.text-body;
+                    font-size: 12px;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+}
+
+component ComplianceView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 10px;
+    PanelHeader {
+        title: "COMPLIANCE";
+        hint: Posture.loading
+            ? "checking security posture…"
+            : Posture.good + " ok · " + Posture.warn + " warn · " + Posture.bad + " risk";
+        PushButton {
+            w: 84px;
+            label: "EXPORT";
+            clicked => {
+                Posture.export-report();
+            }
+        }
+        PushButton {
+            w: 90px;
+            label: "REFRESH";
+            clicked => {
+                Posture.refresh();
+            }
+        }
+    }
+    if Posture.loading: EmptyState {
+        vertical-stretch: 1;
+        text: "Checking security posture…";
+    }
+    if !Posture.loading: ListView {
+        vertical-stretch: 1;
+        for p in Posture.rows: PostureRowView {
+            item: p;
+        }
+    }
+}
+
 component MicroWinOption inherits HorizontalLayout {
     in property <string> label;
     in-out property <bool> on;
@@ -3421,6 +3551,7 @@ export component AppWindow inherits Window {
                             NavItem { label: "MODES"; index: 3; icon: @image-url("icons/modes.svg"); }
                             NavItem { label: "SERVICES"; index: 14; icon: @image-url("icons/services.svg"); }
                             NavItem { label: "USERS"; index: 17; icon: @image-url("icons/users.svg"); }
+                            NavItem { label: "COMPLIANCE"; index: 18; icon: @image-url("icons/compliance.svg"); }
                             NavItem { label: "ACTIONS"; index: 5; icon: @image-url("icons/bolt.svg"); }
                             NavItem { label: "CONFIG"; index: 4; icon: @image-url("icons/config.svg"); }
                             NavItem { label: "HISTORY"; index: 9; icon: @image-url("icons/history.svg"); }
@@ -3517,6 +3648,10 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 17: UsersView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 18: ComplianceView {
                     width: parent.width;
                     height: parent.height;
                 }

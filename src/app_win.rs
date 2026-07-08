@@ -24,8 +24,8 @@ use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
     cleanup, config, debloat, dns, engine, eventlog, features, firewall, installs, journal,
-    localusers, microwin, modes, netmon, power, privacy, procmon, quick, repair, services, settings,
-    startup, tweaks,
+    localusers, microwin, modes, netmon, posture, power, privacy, procmon, quick, repair, services,
+    settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -1858,6 +1858,114 @@ fn wire_users(app: &AppWindow, notify: &Notify) -> Timer {
     timer
 }
 
+/// A local timestamp string for reports (one cheap PowerShell call).
+fn ps_now() -> String {
+    Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "(Get-Date).ToString('yyyy-MM-dd HH:mm')",
+        ])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default()
+}
+
+/// Write the compliance report to the user's profile folder and open it.
+fn write_compliance_report(items: &[posture::PostureItem]) -> io::Result<String> {
+    let machine = std::env::var("COMPUTERNAME").unwrap_or_else(|_| "this-pc".into());
+    let html = posture::report_html(items, &machine, &ps_now());
+    let mut path = PathBuf::from(std::env::var("USERPROFILE").unwrap_or_else(|_| ".".into()));
+    path.push(format!("neonprime-compliance-{machine}.html"));
+    std::fs::write(&path, html)?;
+    let p = path.to_string_lossy().to_string();
+    let _ = Command::new("cmd").args(["/c", "start", "", &p]).spawn();
+    Ok(p)
+}
+
+/// Compliance & posture panel: read-only security board (Defender, firewall,
+/// BitLocker, TPM, Secure Boot, UAC, update age) with an HTML report export.
+fn wire_posture(app: &AppWindow, notify: &Notify) -> Timer {
+    let source: Rc<VecModel<PostureRow>> = Rc::new(VecModel::default());
+    app.global::<Posture>()
+        .set_rows(ModelRc::from(source.clone()));
+    app.global::<Posture>().set_loading(true);
+
+    let (tx, rx) = mpsc::channel::<Vec<posture::PostureItem>>();
+    let scan = {
+        let tx = tx.clone();
+        move || {
+            let tx = tx.clone();
+            std::thread::spawn(move || {
+                let _ = tx.send(posture::scan());
+            });
+        }
+    };
+    scan();
+
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        app.global::<Posture>().on_refresh(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Posture>().set_loading(true);
+            }
+            scan();
+        });
+    }
+
+    {
+        let notify = notify.clone();
+        let src = source.clone();
+        app.global::<Posture>().on_export_report(move || {
+            let mut items = Vec::with_capacity(src.row_count());
+            for i in 0..src.row_count() {
+                if let Some(r) = src.row_data(i) {
+                    items.push(posture::PostureItem {
+                        name: r.name.to_string(),
+                        status: r.status.to_string(),
+                        state: r.state.clamp(0, 3) as u8,
+                        detail: r.detail.to_string(),
+                    });
+                }
+            }
+            match write_compliance_report(&items) {
+                Ok(p) => notify("info", &format!("Saved compliance report: {p}")),
+                Err(e) => notify("error", &format!("Export failed: {e}")),
+            }
+        });
+    }
+
+    let weak = app.as_weak();
+    let source2 = source.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        while let Ok(items) = rx.try_recv() {
+            let (g, w, b) = posture::summary(&items);
+            let rows: Vec<PostureRow> = items
+                .iter()
+                .map(|i| PostureRow {
+                    name: i.name.as_str().into(),
+                    status: i.status.as_str().into(),
+                    state: i.state as i32,
+                    detail: i.detail.as_str().into(),
+                })
+                .collect();
+            source2.set_vec(rows);
+            if let Some(app) = weak.upgrade() {
+                let p = app.global::<Posture>();
+                p.set_good(g as i32);
+                p.set_warn(w as i32);
+                p.set_bad(b as i32);
+                p.set_loading(false);
+            }
+        }
+    });
+    timer
+}
+
 /// MicroWin, debloated-ISO builder. Generates an elevated build script + an
 /// autounattend, then runs them in a visible console. (Heavy, admin, ~20 GB.)
 fn wire_microwin(app: &AppWindow, notify: &Notify) {
@@ -2609,6 +2717,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let _services_pump = wire_services(&app, &notify);
     let _events_pump = wire_events(&app);
     let _users_pump = wire_users(&app, &notify);
+    let _posture_pump = wire_posture(&app, &notify);
     wire_microwin(&app, &notify);
     wire_palette(&app);
     let power_refresh = wire_power(&app, &notify);

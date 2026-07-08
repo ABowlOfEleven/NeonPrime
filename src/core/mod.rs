@@ -40,6 +40,8 @@ pub mod modes;
 #[cfg(windows)]
 pub mod netmon;
 #[cfg(windows)]
+pub mod posture;
+#[cfg(windows)]
 pub mod power;
 #[cfg(windows)]
 pub mod privacy;
