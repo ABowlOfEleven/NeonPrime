@@ -23,9 +23,9 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    cleanup, config, debloat, dns, engine, eventlog, features, firewall, installs, journal,
-    localusers, microwin, modes, netmon, posture, power, privacy, procmon, quick, repair, services,
-    settings, startup, tweaks,
+    asset, bundle, cleanup, config, debloat, dns, engine, eventlog, features, firewall, installs,
+    journal, localusers, microwin, modes, netmon, posture, power, privacy, procmon, quick, repair,
+    services, settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -1966,6 +1966,85 @@ fn wire_posture(app: &AppWindow, notify: &Notify) -> Timer {
     timer
 }
 
+/// Support Bundle panel: asset identity + warranty link, and a one-click machine
+/// snapshot written to a timestamped folder (generated off-thread).
+fn wire_support(app: &AppWindow, notify: &Notify) -> Timer {
+    // Warranty URL kept for the button once the asset scan lands.
+    let warranty = Rc::new(RefCell::new(String::new()));
+
+    let (atx, arx) = mpsc::channel::<asset::AssetInfo>();
+    std::thread::spawn(move || {
+        let _ = atx.send(asset::info());
+    });
+
+    let (btx, brx) = mpsc::channel::<Result<bundle::BundleResult, String>>();
+
+    {
+        let weak = app.as_weak();
+        let btx = btx.clone();
+        app.global::<Support>().on_generate(move || {
+            if let Some(app) = weak.upgrade() {
+                app.global::<Support>().set_generating(true);
+            }
+            let btx = btx.clone();
+            std::thread::spawn(move || {
+                let _ = btx.send(bundle::generate());
+            });
+        });
+    }
+    {
+        let weak = app.as_weak();
+        app.global::<Support>().on_open_folder(move || {
+            if let Some(app) = weak.upgrade() {
+                let p = app.global::<Support>().get_last_path().to_string();
+                if !p.is_empty() {
+                    let _ = Command::new("explorer").arg(&p).spawn();
+                }
+            }
+        });
+    }
+    {
+        let warranty = warranty.clone();
+        app.global::<Support>().on_warranty_lookup(move || {
+            let url = warranty.borrow().clone();
+            if !url.is_empty() {
+                let _ = Command::new("cmd").args(["/c", "start", "", &url]).spawn();
+            }
+        });
+    }
+
+    let weak = app.as_weak();
+    let warranty2 = warranty.clone();
+    let notify = notify.clone();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
+        if let Ok(a) = arx.try_recv() {
+            *warranty2.borrow_mut() = a.warranty_url.clone();
+            if let Some(app) = weak.upgrade() {
+                let s = app.global::<Support>();
+                s.set_asset_manufacturer(a.manufacturer.as_str().into());
+                s.set_asset_model(a.model.as_str().into());
+                s.set_asset_serial(a.serial.as_str().into());
+                s.set_has_warranty(!a.warranty_url.is_empty());
+            }
+        }
+        while let Ok(res) = brx.try_recv() {
+            if let Some(app) = weak.upgrade() {
+                let s = app.global::<Support>();
+                s.set_generating(false);
+                match res {
+                    Ok(b) => {
+                        s.set_last_path(b.path.as_str().into());
+                        notify("info", &format!("Support bundle ready ({} files).", b.files));
+                    }
+                    Err(e) => notify("error", &format!("Bundle failed: {e}")),
+                }
+            }
+        }
+    });
+    timer
+}
+
 /// MicroWin, debloated-ISO builder. Generates an elevated build script + an
 /// autounattend, then runs them in a visible console. (Heavy, admin, ~20 GB.)
 fn wire_microwin(app: &AppWindow, notify: &Notify) {
@@ -2718,6 +2797,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let _events_pump = wire_events(&app);
     let _users_pump = wire_users(&app, &notify);
     let _posture_pump = wire_posture(&app, &notify);
+    let _support_pump = wire_support(&app, &notify);
     wire_microwin(&app, &notify);
     wire_palette(&app);
     let power_refresh = wire_power(&app, &notify);

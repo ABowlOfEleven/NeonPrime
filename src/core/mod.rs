@@ -18,6 +18,10 @@ pub mod debloat;
 #[cfg(windows)]
 pub mod dns;
 #[cfg(windows)]
+pub mod asset;
+#[cfg(windows)]
+pub mod bundle;
+#[cfg(windows)]
 pub mod engine;
 #[cfg(windows)]
 pub mod eventlog;

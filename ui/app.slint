@@ -347,6 +347,18 @@ export global Posture {
     callback export-report();
 }
 
+export global Support {
+    in property <bool> generating;
+    in property <string> last-path;
+    in property <string> asset-manufacturer;
+    in property <string> asset-model;
+    in property <string> asset-serial;
+    in property <bool> has-warranty;
+    callback generate();
+    callback open-folder();
+    callback warranty-lookup();
+}
+
 export global MicroWin {
     in-out property <string> iso;
     in-out property <string> output;
@@ -3226,6 +3238,119 @@ component ComplianceView inherits VerticalLayout {
     }
 }
 
+component AssetLine inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 8px;
+    Text {
+        text: root.label;
+        color: Theme.text-dim;
+        font-size: 11px;
+        width: 96px;
+        vertical-alignment: center;
+    }
+    Text {
+        text: root.value != "" ? root.value : "-";
+        color: Theme.text-body;
+        font-size: 12px;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+component SupportView inherits VerticalLayout {
+    padding-top: 18px;
+    padding-bottom: 8px;
+    spacing: 14px;
+    PanelHeader {
+        title: "SUPPORT BUNDLE";
+        hint: "one-click machine snapshot for a ticket";
+    }
+    VerticalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 14px;
+        // Asset + warranty.
+        Rectangle {
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.divider;
+            background: Theme.track;
+            HorizontalLayout {
+                padding: 16px;
+                spacing: 20px;
+                VerticalLayout {
+                    spacing: 7px;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: "ASSET";
+                        color: Theme.accent-soft;
+                        font-size: 12px;
+                        letter-spacing: 1px;
+                    }
+                    AssetLine { label: "Model"; value: Support.asset-model; }
+                    AssetLine { label: "Manufacturer"; value: Support.asset-manufacturer; }
+                    AssetLine { label: "Serial / tag"; value: Support.asset-serial; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    if Support.has-warranty: PushButton {
+                        w: 150px;
+                        label: "WARRANTY LOOKUP";
+                        clicked => {
+                            Support.warranty-lookup();
+                        }
+                    }
+                }
+            }
+        }
+        // Generate.
+        Rectangle {
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.divider;
+            background: Theme.track;
+            VerticalLayout {
+                padding: 16px;
+                spacing: 12px;
+                Text {
+                    text: "Collects specs, security posture, recent event errors, services, network config, installed apps, top processes, and drivers into a timestamped folder with an HTML report you can attach to a ticket.";
+                    color: Theme.text-dim;
+                    font-size: 11px;
+                    wrap: word-wrap;
+                }
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+                    PushButton {
+                        w: 230px;
+                        label: Support.generating ? "GENERATING…" : "GENERATE SUPPORT BUNDLE";
+                        clicked => {
+                            if (!Support.generating) {
+                                Support.generate();
+                            }
+                        }
+                    }
+                    if Support.last-path != "" && !Support.generating: PushButton {
+                        w: 120px;
+                        label: "OPEN FOLDER";
+                        clicked => {
+                            Support.open-folder();
+                        }
+                    }
+                }
+                if Support.last-path != "": Text {
+                    text: "Saved to: " + Support.last-path;
+                    color: Theme.text-dim;
+                    font-size: 10px;
+                    wrap: word-wrap;
+                }
+            }
+        }
+        Rectangle { vertical-stretch: 1; }
+    }
+}
+
 component MicroWinOption inherits HorizontalLayout {
     in property <string> label;
     in-out property <bool> on;
@@ -3555,6 +3680,9 @@ export component AppWindow inherits Window {
                             NavItem { label: "ACTIONS"; index: 5; icon: @image-url("icons/bolt.svg"); }
                             NavItem { label: "CONFIG"; index: 4; icon: @image-url("icons/config.svg"); }
                             NavItem { label: "HISTORY"; index: 9; icon: @image-url("icons/history.svg"); }
+
+                            NavSection { label: "IT"; }
+                            NavItem { label: "SUPPORT"; index: 19; icon: @image-url("icons/support.svg"); }
                         }
                     }
                 }
@@ -3652,6 +3780,10 @@ export component AppWindow inherits Window {
                     height: parent.height;
                 }
                 if Nav.page == 18: ComplianceView {
+                    width: parent.width;
+                    height: parent.height;
+                }
+                if Nav.page == 19: SupportView {
                     width: parent.width;
                     height: parent.height;
                 }
