@@ -9,7 +9,7 @@
 //! should move to a named pipe with an explicit DACL, or pass the token via an
 //! inherited handle / stdin instead of argv.
 
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 
 use serde::{Deserialize, Serialize};
@@ -42,11 +42,28 @@ pub fn write_msg<W: Write, T: Serialize>(w: &mut W, msg: &T) -> io::Result<()> {
     w.flush()
 }
 
-/// Read one newline-delimited JSON message. `Ok(None)` on clean EOF.
+/// Cap for a single IPC message (and the handshake line). Registry actions
+/// serialize to well under this; the cap turns a peer that streams an endless
+/// line into a bounded read instead of unbounded memory growth. Because both
+/// ends of this pipe are only reachable locally, an unbounded `read_line` here
+/// is a memory-exhaustion DoS of whichever end the other side wants to crash,
+/// including the *elevated* broker before it has even checked the token.
+pub const MAX_MSG_BYTES: u64 = 1 << 20; // 1 MiB
+
+/// Read one newline-delimited JSON message, bounded to [`MAX_MSG_BYTES`].
+/// `Ok(None)` on clean EOF; an oversized line (cap reached with no terminating
+/// newline) is rejected rather than buffered whole.
 pub fn read_msg<R: BufRead, T: for<'de> Deserialize<'de>>(r: &mut R) -> io::Result<Option<T>> {
     let mut line = String::new();
-    if r.read_line(&mut line)? == 0 {
+    let n = (&mut *r).take(MAX_MSG_BYTES).read_line(&mut line)?;
+    if n == 0 {
         return Ok(None);
+    }
+    if n as u64 >= MAX_MSG_BYTES && !line.ends_with('\n') {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "IPC message exceeds size limit",
+        ));
     }
     let msg = serde_json::from_str(line.trim_end()).map_err(io::Error::other)?;
     Ok(Some(msg))
@@ -84,6 +101,25 @@ impl Client {
 mod tests {
     use super::*;
     use crate::core::action::{Action, Hive, RegValue};
+
+    #[test]
+    fn read_msg_bounds_an_endless_line() {
+        // An infinite stream with no newline must be rejected at the cap, not
+        // buffered whole. Regression for the unbounded-read DoS: if `read_msg`
+        // used a plain `read_line`, this would allocate without limit / hang.
+        let mut r = BufReader::new(std::io::repeat(b'A'));
+        let res: io::Result<Option<Request>> = read_msg(&mut r);
+        assert!(res.is_err(), "oversized message must be rejected");
+    }
+
+    #[test]
+    fn read_msg_reads_a_normal_message() {
+        let mut buf = Vec::new();
+        write_msg(&mut buf, &Request::Ping).unwrap();
+        let mut r = BufReader::new(&buf[..]);
+        let got: Option<Request> = read_msg(&mut r).unwrap();
+        assert!(matches!(got, Some(Request::Ping)));
+    }
 
     #[test]
     fn request_roundtrips_through_json() {

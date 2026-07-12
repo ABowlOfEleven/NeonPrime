@@ -8,7 +8,7 @@
 //
 // `--port 0` binds an ephemeral port and prints `READY <port>` to stdout.
 
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::net::{TcpListener, TcpStream};
 
 use neonprime::core::action::Action;
@@ -54,8 +54,10 @@ fn serve(stream: TcpStream, token: &str) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream);
 
     // Handshake: first line must equal the token, else drop the connection.
+    // Bounded so an unauthenticated local peer can't stream an endless line and
+    // exhaust this (elevated) process's memory before the token is even checked.
     let mut line = String::new();
-    reader.read_line(&mut line)?;
+    (&mut reader).take(ipc::MAX_MSG_BYTES).read_line(&mut line)?;
     if line.trim_end() != token {
         return Ok(());
     }
