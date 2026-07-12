@@ -146,8 +146,14 @@ trait StripPrefixCi {
 }
 impl StripPrefixCi for String {
     fn strip_prefix_ci(&self, prefix: &str) -> Option<&str> {
-        if self.len() >= prefix.len() && self[..prefix.len()].eq_ignore_ascii_case(prefix) {
-            Some(&self[prefix.len()..])
+        // Compare on bytes and take the tail via get(): an adversarial key whose
+        // multibyte char straddles prefix.len() must yield None, not panic on a
+        // non-char-boundary str slice (winapp2.ini is untrusted input).
+        let bytes = self.as_bytes();
+        if bytes.len() >= prefix.len()
+            && bytes[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
+        {
+            self.get(prefix.len()..)
         } else {
             None
         }
@@ -440,5 +446,15 @@ FileKey1=%Temp%\\Present|*.*
             (Some(Hive::Hklm), "SOFTWARE\\Y")
         ));
         assert!(matches!(split_hive("HKCR\\Whatever"), (None, _)));
+    }
+
+    #[test]
+    fn adversarial_utf8_key_does_not_panic() {
+        // "FileKe" (6 bytes) + U+1F600 (4 bytes): byte index 7 = len("FileKey")
+        // lands inside the emoji, which panicked the old str-slice matcher.
+        let ini = "[Evil]\nFileKe\u{1F600}=x\nFileKey1=%TEMP%\\a|*|RECURSE\n";
+        let cleaners = parse_str(ini); // must not panic
+        // The valid FileKey1 still parses; the malformed key is ignored.
+        assert_eq!(cleaners.len(), 1);
     }
 }

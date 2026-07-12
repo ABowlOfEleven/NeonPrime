@@ -89,9 +89,36 @@ fn handle(req: Request) -> Response {
     }
 }
 
-/// Minimal guard against obviously-malformed requests. The real allowlist of
-/// permitted tweaks is enforced UI-side today; this is defense in depth and
-/// will grow into a path/key whitelist.
+/// HKLM subtrees the broker is permitted to modify, derived from the shipped
+/// tweak catalog (`core::tweaks` / `core::modes`). Anything outside these is
+/// refused, so a peer that completes the handshake still cannot reach
+/// autostart/exec keys such as `...\CurrentVersion\Run`, Image File Execution
+/// Options, or a service ImagePath. Prefixes ending in `\` match a whole subtree;
+/// the rest match an exact key.
+const HKLM_ALLOW: &[&str] = &[
+    "SOFTWARE\\Microsoft\\PolicyManager\\current\\device\\Start",
+    "SOFTWARE\\Microsoft\\Windows Script Host\\Settings",
+    "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\location",
+    "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Device Installer",
+    "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\DriverSearching",
+    "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FlyoutMenuSettings",
+    "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
+    "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+    "SOFTWARE\\Policies\\",
+    "SYSTEM\\CurrentControlSet\\Control\\",
+    "SYSTEM\\CurrentControlSet\\Services\\",
+    "SYSTEM\\Maps",
+];
+
+/// Case-insensitive prefix test (registry paths are ASCII, case-insensitive).
+fn starts_with_ci(hay: &str, prefix: &str) -> bool {
+    hay.len() >= prefix.len()
+        && hay.as_bytes()[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
+}
+
+/// Server-side guard on an incoming action. The elevated broker does not trust
+/// its caller: it enforces the same allowlist the UI is supposed to, so a peer
+/// that completes the handshake still cannot make an arbitrary elevated write.
 fn vet(action: &Action) -> Result<(), &'static str> {
     let path = action.reg_path();
     if path.is_empty() {
@@ -100,5 +127,69 @@ fn vet(action: &Action) -> Result<(), &'static str> {
     if path.contains("..") {
         return Err("path traversal");
     }
+    // Never accept a value name that yields code execution (IFEO debugger,
+    // service image path, logon shell/userinit), even inside an allowed subtree.
+    let name = match action {
+        Action::SetReg { name, .. } | Action::DeleteReg { name, .. } => name.as_str(),
+    };
+    const DANGEROUS_NAMES: &[&str] =
+        &["debugger", "imagepath", "servicedll", "shell", "userinit"];
+    if DANGEROUS_NAMES.iter().any(|d| name.eq_ignore_ascii_case(d)) {
+        return Err("dangerous value name");
+    }
+    // HKLM writes must land inside the shipped tweak catalog's subtrees. HKCU
+    // actions do not need elevation and are left to the caller's own rights.
+    if action.needs_elevation() && !HKLM_ALLOW.iter().any(|p| starts_with_ci(path, p)) {
+        return Err("registry path outside HKLM allowlist");
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod vet_tests {
+    use super::*;
+    use neonprime::core::action::{Action, Hive, RegValue};
+
+    fn hklm(path: &str, name: &str) -> Action {
+        Action::SetReg {
+            hive: Hive::Hklm,
+            path: path.into(),
+            name: name.into(),
+            value: RegValue::Sz("C:\\Users\\Public\\evil.exe".into()),
+        }
+    }
+
+    #[test]
+    fn refuses_hklm_autostart_and_exec_hijacks() {
+        // A peer that completed the handshake must not be able to plant these.
+        assert!(vet(&hklm(
+            "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
+            "NeonPwn"
+        ))
+        .is_err());
+        assert!(vet(&hklm(
+            "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\sethc.exe",
+            "Debugger"
+        ))
+        .is_err());
+        assert!(vet(&hklm(
+            "SYSTEM\\CurrentControlSet\\Services\\Spooler",
+            "ImagePath"
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn allows_shipped_tweak_subtrees() {
+        // Representative HKLM paths the shipped tweak catalog actually writes.
+        for p in [
+            "SOFTWARE\\Policies\\Microsoft\\Windows\\DataCollection",
+            "SYSTEM\\CurrentControlSet\\Services\\DiagTrack",
+            "SYSTEM\\CurrentControlSet\\Control\\Lsa",
+            "SYSTEM\\Maps",
+            "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System",
+        ] {
+            assert!(vet(&hklm(p, "Start")).is_ok(), "legit tweak path rejected: {p}");
+        }
+    }
 }

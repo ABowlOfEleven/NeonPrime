@@ -87,10 +87,10 @@ fn lookup(name: &str) -> Option<String> {
         "PROGRAMFILES(X86)" => env("ProgramFiles(x86)"),
         "COMMONPROGRAMFILES" => env("CommonProgramFiles"),
         "SYSTEMDRIVE" => env("SystemDrive"),
-        "DOCUMENTS" => profile("\\Documents"),
-        "MUSIC" => profile("\\Music"),
-        "PICTURES" => profile("\\Pictures"),
-        "VIDEO" | "VIDEOS" => profile("\\Videos"),
+        // Note: personal-folder variables (Documents/Music/Pictures/Videos) are
+        // deliberately NOT expandable. They are never a legitimate cache/temp
+        // target and expanding them would let an untrusted definition point the
+        // deleter at the user's irreplaceable files.
         _ => None,
     }
 }
@@ -134,14 +134,20 @@ fn exact_or_under_bases() -> Vec<PathBuf> {
     v
 }
 
-/// Bases where only strict descendants are allowed. The bare user profile,
-/// Public, and ProgramData must never be targeted directly, only their caches
-/// and app subdirectories.
+/// Bases where only strict descendants are allowed. Under the user profile only
+/// the AppData cache subtrees are eligible, never Documents/Desktop/Pictures/
+/// .ssh/etc. `%PUBLIC%` and `%ProgramData%` are machine-wide roots holding apps'
+/// persistent (non-cache) data and no shipped cleaner targets them, so they are
+/// excluded entirely. This keeps an untrusted cleaner definition confined to
+/// caches rather than personal or machine-wide application data.
 fn under_only_bases() -> Vec<PathBuf> {
-    ["USERPROFILE", "PUBLIC", "ProgramData"]
-        .iter()
-        .filter_map(|k| std::env::var(k).ok().map(PathBuf::from))
-        .collect()
+    let mut v = Vec::new();
+    if let Ok(up) = std::env::var("USERPROFILE") {
+        for sub in ["AppData\\Local", "AppData\\LocalLow", "AppData\\Roaming"] {
+            v.push(PathBuf::from(&up).join(sub));
+        }
+    }
+    v
 }
 
 /// Confine an expanded path to the sandbox.
@@ -221,5 +227,42 @@ mod tests {
             Err(RejectReason::OutsideSandbox)
         );
         assert!(expand_and_validate("%USERPROFILE%\\AppData\\Local\\Temp").is_ok());
+    }
+
+    #[test]
+    fn rejects_personal_folders_as_deletion_targets() {
+        // Personal-folder variables are no longer expandable.
+        assert_eq!(
+            expand_and_validate("%DOCUMENTS%\\quarterly-report.docx"),
+            Err(RejectReason::UnknownVar("DOCUMENTS".into()))
+        );
+        assert!(expand_and_validate("%PICTURES%").is_err());
+        assert!(expand_and_validate("%MUSIC%").is_err());
+        assert!(expand_and_validate("%VIDEOS%").is_err());
+        // A non-cache path under the profile must not be a deletion target.
+        assert!(expand_and_validate("%USERPROFILE%\\Documents\\report.docx").is_err());
+        assert!(expand_and_validate("%USERPROFILE%\\.ssh\\id_rsa").is_err());
+    }
+
+    #[test]
+    fn rejects_programdata_and_public_app_data() {
+        // Machine-wide app-data roots are no longer deletion targets.
+        assert!(expand_and_validate("%ProgramData%\\SomeVendor\\App\\app.db").is_err());
+        assert!(expand_and_validate("%PUBLIC%\\SomeVendor\\shared.dat").is_err());
+    }
+
+    #[test]
+    fn still_allows_real_cache_cleaner_roots() {
+        // Every root the shipped built-in cleaners actually use must still pass.
+        for p in [
+            "%TEMP%",
+            "%LOCALAPPDATA%\\Microsoft\\Windows\\Explorer",
+            "%LOCALAPPDATA%\\Google\\Chrome\\User Data",
+            "%APPDATA%\\Mozilla\\Firefox\\Profiles",
+            "%SystemRoot%\\Temp",
+            "%SystemRoot%\\SoftwareDistribution\\Download",
+        ] {
+            assert!(expand_and_validate(p).is_ok(), "cache root wrongly rejected: {p}");
+        }
     }
 }
