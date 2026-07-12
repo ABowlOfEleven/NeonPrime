@@ -454,7 +454,7 @@ FileKey1=%Temp%\\Present|*.*
         // lands inside the emoji, which panicked the old str-slice matcher.
         let ini = "[Evil]\nFileKe\u{1F600}=x\nFileKey1=%TEMP%\\a|*|RECURSE\n";
         let cleaners = parse_str(ini); // must not panic
-        // The valid FileKey1 still parses; the malformed key is ignored.
+                                       // The valid FileKey1 still parses; the malformed key is ignored.
         assert_eq!(cleaners.len(), 1);
     }
 }

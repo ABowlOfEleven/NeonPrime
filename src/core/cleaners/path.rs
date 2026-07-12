@@ -8,10 +8,11 @@
 //! 1. Reject any `..` traversal up front.
 //! 2. Expand `%VARS%` against a fixed allowlist. An unknown variable is a hard
 //!    reject, so a definition cannot smuggle in an arbitrary environment value.
-//! 3. Confine the result to a small set of safe base directories (the user
-//!    profile, Public, ProgramData, and a handful of Windows temp/log dirs).
-//!    Anything resolving to a drive root, a system directory, or the bare user
-//!    profile is rejected.
+//! 3. Confine the result to a small set of safe cache/temp base directories: the
+//!    AppData cache subtrees under the user profile, plus %TEMP% and a handful of
+//!    Windows temp/update/log dirs. Anything else (a drive root, a system
+//!    directory, personal folders, Public/ProgramData, or the bare profile) is
+//!    rejected.
 //!
 //! The net effect: whatever an untrusted definition says, the deleter can only
 //! ever act inside caches and temp locations.
@@ -262,7 +263,10 @@ mod tests {
             "%SystemRoot%\\Temp",
             "%SystemRoot%\\SoftwareDistribution\\Download",
         ] {
-            assert!(expand_and_validate(p).is_ok(), "cache root wrongly rejected: {p}");
+            assert!(
+                expand_and_validate(p).is_ok(),
+                "cache root wrongly rejected: {p}"
+            );
         }
     }
 }

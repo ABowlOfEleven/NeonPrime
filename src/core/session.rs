@@ -55,11 +55,17 @@ impl BrokerSession {
         let exe = broker_exe()?;
         let token = handshake_token();
         let port = free_port()?;
+        // Pin the broker to this process: the broker refuses any connection whose
+        // owning PID is not ours, so a same-user peer that read the token off the
+        // (world-readable) command line still cannot stand in for the UI. The PID
+        // is not a secret and cannot be forged by an attacker for its own socket.
+        let client_pid = std::process::id();
 
         if elevated {
             // PowerShell RunAs raises the UAC prompt and launches the broker
             // elevated and detached.
-            let arglist = format!("'--port','{port}','--token','{token}'");
+            let arglist =
+                format!("'--port','{port}','--token','{token}','--client-pid','{client_pid}'");
             let ps = format!(
                 "Start-Process -FilePath '{}' -ArgumentList {arglist} -Verb RunAs -WindowStyle Hidden",
                 exe.display()
@@ -69,7 +75,14 @@ impl BrokerSession {
                 .spawn()?;
         } else {
             Command::new(&exe)
-                .args(["--port", &port.to_string(), "--token", &token])
+                .args([
+                    "--port",
+                    &port.to_string(),
+                    "--token",
+                    &token,
+                    "--client-pid",
+                    &client_pid.to_string(),
+                ])
                 .spawn()?;
         }
 
