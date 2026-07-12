@@ -157,9 +157,11 @@ export global Configuration {
 export global Ui {
     in-out property <string> toast-message;
     in-out property <string> toast-kind; // "error" | "success" | "info"
+    in-out property <bool> pawnio-prompt; // show "install PawnIO driver?" dialog
     callback toggle-theme();
     callback undo-last();
     callback enable-sensors();
+    callback install-pawnio();
 }
 
 export struct QuickRow {
@@ -4881,6 +4883,66 @@ export component AppWindow inherits Window {
                             width: parent.width;
                             height: 1px;
                             background: Theme.divider;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── PawnIO install prompt (shown when HW sensors need the driver) ──
+    if Ui.pawnio-prompt: Rectangle {
+        background: #05080dcc;
+        TouchArea {
+            clicked => {
+                Ui.pawnio-prompt = false;
+            }
+        }
+        Rectangle {
+            width: min(400px, parent.width - 80px);
+            height: 208px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.accent.with-alpha(0.45);
+            background: Theme.bg;
+            TouchArea { } // absorb clicks so they don't dismiss the dialog
+            VerticalLayout {
+                padding: 22px;
+                spacing: 12px;
+                Text {
+                    text: "Hardware sensors need PawnIO";
+                    color: Theme.text-body;
+                    font-size: 15px;
+                }
+                Text {
+                    text: "CPU and motherboard temperatures use PawnIO, a small Microsoft-signed kernel driver. Install it now with winget?";
+                    color: Theme.text-dim;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                }
+                Rectangle {
+                    vertical-stretch: 1;
+                }
+                HorizontalLayout {
+                    spacing: 10px;
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+                    PushButton {
+                        w: 96px;
+                        label: "CANCEL";
+                        clicked => {
+                            Ui.pawnio-prompt = false;
+                        }
+                    }
+                    PushButton {
+                        w: 110px;
+                        label: "INSTALL";
+                        clicked => {
+                            Ui.pawnio-prompt = false;
+                            Ui.install-pawnio();
                         }
                     }
                 }

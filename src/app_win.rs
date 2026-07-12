@@ -3402,11 +3402,33 @@ fn main() -> Result<(), slint::PlatformError> {
 
     {
         let notify = notify.clone();
-        app.global::<Ui>()
-            .on_enable_sensors(move || match sensors::spawn_elevated() {
-                Ok(()) => notify("info", "Requesting elevation for hardware sensors…"),
-                Err(e) => notify("error", &format!("Sensors failed: {e}")),
-            });
+        let weak = app.as_weak();
+        app.global::<Ui>().on_enable_sensors(move || {
+            // With PawnIO present, go straight to the elevated sidecar. Without
+            // it, CPU/board sensing can't work, so ask the user before installing
+            // the driver rather than silently pulling it down.
+            if sensors::pawnio_installed() {
+                match sensors::spawn_elevated() {
+                    Ok(()) => notify("info", "Requesting elevation for hardware sensors…"),
+                    Err(e) => notify("error", &format!("Sensors failed: {e}")),
+                }
+            } else if let Some(app) = weak.upgrade() {
+                app.global::<Ui>().set_pawnio_prompt(true);
+            }
+        });
+    }
+
+    {
+        let notify = notify.clone();
+        app.global::<Ui>().on_install_pawnio(move || {
+            match launch_elevated_ps(&sensors::install_pawnio_script(), true) {
+                Ok(()) => notify(
+                    "info",
+                    "Installing PawnIO, then starting sensors. Approve UAC.",
+                ),
+                Err(e) => notify("error", &format!("PawnIO install failed: {e}")),
+            }
+        });
     }
 
     let mut tele = Telemetry::new();
