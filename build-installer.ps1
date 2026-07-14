@@ -29,6 +29,6 @@ Write-Host "[3/4] Publishing self-contained sensor sidecar..."
 
 Write-Host "[4/4] Building MSI..."
 $msi = Join-Path $root "NeonPrime-$Version-Setup.msi"
-& $wix build "$root\installer\NeonPrime.wxs" -d DistDir="$dist" -arch x64 -o $msi
+& $wix build "$root\installer\NeonPrime.wxs" -d DistDir="$dist" -d Version="$Version" -arch x64 -o $msi
 if ($LASTEXITCODE -ne 0) { throw "wix build failed ($LASTEXITCODE)" }
 Write-Host "Installer ready: $msi"

@@ -2,7 +2,7 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="NeonPrime"
            Manufacturer="NeonPrime contributors"
-           Version="3.1.1"
+           Version="$(var.Version)"
            UpgradeCode="8F3A2C1E-7B4D-4E9A-9C2F-1A2B3C4D5E6F"
            Scope="perMachine">
 

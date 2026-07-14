@@ -2,7 +2,59 @@
 
 All notable changes to NeonPrime. Dates are UTC.
 
-## 3.3.0 — 2026-07-08
+## 3.3.3 - 2026-07-14
+
+The cleaner, sensors, and trust release. A BleachBit-style cleaner engine, the
+switch off the WinRing0 driver that Windows Defender flags, a hardened elevated
+broker, and no more console windows flashing at launch.
+
+### Added
+
+- **Browser cleaners** in the Cleanup panel: Chrome, Edge, Brave, Vivaldi, and
+  Firefox, detected at runtime and covering every profile. Cache is safe and on
+  by default; cookies, history, form data, and sessions are off, each carrying a
+  warning, and are blocked while the browser is running so a live profile is
+  never corrupted.
+- **winapp2.ini import** for the long tail of community app cleaners. File
+  cleaning only (registry deletes are ignored), and every path runs through the
+  same sandbox as the built-in cleaners, so an imported definition can never
+  point the deleter outside caches and temp.
+- **On-demand PawnIO install:** the "Enable HW sensors" button now checks for the
+  PawnIO driver and, if it is missing, offers to install it with `winget` before
+  starting the sidecar. No driver is bundled in the installer.
+
+### Changed
+
+- **Hardware sensors moved off WinRing0 to PawnIO** (LibreHardwareMonitor 0.9.4
+  to 0.9.6). WinRing0 is on Microsoft's vulnerable-driver blocklist, so Defender
+  flagged it as `VulnerableDriver:WinNT/Winring0` for every user. PawnIO is a
+  Microsoft-signed, sandboxed ring-0 driver. Nothing vulnerable is bundled or
+  extracted; GPU temps still work with no driver at all.
+- **PowerShell profile install now matches WinUtil's delivery:** it ensures
+  Windows Terminal and PowerShell 7, then runs the setup in a `wt` / `pwsh` tab.
+  This fixes the profile landing in an elevating admin's scope instead of the
+  logged-in user's on machines where the two differ.
+- **The MSI ProductVersion is now driven by the release tag** instead of a value
+  pinned in the WiX source.
+
+### Security
+
+- **Elevated broker IPC hardened:** the handshake token is now 128 bits from the
+  OS CSPRNG (was a predictable `pid`-plus-timestamp string); message reads are
+  bounded so a local peer cannot exhaust the broker's memory; the broker enforces
+  a server-side registry allowlist rather than trusting the client's path; and
+  the broker refuses any connection whose owning process is not the launching UI.
+- **Cleaner deletion sandbox** confines every delete to an allowlist of cache and
+  temp roots, rejecting drive roots, system directories, and `..` traversal.
+
+### Fixed
+
+- **No more console windows at launch.** The GUI spawned its background helpers
+  (`powershell`, `sc`, `gpresult`, and friends) without suppressing their
+  consoles, so several would flash on screen at startup, which looked alarming.
+  Every background spawn now runs without a console window.
+
+## 3.3.0 - 2026-07-08
 
 The IT and sysadmin release: a full helpdesk and diagnostics toolkit on top of the
 existing deck, provisioning profiles, an expanded PowerShell profile, and a
