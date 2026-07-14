@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
 PackageIdentifier: ABowlOfEleven.NeonPrime
-PackageVersion: 3.0.1
+PackageVersion: 3.3.3
 PackageLocale: en-US
 Publisher: NeonPrime contributors
 PublisherUrl: https://github.com/ABowlOfEleven
@@ -16,8 +16,11 @@ Description: >-
   better-looking take on the all-in-one tweak-and-debloat utility. Monitor live
   telemetry, apply reversible tweaks and debloat backed by a rollback history,
   switch system modes and power plans, manage processes, services, startup, and
-  the firewall, score and harden your privacy, and even build a debloated Windows
-  ISO with MicroWin, all from a single cyan-and-ember HUD.
+  the firewall, score and harden your privacy, clean caches and browser data, and
+  build a debloated Windows ISO with MicroWin. On top sits a full IT and helpdesk
+  toolkit: compliance and posture, one-click support bundles, event logs, local
+  users, printers, disks, drivers, certificates, and Group Policy. All from a
+  single cyan-and-ember HUD.
 Moniker: neonprime
 Tags:
   - debloat
@@ -29,6 +32,6 @@ Tags:
   - utility
   - windows
   - winutil
-ReleaseNotesUrl: https://github.com/ABowlOfEleven/NeonPrime/releases/tag/v3.0.1
+ReleaseNotesUrl: https://github.com/ABowlOfEleven/NeonPrime/releases/tag/v3.3.3
 ManifestType: defaultLocale
 ManifestVersion: 1.12.0
