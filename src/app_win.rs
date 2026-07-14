@@ -1015,20 +1015,15 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
     app.global::<Quick>().on_run(move |id| {
         let Some(a) = cat.get(id as usize) else { return };
 
-        // The PowerShell profile installer runs in a visible console (shows
-        // winget/module install progress) from a script beside the app.
+        // The PowerShell profile installer mirrors WinUtil: ensure Windows
+        // Terminal + pwsh, then run the online setup in a wt/pwsh tab (see
+        // quick::install_ps_profile_cmd for why it is fetched, not staged). The
+        // launcher is hidden; the wt tab is the visible progress.
         if a.id == "install-ps-profile" {
-            let mut script = std::env::current_exe().unwrap_or_default();
-            script.pop();
-            script.push("profile");
-            script.push("install-profile.ps1");
-            // Elevated + visible: winget prereqs (PowerShell 7, Nerd Font) need
-            // admin, and the script unblocks the profile in Program Files. Prefer
-            // pwsh so the console it leaves open is the shell the profile targets.
-            match launch_elevated_file(&script, true) {
+            match launch_elevated_ps(&quick::install_ps_profile_cmd(), false) {
                 Ok(()) => notify(
                     "info",
-                    "Installing PowerShell profile (approve UAC), see the new window.",
+                    "Setting up the PowerShell profile in a new terminal tab (approve UAC)…",
                 ),
                 Err(e) => notify("error", &format!("Couldn't start installer: {e}")),
             }
