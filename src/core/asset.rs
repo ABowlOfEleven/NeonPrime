@@ -2,7 +2,7 @@
 //! model, serial / service tag, and a best-effort vendor warranty-lookup link.
 //! Unelevated via CIM (Win32_ComputerSystem / Win32_BIOS).
 
-use std::process::Command;
+use super::hidden_command;
 
 pub struct AssetInfo {
     pub manufacturer: String,
@@ -13,7 +13,7 @@ pub struct AssetInfo {
 }
 
 pub fn info() -> AssetInfo {
-    let out = Command::new("powershell")
+    let out = hidden_command("powershell")
         .args([
             "-NoProfile",
             "-NonInteractive",

@@ -90,7 +90,7 @@ pub fn read() -> Sensors {
 
 /// Kill any leftover sidecar processes (best-effort cleanup from a prior run).
 pub fn kill_strays() {
-    let _ = std::process::Command::new("taskkill")
+    let _ = neonprime::core::hidden_command("taskkill")
         .args(["/f", "/im", "neonprime-sensors.exe"])
         .output();
 }
@@ -103,7 +103,7 @@ pub fn spawn_background() -> Option<std::process::Child> {
     if !exe.exists() {
         return None;
     }
-    std::process::Command::new(exe)
+    neonprime::core::hidden_command(exe)
         .args(["--out", &snapshot_path().to_string_lossy()])
         .spawn()
         .ok()
@@ -113,7 +113,7 @@ pub fn spawn_background() -> Option<std::process::Child> {
 /// installed. `sc query` exits 0 when the service exists, 1060 when it does not.
 /// CPU/board sensing needs it; GPU temps do not.
 pub fn pawnio_installed() -> bool {
-    std::process::Command::new("sc")
+    neonprime::core::hidden_command("sc")
         .args(["query", "PawnIO"])
         .output()
         .map(|o| o.status.success())
@@ -146,7 +146,7 @@ pub fn spawn_elevated() -> std::io::Result<()> {
         exe.display(),
         out.display()
     );
-    std::process::Command::new("powershell")
+    neonprime::core::hidden_command("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
         .spawn()?;
     Ok(())

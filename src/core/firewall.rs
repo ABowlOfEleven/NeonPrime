@@ -2,13 +2,13 @@
 //! unelevated; adding/removing block rules needs admin (elevated `netsh`).
 //! NeonPrime's rules are name-prefixed so they're easy to find and undo.
 
-use std::process::Command;
+use super::hidden_command;
 
 const PREFIX: &str = "NeonPrime:";
 
 /// Display names of NeonPrime-created firewall rules (unelevated, best-effort).
 pub fn list_names() -> Vec<String> {
-    let out = Command::new("powershell")
+    let out = hidden_command("powershell")
         .args([
             "-NoProfile",
             "-NonInteractive",

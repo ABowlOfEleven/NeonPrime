@@ -1,7 +1,7 @@
 //! Machine-store certificates and their expiry, for spotting soon-to-expire or
 //! already-expired certs. Unelevated read of Cert:\LocalMachine\My.
 
-use std::process::Command;
+use super::hidden_command;
 
 pub struct Cert {
     pub subject: String,
@@ -24,7 +24,7 @@ fn cn(dn: &str) -> String {
 
 /// Personal machine certificates, soonest expiry first (unelevated).
 pub fn list() -> Vec<Cert> {
-    let out = Command::new("powershell")
+    let out = hidden_command("powershell")
         .args([
             "-NoProfile",
             "-NonInteractive",

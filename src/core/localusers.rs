@@ -5,7 +5,7 @@
 //! through the elevated shell. Resetting a password is delegated to a `net user`
 //! console prompt so the app never handles the password itself.
 
-use std::process::Command;
+use super::hidden_command;
 
 pub struct LocalUser {
     pub name: String,
@@ -24,7 +24,7 @@ fn esc(s: &str) -> String {
 /// All local user accounts, with Administrators membership flagged (unelevated).
 pub fn list() -> Vec<LocalUser> {
     let admins = admin_members();
-    let out = Command::new("powershell")
+    let out = hidden_command("powershell")
         .args([
             "-NoProfile",
             "-NonInteractive",
@@ -64,7 +64,7 @@ pub fn list() -> Vec<LocalUser> {
 
 /// Short names of the current Administrators-group members (unelevated read).
 fn admin_members() -> Vec<String> {
-    let out = Command::new("powershell")
+    let out = hidden_command("powershell")
         .args([
             "-NoProfile",
             "-NonInteractive",

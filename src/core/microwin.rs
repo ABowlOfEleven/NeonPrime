@@ -9,8 +9,8 @@
 //! in an elevated, visible console. `oscdimg` ships with the Windows ADK
 //! Deployment Tools; [`oscdimg_path`] locates it.
 
+use super::hidden_command;
 use std::path::Path;
-use std::process::Command;
 
 pub struct Options {
     pub iso: String,
@@ -33,7 +33,7 @@ pub fn oscdimg_path() -> Option<String> {
             return Some(c.to_string());
         }
     }
-    if let Ok(o) = Command::new("where").arg("oscdimg.exe").output() {
+    if let Ok(o) = hidden_command("where").arg("oscdimg.exe").output() {
         if o.status.success() {
             if let Some(line) = String::from_utf8_lossy(&o.stdout).lines().next() {
                 let p = line.trim();

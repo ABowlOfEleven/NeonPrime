@@ -7,9 +7,9 @@
 //! The elevated path needs an interactive UAC approval and so cannot be
 //! exercised headlessly.
 
+use super::hidden_command;
 use std::io;
 use std::net::TcpListener;
-use std::process::Command;
 use std::time::{Duration, Instant};
 
 use crate::core::ipc::{Client, Request, Response};
@@ -70,11 +70,11 @@ impl BrokerSession {
                 "Start-Process -FilePath '{}' -ArgumentList {arglist} -Verb RunAs -WindowStyle Hidden",
                 exe.display()
             );
-            Command::new("powershell")
+            hidden_command("powershell")
                 .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
                 .spawn()?;
         } else {
-            Command::new(&exe)
+            hidden_command(&exe)
                 .args([
                     "--port",
                     &port.to_string(),

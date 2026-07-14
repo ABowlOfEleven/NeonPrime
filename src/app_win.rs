@@ -24,8 +24,8 @@ use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
     asset, bundle, certs, cleaners, config, debloat, devices, disks, dns, engine, eventlog, features,
-    firewall, gpo, installs, journal, localusers, microwin, modes, netmon, posture, power, printers,
-    privacy, procmon, profiles, quick, repair, services, settings, startup, tweaks,
+    firewall, gpo, hidden_command, installs, journal, localusers, microwin, modes, netmon, posture,
+    power, printers, privacy, procmon, profiles, quick, repair, services, settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -953,7 +953,7 @@ fn launch_elevated_ps(script: &str, visible: bool) -> io::Result<()> {
     let hidden = if visible { "" } else { " -WindowStyle Hidden" };
     let ps =
         format!("Start-Process -FilePath 'powershell' -ArgumentList {inner} -Verb RunAs{hidden}");
-    Command::new("powershell")
+    hidden_command("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
         .spawn()
         .map(|_| ())
@@ -980,7 +980,7 @@ fn launch_elevated_file(ps1: &Path, prefer_pwsh: bool) -> io::Result<()> {
     } else {
         format!("Start-Process -FilePath 'powershell' -ArgumentList {inner} -Verb RunAs")
     };
-    Command::new("powershell")
+    hidden_command("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
         .spawn()
         .map(|_| ())
@@ -1071,12 +1071,12 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
                 "Start-Process -FilePath '{}' -ArgumentList {arglist} -Verb RunAs{window}",
                 inv.program
             );
-            Command::new("powershell")
+            hidden_command("powershell")
                 .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
                 .spawn()
                 .map(|_| ())
         } else {
-            Command::new(&inv.program).args(&inv.args).spawn().map(|_| ())
+            hidden_command(&inv.program).args(&inv.args).spawn().map(|_| ())
         };
 
         match result {
@@ -1961,7 +1961,7 @@ fn wire_users(app: &AppWindow, notify: &Notify) -> Timer {
 
 /// A local timestamp string for reports (one cheap PowerShell call).
 fn ps_now() -> String {
-    Command::new("powershell")
+    hidden_command("powershell")
         .args([
             "-NoProfile",
             "-Command",
@@ -2553,7 +2553,7 @@ fn wire_gpo(app: &AppWindow, notify: &Notify) -> Timer {
                     PathBuf::from(std::env::var("USERPROFILE").unwrap_or_else(|_| ".".into()));
                 path.push("neonprime-gpreport.html");
                 let p = path.to_string_lossy().to_string();
-                let _ = Command::new("gpresult").args(gpo::export_argv(&p)).status();
+                let _ = hidden_command("gpresult").args(gpo::export_argv(&p)).status();
                 let _ = Command::new("explorer").arg(&p).spawn();
             });
         });

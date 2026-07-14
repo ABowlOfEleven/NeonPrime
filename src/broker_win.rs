@@ -8,7 +8,7 @@
 //
 // `--port 0` binds an ephemeral port and prints `READY <port>` to stdout.
 
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::{Duration, Instant};
 
@@ -35,19 +35,24 @@ fn main() {
     if token.is_empty() {
         // Bare run (no token): print usage and exit cleanly. Exiting 0 keeps
         // installer/AV validators happy; the real launch always passes a token.
-        println!("NeonPrime broker. Launched by the app with --port <port> --token <token>.");
+        // Non-panicking: the broker may be spawned without a console (hidden), so
+        // a failed stdout write must not abort it.
+        let _ = writeln!(
+            std::io::stdout(),
+            "NeonPrime broker. Launched by the app with --port <port> --token <token>."
+        );
         return;
     }
 
     let listener = match TcpListener::bind(("127.0.0.1", port)) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("bind failed: {e}");
+            let _ = writeln!(std::io::stderr(), "bind failed: {e}");
             std::process::exit(1);
         }
     };
     if let Ok(addr) = listener.local_addr() {
-        println!("READY {}", addr.port());
+        let _ = writeln!(std::io::stdout(), "READY {}", addr.port());
     }
 
     // Serve the first client that (a) originates from the launching UI process

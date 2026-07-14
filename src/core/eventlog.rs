@@ -5,7 +5,7 @@
 //! tab-delimited and are parsed into [`EventEntry`]. Runs off the UI thread like
 //! the other scanners.
 
-use std::process::Command;
+use super::hidden_command;
 
 pub struct EventEntry {
     /// Short local timestamp, e.g. "07-08 03:21".
@@ -31,7 +31,7 @@ pub fn recent(max: u32) -> Vec<EventEntry> {
            $m = ($_.Message -split \"`r?`n\")[0]; \
            \"$($_.TimeCreated.ToString('MM-dd HH:mm'))`t$($_.Level)`t$($_.ProviderName)`t$($_.Id)`t$($_.LogName)`t$m\" }}"
     );
-    let out = Command::new("powershell")
+    let out = hidden_command("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .output();
     let Ok(o) = out else { return Vec::new() };
