@@ -79,7 +79,7 @@ Every mode is a reversible bundle. Click the active one again to turn it back of
 - **Privacy & hardening score:** a live gauge that reads your real registry and service state and hardens any exposed item in one click (all reversible). Beyond telemetry, it includes real security hardening, each with a plain warning about what it does and what could break: disable SMBv1, block AutoRun, require SmartScreen, disable LLMNR, stop WDigest credential caching, Defender PUA protection, disable Windows Script Host, no LM hash, block inbound RDP, disable Remote Assistance, block firmware-injected software (WPBT), and block automatic driver-software installs.
 - **Tweaks:** over 50 reversible tweaks across Interface, Privacy, and Performance, ported to match WinUtil (Activity History, location, hibernation, Game Mode, background apps, notifications, Edge/Brave debloat, and many more), each undoable through the rollback journal, with live search, category filters, and a one-click Essential Tweaks preset.
 - **Debloat:** remove preinstalled UWP apps (Copilot, Xbox Game Bar, and friends) per-user with live installed/removed state, plus one-click telemetry scheduled-task disabling.
-- **Cleanup:** scan reclaimable space (temp, Recycle Bin, thumbnails, system and update caches) and clear it per target.
+- **Cleanup:** scan reclaimable space per target (temp, Recycle Bin, thumbnails, system and update caches), plus **per-browser cleaners** (Chrome, Edge, Brave, Vivaldi, Firefox): cache is safe and on by default, while cookies, history, form data, and sessions are off, warned, and blocked while the browser is running so a live profile is never corrupted. Optional **winapp2.ini import** adds the long tail of community app cleaners (file-cleaning only, every path run through the same sandbox).
 - **Startup manager:** enable or disable per-user startup apps, reversibly, each showing its current on/off state.
 
 **Software**
@@ -166,7 +166,7 @@ cargo run --release
 cargo run --release --bin neonprime-linux
 cargo run --release --bin neonprime-tui
 
-cargo test --all      # 82 unit + integration tests
+cargo test --all      # 115 unit + integration tests
 ```
 
 One source tree, split by `cfg`: the Windows backend is gated to `cfg(windows)`, the Linux backend to `cfg(target_os = "linux")`, and each platform compiles its own Slint UI (`ui/app.slint` vs `ui/linux.slint`). Building the Linux GUI needs Slint's usual deps (`fontconfig`, `xcb`, `xkbcommon`).
@@ -174,7 +174,7 @@ One source tree, split by `cfg`: the Windows backend is gated to `cfg(windows)`,
 ### Installer (MSI)
 
 ```sh
-./build-installer.ps1 -Version 3.3.0   # -> NeonPrime-3.3.0-Setup.msi
+./build-installer.ps1 -Version 3.3.3   # -> NeonPrime-3.3.3-Setup.msi
 ```
 
 Produces a Windows MSI (via WiX 5: `dotnet tool install --global wix --version 5.0.2`) that installs `neonprime.exe`, the elevated `broker.exe`, and the self-contained sensor sidecar to `Program Files\NeonPrime`, with a Start-Menu shortcut, an uninstaller, and major-upgrade handling. No runtime prerequisites on the target.
@@ -184,7 +184,7 @@ Produces a Windows MSI (via WiX 5: `dotnet tool install --global wix --version 5
 Accurate CPU package temperature and motherboard sensors need ring-0 access (an MSR / Super-I/O driver), the same reason HWiNFO ships one. NeonPrime gets these by embedding a small C# sidecar (`sensors/`) built on **LibreHardwareMonitor**, which streams a JSON sensor snapshot to a temp file the app polls.
 
 - **GPU temps (all vendors)** work without elevation. On AMD and Intel the sidecar auto-starts in the background; on NVIDIA, NVML already covers it.
-- **CPU package, motherboard temps, and fans** need the LHM driver (ring-0), so they need admin. Click **Enable HW sensors** on the dashboard to launch the sidecar elevated (one UAC).
+- **CPU package, motherboard temps, and fans** need a ring-0 driver. NeonPrime uses **PawnIO** (a Microsoft-signed, sandboxed driver, via LibreHardwareMonitor 0.9.6), not the old WinRing0 that Windows Defender now flags as a vulnerable driver. Click **Enable HW sensors** on the dashboard: if PawnIO is installed it launches the sidecar elevated (one UAC); if not, it offers to install it with `winget` first. Nothing vulnerable is bundled or extracted.
 
 Build a self-contained sidecar (bundles the .NET runtime, nothing to install on the target):
 
@@ -201,14 +201,14 @@ Build a self-contained sidecar (bundles the .NET runtime, nothing to install on 
 
 **Linux:** a 16-panel GUI plus a headless TUI over the same backend. Compiles and passes CI (fmt / clippy / test) on every push; runtime testing on real hardware is ongoing.
 
-82 tests pass, with a Windows + Linux CI matrix on every push (clippy runs with warnings denied on both).
+115 tests pass, with a Windows + Linux CI matrix on every push (clippy runs with warnings denied on both).
 
 **Notes and caveats:**
 
 - The elevated broker (HKLM tweaks) needs an interactive UAC prompt, so the elevated end-to-end path is best tried supervised.
-- CPU temperature is best-effort via WMI ACPI thermal zones and reads `N/A` on machines that do not expose one; accurate per-core temps come from the LibreHardwareMonitor sidecar.
+- CPU temperature is best-effort via WMI ACPI thermal zones and reads `N/A` on machines that do not expose one; accurate per-core temps come from the LibreHardwareMonitor sidecar once the PawnIO driver is installed (offered in-app).
 - MicroWin's ISO build is heavy (admin, ~20 GB, several minutes) and is best validated in Windows Sandbox or a throwaway VM.
-- The IPC token is passed on the broker's command line; a future pass moves it to a named pipe with an explicit DACL.
+- The elevated broker's IPC is hardened: a 128-bit CSPRNG handshake token, bounded message reads, a server-side registry allowlist, and the connection pinned to the launching UI process. The remaining residual is that the token is passed on the command line; a future named-pipe + DACL migration closes it.
 
 ## Stack
 

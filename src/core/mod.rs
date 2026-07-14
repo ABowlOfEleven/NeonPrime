@@ -16,7 +16,7 @@ pub mod bundle;
 #[cfg(windows)]
 pub mod certs;
 #[cfg(windows)]
-pub mod cleanup;
+pub mod cleaners;
 #[cfg(windows)]
 pub mod config;
 #[cfg(windows)]
@@ -83,3 +83,18 @@ pub mod tweaks;
 // ── Linux backend (scaffold) ────────────────────────────────────────────────
 #[cfg(target_os = "linux")]
 pub mod linux;
+
+/// Build a `Command` that never flashes a console window when spawned from the
+/// GUI process. The app is a `windows` subsystem binary (no console of its own),
+/// so every console helper it runs to gather data (powershell / sc / gpresult /
+/// …) would otherwise briefly pop its own console. At launch, where several
+/// panels scan at once, that reads as a swarm of terminal windows — alarming, and
+/// easily mistaken for something malicious. Route those spawns through here.
+#[cfg(windows)]
+pub fn hidden_command<S: AsRef<std::ffi::OsStr>>(program: S) -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut c = std::process::Command::new(program);
+    c.creation_flags(CREATE_NO_WINDOW);
+    c
+}

@@ -23,9 +23,9 @@ use neonprime::core::ipc::{Request, Response};
 use neonprime::core::journal::Journal;
 use neonprime::core::session::BrokerSession;
 use neonprime::core::{
-    asset, bundle, certs, cleanup, config, debloat, devices, disks, dns, engine, eventlog, features,
-    firewall, gpo, installs, journal, localusers, microwin, modes, netmon, posture, power, printers,
-    privacy, procmon, profiles, quick, repair, services, settings, startup, tweaks,
+    asset, bundle, certs, cleaners, config, debloat, devices, disks, dns, engine, eventlog, features,
+    firewall, gpo, hidden_command, installs, journal, localusers, microwin, modes, netmon, posture,
+    power, printers, privacy, procmon, profiles, quick, repair, services, settings, startup, tweaks,
 };
 
 use telemetry::{Sample, Telemetry};
@@ -953,7 +953,7 @@ fn launch_elevated_ps(script: &str, visible: bool) -> io::Result<()> {
     let hidden = if visible { "" } else { " -WindowStyle Hidden" };
     let ps =
         format!("Start-Process -FilePath 'powershell' -ArgumentList {inner} -Verb RunAs{hidden}");
-    Command::new("powershell")
+    hidden_command("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
         .spawn()
         .map(|_| ())
@@ -980,7 +980,7 @@ fn launch_elevated_file(ps1: &Path, prefer_pwsh: bool) -> io::Result<()> {
     } else {
         format!("Start-Process -FilePath 'powershell' -ArgumentList {inner} -Verb RunAs")
     };
-    Command::new("powershell")
+    hidden_command("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
         .spawn()
         .map(|_| ())
@@ -1015,20 +1015,15 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
     app.global::<Quick>().on_run(move |id| {
         let Some(a) = cat.get(id as usize) else { return };
 
-        // The PowerShell profile installer runs in a visible console (shows
-        // winget/module install progress) from a script beside the app.
+        // The PowerShell profile installer mirrors WinUtil: ensure Windows
+        // Terminal + pwsh, then run the online setup in a wt/pwsh tab (see
+        // quick::install_ps_profile_cmd for why it is fetched, not staged). The
+        // launcher is hidden; the wt tab is the visible progress.
         if a.id == "install-ps-profile" {
-            let mut script = std::env::current_exe().unwrap_or_default();
-            script.pop();
-            script.push("profile");
-            script.push("install-profile.ps1");
-            // Elevated + visible: winget prereqs (PowerShell 7, Nerd Font) need
-            // admin, and the script unblocks the profile in Program Files. Prefer
-            // pwsh so the console it leaves open is the shell the profile targets.
-            match launch_elevated_file(&script, true) {
+            match launch_elevated_ps(&quick::install_ps_profile_cmd(), false) {
                 Ok(()) => notify(
                     "info",
-                    "Installing PowerShell profile (approve UAC), see the new window.",
+                    "Setting up the PowerShell profile in a new terminal tab (approve UAC)…",
                 ),
                 Err(e) => notify("error", &format!("Couldn't start installer: {e}")),
             }
@@ -1076,12 +1071,12 @@ fn wire_quick(app: &AppWindow, notify: &Notify) {
                 "Start-Process -FilePath '{}' -ArgumentList {arglist} -Verb RunAs{window}",
                 inv.program
             );
-            Command::new("powershell")
+            hidden_command("powershell")
                 .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
                 .spawn()
                 .map(|_| ())
         } else {
-            Command::new(&inv.program).args(&inv.args).spawn().map(|_| ())
+            hidden_command(&inv.program).args(&inv.args).spawn().map(|_| ())
         };
 
         match result {
@@ -1329,24 +1324,32 @@ fn wire_power(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
 /// Disk cleanup: scan reclaimable sizes off-thread, clean user targets in-process
 /// and system caches via an elevated shell. Returns the result pump.
 fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
+    // The panel is a flat one-row-per-option list over the whole catalog
+    // (built-in system targets plus detected browsers). Both the catalog and its
+    // flattened rows are rebuilt cheaply from pure producers wherever needed
+    // (including worker threads), so nothing but plain sizes crosses the thread
+    // boundary. A row's `id` is its index in `cleaners::rows`.
+    let count = cleaners::rows(&cleaners::catalog()).len();
     let model: Rc<VecModel<CleanRow>> = Rc::new(VecModel::default());
-    let rows: Vec<CleanRow> = cleanup::catalog()
+    let rows: Vec<CleanRow> = cleaners::rows(&cleaners::catalog())
         .iter()
         .enumerate()
-        .map(|(i, t)| CleanRow {
+        .map(|(i, r)| CleanRow {
             id: i as i32,
-            name: t.name.into(),
-            desc: t.desc.into(),
+            name: r.name.as_str().into(),
+            desc: r.desc.as_str().into(),
             size: "-".into(),
             frac: 0.0,
-            elevated: t.elevated,
+            elevated: r.elevated,
+            warning: r.warning.as_str().into(),
+            imported: r.imported,
         })
         .collect();
     model.set_vec(rows);
     app.global::<Cleanup>().set_rows(model.clone().into());
     app.global::<Cleanup>().set_scanning(true);
 
-    let sizes: Rc<RefCell<Vec<u64>>> = Rc::new(RefCell::new(vec![0; cleanup::catalog().len()]));
+    let sizes: Rc<RefCell<Vec<u64>>> = Rc::new(RefCell::new(vec![0; count]));
     let (tx, rx) = mpsc::channel::<CleanMsg>();
 
     let scan = {
@@ -1354,9 +1357,13 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
         move || {
             let tx = tx.clone();
             std::thread::spawn(move || {
-                let v: Vec<u64> = cleanup::catalog()
+                let cat = cleaners::catalog();
+                let v: Vec<u64> = cleaners::rows(&cat)
                     .iter()
-                    .map(|t| cleanup::size_of(t.id))
+                    .map(|r| {
+                        let c = &cat[r.cleaner];
+                        cleaners::preview(c, &cleaners::only(c.options.len(), r.option)).bytes
+                    })
                     .collect();
                 let _ = tx.send(CleanMsg::Scanned(v));
             });
@@ -1376,31 +1383,76 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
         });
     }
 
+    // Import button: (re)load winapp2.ini from the app data dir, then rescan so
+    // detected cleaners appear. The file itself is untrusted; parsing only ever
+    // produces sandboxed file-cleaning actions (no registry deletes).
+    {
+        let weak = app.as_weak();
+        let scan = scan.clone();
+        let notify = notify.clone();
+        app.global::<Cleanup>().on_import(move || {
+            let path = cleaners::winapp2_path();
+            if !path.exists() {
+                notify(
+                    "info",
+                    &format!("Drop a winapp2.ini at {} then IMPORT.", path.display()),
+                );
+                return;
+            }
+            cleaners::invalidate_import();
+            let n = cleaners::imported_cleaners().len();
+            if let Some(app) = weak.upgrade() {
+                app.global::<Cleanup>().set_scanning(true);
+            }
+            scan();
+            notify("success", &format!("Imported {n} winapp2 cleaner(s)."));
+        });
+    }
+
     // Clean one target.
     {
         let notify = notify.clone();
         let tx = tx.clone();
         app.global::<Cleanup>().on_clean(move |idx| {
-            let Some(t) = cleanup::catalog().get(idx as usize) else {
+            let cat = cleaners::catalog();
+            let all_rows = cleaners::rows(&cat);
+            let Some(r) = all_rows.get(idx as usize) else {
                 return;
             };
-            if t.elevated {
-                if let Some(script) = cleanup::clean_script(t.id) {
+            let c = &cat[r.cleaner];
+            let name = r.name.clone();
+            let sel = cleaners::only(c.options.len(), r.option);
+            if r.elevated {
+                if let Some(script) = cleaners::elevated_script(c, &sel) {
                     match launch_elevated_ps(&script, false) {
                         Ok(()) => notify(
                             "info",
-                            &format!("Clearing {}, approve UAC, then RESCAN.", t.name),
+                            &format!("Clearing {name}, approve UAC, then RESCAN."),
                         ),
-                        Err(e) => notify("error", &format!("{}: {e}", t.name)),
+                        Err(e) => notify("error", &format!("{name}: {e}")),
                     }
                 }
+            } else if r.guard_running && cleaners::any_running(&r.running_procs) {
+                // Deleting a live browser profile's cookies/history would corrupt
+                // it, so destructive options are hard-blocked while it is open.
+                notify(
+                    "error",
+                    &format!("Close {} first to clean {name}.", c.name),
+                );
             } else {
-                notify("info", &format!("Cleaning {}…", t.name));
-                let (tx, name) = (tx.clone(), t.name.to_string());
+                notify("info", &format!("Cleaning {name}…"));
+                let tx = tx.clone();
                 std::thread::spawn(move || {
-                    let id = cleanup::catalog()[idx as usize].id;
-                    let _ = cleanup::clean(id);
-                    let size = cleanup::size_of(id);
+                    let cat = cleaners::catalog();
+                    let rows = cleaners::rows(&cat);
+                    let size = if let Some(r) = rows.get(idx as usize) {
+                        let c = &cat[r.cleaner];
+                        let sel = cleaners::only(c.options.len(), r.option);
+                        cleaners::execute(c, &sel, false);
+                        cleaners::preview(c, &sel).bytes
+                    } else {
+                        0
+                    };
                     let _ = tx.send(CleanMsg::Cleaned { idx, size, name });
                 });
             }
@@ -1416,18 +1468,20 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
         Rc::new(move || {
             let sizes = sizes.borrow();
             let max = sizes.iter().copied().max().unwrap_or(0).max(1);
-            let mut rows: Vec<CleanRow> = cleanup::catalog()
+            let mut rows: Vec<CleanRow> = cleaners::rows(&cleaners::catalog())
                 .iter()
                 .enumerate()
-                .map(|(i, t)| {
+                .map(|(i, r)| {
                     let sz = sizes.get(i).copied().unwrap_or(0);
                     CleanRow {
                         id: i as i32,
-                        name: t.name.into(),
-                        desc: t.desc.into(),
-                        size: cleanup::human(sz).into(),
+                        name: r.name.as_str().into(),
+                        desc: r.desc.as_str().into(),
+                        size: cleaners::human(sz).into(),
                         frac: sz as f32 / max as f32,
-                        elevated: t.elevated,
+                        elevated: r.elevated,
+                        warning: r.warning.as_str().into(),
+                        imported: r.imported,
                     }
                 })
                 .collect();
@@ -1440,7 +1494,7 @@ fn wire_cleanup(app: &AppWindow, notify: &Notify) -> Timer {
             if let Some(app) = weak.upgrade() {
                 let total: u64 = sizes.iter().sum();
                 app.global::<Cleanup>()
-                    .set_total(cleanup::human(total).into());
+                    .set_total(cleaners::human(total).into());
             }
         })
     };
@@ -1519,7 +1573,7 @@ fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
                         "-".into()
                     };
                     let vram = if p.vram > 0 {
-                        cleanup::human(p.vram)
+                        cleaners::human(p.vram)
                     } else {
                         "-".into()
                     };
@@ -1527,7 +1581,7 @@ fn wire_proc(app: &AppWindow, notify: &Notify) -> Rc<dyn Fn()> {
                         pid: p.pid as i32,
                         name: p.name.as_str().into(),
                         cpu: format!("{:.0}%", p.cpu).as_str().into(),
-                        mem: cleanup::human(p.mem).as_str().into(),
+                        mem: cleaners::human(p.mem).as_str().into(),
                         gpu: gpu.as_str().into(),
                         vram: vram.as_str().into(),
                     }
@@ -1907,7 +1961,7 @@ fn wire_users(app: &AppWindow, notify: &Notify) -> Timer {
 
 /// A local timestamp string for reports (one cheap PowerShell call).
 fn ps_now() -> String {
-    Command::new("powershell")
+    hidden_command("powershell")
         .args([
             "-NoProfile",
             "-Command",
@@ -2499,7 +2553,7 @@ fn wire_gpo(app: &AppWindow, notify: &Notify) -> Timer {
                     PathBuf::from(std::env::var("USERPROFILE").unwrap_or_else(|_| ".".into()));
                 path.push("neonprime-gpreport.html");
                 let p = path.to_string_lossy().to_string();
-                let _ = Command::new("gpresult").args(gpo::export_argv(&p)).status();
+                let _ = hidden_command("gpresult").args(gpo::export_argv(&p)).status();
                 let _ = Command::new("explorer").arg(&p).spawn();
             });
         });
@@ -3343,11 +3397,33 @@ fn main() -> Result<(), slint::PlatformError> {
 
     {
         let notify = notify.clone();
-        app.global::<Ui>()
-            .on_enable_sensors(move || match sensors::spawn_elevated() {
-                Ok(()) => notify("info", "Requesting elevation for hardware sensors…"),
-                Err(e) => notify("error", &format!("Sensors failed: {e}")),
-            });
+        let weak = app.as_weak();
+        app.global::<Ui>().on_enable_sensors(move || {
+            // With PawnIO present, go straight to the elevated sidecar. Without
+            // it, CPU/board sensing can't work, so ask the user before installing
+            // the driver rather than silently pulling it down.
+            if sensors::pawnio_installed() {
+                match sensors::spawn_elevated() {
+                    Ok(()) => notify("info", "Requesting elevation for hardware sensors…"),
+                    Err(e) => notify("error", &format!("Sensors failed: {e}")),
+                }
+            } else if let Some(app) = weak.upgrade() {
+                app.global::<Ui>().set_pawnio_prompt(true);
+            }
+        });
+    }
+
+    {
+        let notify = notify.clone();
+        app.global::<Ui>().on_install_pawnio(move || {
+            match launch_elevated_ps(&sensors::install_pawnio_script(), true) {
+                Ok(()) => notify(
+                    "info",
+                    "Installing PawnIO, then starting sensors. Approve UAC.",
+                ),
+                Err(e) => notify("error", &format!("PawnIO install failed: {e}")),
+            }
+        });
     }
 
     let mut tele = Telemetry::new();

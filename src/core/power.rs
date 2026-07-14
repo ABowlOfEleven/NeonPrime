@@ -2,7 +2,7 @@
 //! done elevated; reading the active scheme is unelevated. "Ultimate
 //! Performance" is hidden by default, so we duplicate it into existence first.
 
-use std::process::Command;
+use super::hidden_command;
 
 pub struct Plan {
     pub id: &'static str,
@@ -32,7 +32,7 @@ pub fn plans() -> &'static [Plan] {
 
 /// GUID of the currently-active power scheme (unelevated), lowercased.
 pub fn active_guid() -> Option<String> {
-    let out = Command::new("powercfg")
+    let out = hidden_command("powercfg")
         .arg("/getactivescheme")
         .output()
         .ok()?;
@@ -60,7 +60,7 @@ pub fn active_index() -> i32 {
 /// Activate an existing power scheme by GUID (unelevated, best-effort). Used by
 /// System Modes, standard schemes switch without a UAC prompt.
 pub fn set_active(guid: &str) -> bool {
-    Command::new("powercfg")
+    hidden_command("powercfg")
         .args(["/setactive", guid])
         .status()
         .map(|s| s.success())

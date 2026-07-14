@@ -2,7 +2,7 @@
 //! unelevated via `Get-Service`; start/stop and changing start-type need admin,
 //! so those run through the elevated shell.
 
-use std::process::Command;
+use super::hidden_command;
 
 pub struct Svc {
     pub name: String,
@@ -23,7 +23,7 @@ fn startup_code(s: &str) -> u8 {
 
 /// All services, sorted by display name (unelevated). Tab-delimited parse.
 pub fn list() -> Vec<Svc> {
-    let out = Command::new("powershell")
+    let out = hidden_command("powershell")
         .args([
             "-NoProfile",
             "-NonInteractive",

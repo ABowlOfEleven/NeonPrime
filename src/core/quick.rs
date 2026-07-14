@@ -297,6 +297,27 @@ pub fn catalog() -> Vec<QuickAction> {
     ]
 }
 
+/// Raw URL of the online PowerShell-profile installer (run via `irm | iex`).
+/// Pinned to `main` so released builds fetch a stable script; it becomes live for
+/// a change once that change reaches `main`.
+const PROFILE_SETUP_URL: &str =
+    "https://raw.githubusercontent.com/ABowlOfEleven/NeonPrime/main/profile/setup.ps1";
+
+/// PowerShell for the "Install PowerShell profile" button, matching WinUtil's
+/// delivery: ensure Windows Terminal + PowerShell 7 (winget if missing), then run
+/// the online profile installer in a `wt`/`pwsh` tab. It is fetched rather than
+/// run from the staged file on purpose: Windows Terminal is a singleton, so a
+/// `new-tab` inherits neither the launcher's elevation nor a local path/env, and
+/// running in the user's own tab lands the profile in the logged-in user's scope
+/// rather than an elevating admin's (the old staged installer's cross-machine bug).
+pub fn install_ps_profile_cmd() -> String {
+    format!(
+        "if(-not(Get-Command wt -ErrorAction SilentlyContinue)){{winget install --id Microsoft.WindowsTerminal -e --source winget --accept-package-agreements --accept-source-agreements --silent}}; \
+         if(-not(Get-Command pwsh -ErrorAction SilentlyContinue)){{winget install --id Microsoft.PowerShell -e --source winget --accept-package-agreements --accept-source-agreements --silent}}; \
+         wt new-tab pwsh -NoExit -Command \"irm {PROFILE_SETUP_URL} | iex\""
+    )
+}
+
 pub fn invocation(id: &str) -> Option<Invocation> {
     let inv = |program: &str, args: &[&str], elevated: bool| Invocation {
         program: program.into(),
@@ -477,5 +498,17 @@ mod tests {
     #[test]
     fn unknown_id_is_none() {
         assert!(invocation("nope").is_none());
+    }
+
+    #[test]
+    fn profile_install_is_winutil_style() {
+        let c = install_ps_profile_cmd();
+        assert!(c.contains("Get-Command wt"), "ensures Windows Terminal");
+        assert!(c.contains("Get-Command pwsh"), "ensures PowerShell 7");
+        assert!(c.contains("wt new-tab pwsh"), "runs in a wt/pwsh tab");
+        assert!(
+            c.contains("irm ") && c.contains("setup.ps1"),
+            "fetches the online setup"
+        );
     }
 }

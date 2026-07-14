@@ -2,7 +2,7 @@
 //! an unelevated read of Win32_UserProfile (system/special profiles excluded);
 //! deleting a stale profile needs admin and runs through the elevated shell.
 
-use std::process::Command;
+use super::hidden_command;
 
 pub struct Profile {
     /// Resolved account name, or the SID if it can't be translated.
@@ -19,7 +19,7 @@ pub struct Profile {
 /// Non-system local profiles with folder size and last-use (unelevated). This
 /// walks each profile folder to sum sizes, so it is best run off-thread.
 pub fn list() -> Vec<Profile> {
-    let out = Command::new("powershell")
+    let out = hidden_command("powershell")
         .args([
             "-NoProfile",
             "-NonInteractive",

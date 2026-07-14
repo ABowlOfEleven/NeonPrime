@@ -6,8 +6,8 @@
 //! Removal is one-directional here; every app listed is reinstallable from the
 //! Microsoft Store. Telemetry tasks are disabled via `schtasks` (elevated).
 
+use super::hidden_command;
 use std::collections::HashSet;
-use std::process::Command;
 
 pub struct Bloat {
     pub id: &'static str,
@@ -109,7 +109,7 @@ pub fn catalog() -> &'static [Bloat] {
 /// `Name`s of every Appx package installed for the current user. Unelevated;
 /// slow (~1-2s), so call off-thread.
 pub fn installed_names() -> HashSet<String> {
-    let out = Command::new("powershell")
+    let out = hidden_command("powershell")
         .args([
             "-NoProfile",
             "-NonInteractive",
@@ -134,7 +134,7 @@ pub fn is_present(b: &Bloat, installed: &HashSet<String>) -> bool {
 /// Remove a bloat package for the current user (no elevation).
 pub fn remove(b: &Bloat) -> std::io::Result<bool> {
     let cmd = format!("Get-AppxPackage *{}* | Remove-AppxPackage", b.pkg);
-    let status = Command::new("powershell")
+    let status = hidden_command("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &cmd])
         .status()?;
     Ok(status.success())

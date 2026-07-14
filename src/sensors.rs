@@ -90,7 +90,7 @@ pub fn read() -> Sensors {
 
 /// Kill any leftover sidecar processes (best-effort cleanup from a prior run).
 pub fn kill_strays() {
-    let _ = std::process::Command::new("taskkill")
+    let _ = neonprime::core::hidden_command("taskkill")
         .args(["/f", "/im", "neonprime-sensors.exe"])
         .output();
 }
@@ -103,10 +103,37 @@ pub fn spawn_background() -> Option<std::process::Child> {
     if !exe.exists() {
         return None;
     }
-    std::process::Command::new(exe)
+    neonprime::core::hidden_command(exe)
         .args(["--out", &snapshot_path().to_string_lossy()])
         .spawn()
         .ok()
+}
+
+/// Whether the PawnIO driver (LHM 0.9.6+'s signed replacement for WinRing0) is
+/// installed. `sc query` exits 0 when the service exists, 1060 when it does not.
+/// CPU/board sensing needs it; GPU temps do not.
+pub fn pawnio_installed() -> bool {
+    neonprime::core::hidden_command("sc")
+        .args(["query", "PawnIO"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// An elevated script that installs PawnIO via winget and then starts the sidecar
+/// so CPU/board temps come up in the same step. Run through the elevated shell in
+/// a visible console (the user sees winget's progress); the sidecar it launches is
+/// therefore elevated and can open the PawnIO device.
+pub fn install_pawnio_script() -> String {
+    let exe = sidecar_exe();
+    let out = snapshot_path();
+    format!(
+        "winget install --exact --id namazso.PawnIO \
+         --accept-package-agreements --accept-source-agreements; \
+         Start-Process -FilePath '{}' -ArgumentList '--out','{}' -WindowStyle Hidden",
+        exe.display(),
+        out.display()
+    )
 }
 
 /// Launch the sidecar elevated (UAC) so it can load the LHM driver and report
@@ -119,7 +146,7 @@ pub fn spawn_elevated() -> std::io::Result<()> {
         exe.display(),
         out.display()
     );
-    std::process::Command::new("powershell")
+    neonprime::core::hidden_command("powershell")
         .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps])
         .spawn()?;
     Ok(())

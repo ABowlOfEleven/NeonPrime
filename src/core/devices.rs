@@ -1,7 +1,7 @@
 //! Driver & device inventory: signed drivers with version and date, and a flag
 //! for problem (error) devices. Unelevated via CIM. Supports a plain-text export.
 
-use std::process::Command;
+use super::hidden_command;
 
 pub struct Device {
     pub name: String,
@@ -21,7 +21,7 @@ pub fn list() -> Vec<Device> {
            $d = if ($_.DriverDate) { $_.DriverDate.ToString('yyyy-MM-dd') } else { '' }; \
            $p = $err -contains $_.DeviceName; \
            \"$($_.DeviceName)`t$($_.DeviceClass)`t$($_.DriverVersion)`t$d`t$p\" }";
-    let out = Command::new("powershell")
+    let out = hidden_command("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
         .output();
     let Ok(o) = out else { return Vec::new() };

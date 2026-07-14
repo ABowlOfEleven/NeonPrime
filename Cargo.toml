@@ -1,6 +1,6 @@
 [package]
 name = "neonprime"
-version = "3.3.0"
+version = "3.3.3"
 edition = "2021"
 description = "A holographic system control deck. One machine, three modes. It counts all the way to three."
 authors = ["NeonPrime contributors"]
@@ -26,6 +26,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 single-instance = "0.3"
 toml = "0.8"
+getrandom = "0.2" # CSPRNG for the broker handshake token
 
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.58"

@@ -5,8 +5,8 @@
 //! with an HTML index. Reuses the posture / eventlog / services collectors; the
 //! raw text dumps run through a single PowerShell pass.
 
+use super::hidden_command;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use super::{asset, eventlog, posture, services};
 
@@ -16,7 +16,7 @@ pub struct BundleResult {
 }
 
 fn ps_capture(cmd: &str) -> String {
-    Command::new("powershell")
+    hidden_command("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", cmd])
         .output()
         .ok()
@@ -111,7 +111,7 @@ pub fn generate() -> Result<BundleResult, String> {
            Format-Table -AutoSize | Out-File -Encoding utf8 (Join-Path $d 'installed-apps.txt'); \
          driverquery /v /fo table | Out-File -Encoding utf8 (Join-Path $d 'drivers.txt')"
     );
-    let _ = Command::new("powershell")
+    let _ = hidden_command("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", &dump])
         .output();
     for f in [

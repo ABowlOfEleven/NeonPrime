@@ -2,7 +2,7 @@
 //! policy last refreshed, via `gpresult`. Unelevated (current user scope). The
 //! full HTML report is produced with `gpresult /h`.
 
-use std::process::Command;
+use super::hidden_command;
 
 pub struct GpoInfo {
     pub last_refresh: String,
@@ -13,7 +13,7 @@ pub struct GpoInfo {
 }
 
 pub fn info() -> GpoInfo {
-    let raw = Command::new("gpresult")
+    let raw = hidden_command("gpresult")
         .args(["/r"])
         .output()
         .ok()

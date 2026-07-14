@@ -2,8 +2,8 @@
 //! and dedicated VRAM, the latter via the same PDH counters Task Manager uses
 //! (parsed per `pid_*` instance). Read-only except for `kill`.
 
+use super::hidden_command;
 use std::collections::HashMap;
-use std::process::Command;
 
 use sysinfo::{ProcessesToUpdate, System};
 use windows::core::PCWSTR;
@@ -176,7 +176,7 @@ impl ProcMonitor {
 
 /// Force-terminate a process by PID. Returns false on failure (e.g. protected).
 pub fn kill(pid: u32) -> bool {
-    Command::new("taskkill")
+    hidden_command("taskkill")
         .args(["/F", "/PID", &pid.to_string()])
         .status()
         .map(|s| s.success())

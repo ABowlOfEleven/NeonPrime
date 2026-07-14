@@ -2,7 +2,7 @@
 //! stuck queue, and restart the Print Spooler. Listing is unelevated; clearing a
 //! queue and restarting the spooler run through the elevated shell.
 
-use std::process::Command;
+use super::hidden_command;
 
 pub struct Printer {
     pub name: String,
@@ -17,7 +17,7 @@ fn esc(s: &str) -> String {
 
 /// All printers with their status and current queue depth (unelevated).
 pub fn list() -> Vec<Printer> {
-    let out = Command::new("powershell")
+    let out = hidden_command("powershell")
         .args([
             "-NoProfile",
             "-NonInteractive",

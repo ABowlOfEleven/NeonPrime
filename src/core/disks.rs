@@ -1,7 +1,7 @@
 //! Disk & volume health: per-volume free space and physical-disk SMART/health.
 //! Unelevated reads via Get-Volume and Get-PhysicalDisk.
 
-use std::process::Command;
+use super::hidden_command;
 
 pub struct Volume {
     pub name: String, // drive letter, e.g. "C:"
@@ -23,7 +23,7 @@ pub struct PhysDisk {
 }
 
 fn ps(cmd: &str) -> String {
-    Command::new("powershell")
+    hidden_command("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", cmd])
         .output()
         .ok()

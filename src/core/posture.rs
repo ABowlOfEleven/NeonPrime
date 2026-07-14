@@ -6,7 +6,7 @@
 //! tab-delimited lines (`name \t status \t state \t detail`), so a single process
 //! spawn covers the whole board. `state`: 0 unknown, 1 good, 2 warn, 3 bad.
 
-use std::process::Command;
+use super::hidden_command;
 
 pub struct PostureItem {
     pub name: String,
@@ -84,7 +84,7 @@ try {
 
 /// Run the posture board. Best-effort: a check that fails shows as "Unknown".
 pub fn scan() -> Vec<PostureItem> {
-    let out = Command::new("powershell")
+    let out = hidden_command("powershell")
         .args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
         .output();
     let Ok(o) = out else { return Vec::new() };
