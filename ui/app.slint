@@ -1,29 +1,62 @@
 // NeonPrime UI, P3: nav-driven views + the Tweaks panel.
-// Themes via `Theme.hev`; live telemetry via `Sys`; tweak rows via `Tweaks`.
+// Themes via `Theme.mode`; live telemetry via `Sys`; tweak rows via `Tweaks`.
 
 import { ListView } from "std-widgets.slint";
 
 export global Theme {
-    in-out property <bool> hev: false;
+    // 0 = Holo (default), 1 = HEV, 2 = Mann Co. (TF2), 3 = Aperture (Portal).
+    in-out property <int> mode: 0;
+    // Read-only alias kept for any legacy references.
+    out property <bool> hev: mode == 1;
 
-    out property <color> bg: hev ? #0d0b06 : #061119;
-    out property <color> divider: hev ? #463209 : #123043;
-    out property <color> track: hev ? #261b07 : #0e2230;
+    out property <color> bg:
+        mode == 1 ? #0d0b06 : mode == 2 ? #d5c39c : mode == 3 ? #e8e6dc : #061119;
+    out property <color> track:
+        mode == 1 ? #261b07 : mode == 2 ? #ecdfbd : mode == 3 ? #f4f2ea : #0e2230;
+    out property <color> divider:
+        mode == 1 ? #463209 : mode == 2 ? #8c7647 : mode == 3 ? #837e66 : #123043;
 
-    out property <color> accent: hev ? #ff9f2e : #34d2ff;
-    out property <color> accent-soft: hev ? #ffc061 : #8ae9ff;
-    out property <color> ember: hev ? #e24b4a : #ce8a1f;
-    out property <color> ember-soft: hev ? #ff7a6a : #e6ae45;
+    out property <color> accent:
+        mode == 1 ? #ff9f2e : mode == 2 ? #3d6373 : mode == 3 ? #cc601e : #34d2ff;
+    out property <color> accent-soft:
+        mode == 1 ? #ffc061 : mode == 2 ? #2a4f5e : mode == 3 ? #1f6f68 : #8ae9ff;
+    // Secondary series tone for the dashboard sparklines (the "assist" colour):
+    // each theme's ember, except Aperture, which routes its seafoam here.
+    out property <color> accent-2:
+        mode == 1 ? #e24b4a : mode == 2 ? #a2564a : mode == 3 ? #1f6f68 : #ce8a1f;
+    out property <color> ember:
+        mode == 1 ? #e24b4a : mode == 2 ? #a2564a : mode == 3 ? #a83a1e : #ce8a1f;
+    out property <color> ember-soft:
+        mode == 1 ? #ff7a6a : mode == 2 ? #863a2f : mode == 3 ? #93331a : #e6ae45;
 
-    // Brightened to clear WCAG AA 4.5:1 on the dark bg (was #8a6a2a / #5c7e92).
-    out property <color> text-dim: hev ? #a8853a : #6b90a4;
-    out property <color> text-body: hev ? #c9a766 : #a9c6d6;
+    // Body/dim shades: on the two light themes these are deep espresso/tan so
+    // 11px labels clear WCAG AA 4.5:1 on the pale surfaces.
+    out property <color> text-dim:
+        mode == 1 ? #a8853a : mode == 2 ? #52442a : mode == 3 ? #5e5844 : #6b90a4;
+    out property <color> text-body:
+        mode == 1 ? #c9a766 : mode == 2 ? #241d10 : mode == 3 ? #262117 : #a9c6d6;
 
-    out property <string> overview-title: hev ? "HAZARD SYSTEMS ONLINE" : "SYSTEM OVERVIEW";
-    // Nav/panel labels stay accurate in both themes (the HEV flavor lives in the
-    // crowbar icon and the dashboard title, not in a confusing "PRY BLOAT" rename).
+    out property <string> overview-title:
+        mode == 1 ? "HAZARD SYSTEMS ONLINE"
+        : mode == 2 ? "MANN CO. SYSTEMS NOMINAL"
+        : mode == 3 ? "ENRICHMENT CENTER: SYSTEMS NOMINAL"
+        : "SYSTEM OVERVIEW";
+    // Dashboard flavour line, in each theme's voice.
+    out property <string> overview-sub:
+        mode == 1 ? "Suit systems nominal. Hazards read amber, alarms read red."
+        : mode == 2 ? "Both teams nominal. BLU runs the deck, RED runs the warnings."
+        : mode == 3 ? "The lab boys told me the machine's running clean. Keep testing."
+        : "Live telemetry across GPU, memory, and thermals.";
+    out property <string> modes-title: mode == 1 ? "OPERATING MODES" : "SYSTEM MODES";
+    // Version-number prefix shown in the title bar (flavour near the version).
+    out property <string> version-prefix:
+        mode == 1 ? "HEV · v" : mode == 2 ? "MANN CO · v" : mode == 3 ? "AS · v" : "v";
+    // Short label for the theme dropdown.
+    out property <string> theme-name:
+        mode == 1 ? "HEV" : mode == 2 ? "MANN CO" : mode == 3 ? "APERTURE" : "HOLO";
+    // Nav/panel labels stay accurate across themes; the flavour lives in the
+    // brand mark and the dashboard title, not in a confusing "PRY BLOAT" rename.
     out property <string> tweaks-label: "TWEAKS";
-    out property <string> toggle-label: hev ? "THEME: HEV" : "THEME: HOLO";
 
     // Layout rhythm. List/toggle panels sit in a cozy centered column so controls
     // hug their labels; table panels (Processes/Network/Services) get a wider cap
@@ -158,7 +191,7 @@ export global Ui {
     in-out property <string> toast-message;
     in-out property <string> toast-kind; // "error" | "success" | "info"
     in-out property <bool> pawnio-prompt; // show "install PawnIO driver?" dialog
-    callback toggle-theme();
+    callback set-theme(int);
     callback undo-last();
     callback enable-sensors();
     callback install-pawnio();
@@ -583,7 +616,7 @@ component NavSection inherits Rectangle {
         x: 18px;
         y: parent.height - self.height - 2px;
         text: root.label;
-        color: Theme.text-dim.with-alpha(0.7);
+        color: Theme.text-dim;
         font-size: 10px;
         letter-spacing: 1px;
     }
@@ -676,6 +709,49 @@ component Meter inherits VerticalLayout {
             height: parent.height;
             border-radius: 2.5px;
             background: root.warn ? Theme.ember : Theme.accent;
+        }
+    }
+}
+
+// A single row in the title-bar theme dropdown.
+component ThemeOption inherits Rectangle {
+    in property <int> idx;
+    in property <string> label;
+    in property <color> dot;
+    callback chosen(int);
+    height: 30px;
+    border-radius: 6px;
+    background: Theme.mode == root.idx
+        ? Theme.accent.with-alpha(0.16)
+        : (opt-touch.has-hover ? Theme.accent.with-alpha(0.08) : transparent);
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 12px;
+        spacing: 9px;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 11px;
+                height: 11px;
+                border-radius: 2px;
+                background: root.dot;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.label;
+                color: Theme.mode == root.idx ? Theme.accent-soft : Theme.text-body;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+        }
+    }
+    opt-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.chosen(root.idx);
         }
     }
 }
@@ -1286,7 +1362,7 @@ component ModeCardView inherits Rectangle {
                 }
                 if root.active: Text {
                     text: "● ACTIVE";
-                    color: Theme.accent;
+                    color: Theme.accent-soft;
                     font-size: 10px;
                     vertical-alignment: center;
                 }
@@ -1317,7 +1393,7 @@ component ModesView inherits VerticalLayout {
     padding: 20px;
     spacing: 14px;
     Text {
-        text: Theme.hev ? "OPERATING MODES" : "SYSTEM MODES";
+        text: Theme.modes-title;
         color: Theme.accent-soft;
         font-size: 14px;
     }
@@ -1444,16 +1520,18 @@ component DashboardView inherits VerticalLayout {
         alignment: stretch;
         VerticalLayout {
             alignment: center;
-            Rectangle {
-                height: 20px;
-                Text {
-                    width: 100%;
-                    height: 100%;
-                    text: Theme.overview-title;
-                    color: Theme.accent-soft;
-                    font-size: 14px;
-                    vertical-alignment: center;
-                }
+            spacing: 3px;
+            Text {
+                text: Theme.overview-title;
+                color: Theme.accent-soft;
+                font-size: 14px;
+                vertical-alignment: center;
+            }
+            Text {
+                text: Theme.overview-sub;
+                color: Theme.text-dim;
+                font-size: 11px;
+                vertical-alignment: center;
             }
         }
         Rectangle { horizontal-stretch: 1; }
@@ -1511,7 +1589,7 @@ component DashboardView inherits VerticalLayout {
             Sparkline {
                 label: "GPU";
                 value: Sys.gpu-text;
-                tint: Theme.ember;
+                tint: Theme.accent-2;
                 values: Sys.gpu-history;
             }
         }
@@ -4410,7 +4488,10 @@ export component AppWindow inherits Window {
                     Image {
                         width: 20px;
                         height: 20px;
-                        source: Theme.hev ? @image-url("icons/lambda.svg") : @image-url("icons/logo.svg");
+                        source: Theme.mode == 1 ? @image-url("icons/lambda.svg")
+                            : Theme.mode == 2 ? @image-url("icons/mannco.svg")
+                            : Theme.mode == 3 ? @image-url("icons/aperture.svg")
+                            : @image-url("icons/logo.svg");
                         colorize: Theme.accent-soft;
                     }
                 }
@@ -4435,7 +4516,7 @@ export component AppWindow inherits Window {
                         Text {
                             width: 100%;
                             height: 100%;
-                            text: (Theme.hev ? "HEV · v" : "v") + Build.version;
+                            text: Theme.version-prefix + Build.version;
                             color: Theme.text-dim;
                             font-size: 11px;
                             vertical-alignment: center;
@@ -4481,24 +4562,71 @@ export component AppWindow inherits Window {
                 VerticalLayout {
                     alignment: center;
                     Rectangle {
-                        width: 112px;
+                        width: 138px;
                         height: 26px;
                         border-radius: 8px;
                         border-width: 1px;
                         border-color: Theme.divider;
                         background: Theme.accent.with-alpha(0.08);
-                        Text {
-                            width: 100%;
-                            height: 100%;
-                            text: Theme.toggle-label;
-                            color: Theme.accent-soft;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                            font-size: 11px;
+                        HorizontalLayout {
+                            padding-left: 11px;
+                            padding-right: 9px;
+                            spacing: 6px;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "THEME · " + Theme.theme-name;
+                                    color: Theme.accent-soft;
+                                    vertical-alignment: center;
+                                    font-size: 11px;
+                                }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "▾";
+                                    color: Theme.text-dim;
+                                    vertical-alignment: center;
+                                    font-size: 11px;
+                                }
+                            }
                         }
-                        TouchArea {
+                        themenu := PopupWindow {
+                            x: 0;
+                            y: parent.height + 4px;
+                            width: 150px;
+                            Rectangle {
+                                background: Theme.track;
+                                border-color: Theme.divider;
+                                border-width: 1px;
+                                border-radius: 8px;
+                                VerticalLayout {
+                                    padding: 5px;
+                                    spacing: 2px;
+                                    ThemeOption {
+                                        idx: 0; label: "HOLO"; dot: #34d2ff;
+                                        chosen(i) => { Ui.set-theme(i); themenu.close(); }
+                                    }
+                                    ThemeOption {
+                                        idx: 1; label: "HEV"; dot: #ff9f2e;
+                                        chosen(i) => { Ui.set-theme(i); themenu.close(); }
+                                    }
+                                    ThemeOption {
+                                        idx: 2; label: "MANN CO"; dot: #4c7484;
+                                        chosen(i) => { Ui.set-theme(i); themenu.close(); }
+                                    }
+                                    ThemeOption {
+                                        idx: 3; label: "APERTURE"; dot: #cc601e;
+                                        chosen(i) => { Ui.set-theme(i); themenu.close(); }
+                                    }
+                                }
+                            }
+                        }
+                        open-touch := TouchArea {
+                            mouse-cursor: pointer;
                             clicked => {
-                                Ui.toggle-theme();
+                                themenu.show();
                             }
                         }
                     }
@@ -4535,7 +4663,7 @@ export component AppWindow inherits Window {
                             NavItem { label: "EVENTS"; index: 16; icon: @image-url("icons/events.svg"); }
 
                             NavSection { label: "OPTIMIZE"; }
-                            NavItem { label: Theme.tweaks-label; index: 1; icon: Theme.hev ? @image-url("icons/crowbar.svg") : @image-url("icons/tweaks.svg"); }
+                            NavItem { label: Theme.tweaks-label; index: 1; icon: Theme.mode == 1 ? @image-url("icons/crowbar.svg") : @image-url("icons/tweaks.svg"); }
                             NavItem { label: "PRIVACY"; index: 8; icon: @image-url("icons/shield.svg"); }
                             NavItem { label: "DEBLOAT"; index: 10; icon: @image-url("icons/debloat.svg"); }
                             NavItem { label: "CLEANUP"; index: 12; icon: @image-url("icons/cleanup.svg"); }

@@ -887,12 +887,14 @@ fn wire_config(
 
 fn wire_theme(app: &AppWindow) {
     let weak = app.as_weak();
-    app.global::<Ui>().on_toggle_theme(move || {
+    app.global::<Ui>().on_set_theme(move |mode| {
         let Some(app) = weak.upgrade() else { return };
-        let t = app.global::<Theme>();
-        let new = !t.get_hev();
-        t.set_hev(new);
-        settings::Settings { theme_hev: new }.save();
+        app.global::<Theme>().set_mode(mode);
+        settings::Settings {
+            theme: mode,
+            theme_hev: false,
+        }
+        .save();
     });
 }
 
@@ -3315,7 +3317,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let notify = make_notifier(&app);
 
     app.global::<Theme>()
-        .set_hev(settings::Settings::load().theme_hev);
+        .set_mode(settings::Settings::load().theme);
 
     let journal_path: PathBuf = journal::default_path();
     let jrnl: SharedJournal = Rc::new(RefCell::new(Journal::load(&journal_path)));

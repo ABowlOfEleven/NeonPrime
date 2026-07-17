@@ -6,8 +6,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct Settings {
-    /// Whether the HEV theme is selected.
+    /// Selected theme: 0 Holo, 1 HEV, 2 Mann Co. (TF2), 3 Aperture (Portal).
     #[serde(default)]
+    pub theme: i32,
+    /// Legacy pre-multi-theme flag. Read once to migrate an old config, then
+    /// dropped (never written back).
+    #[serde(default, skip_serializing)]
     pub theme_hev: bool,
 }
 
@@ -22,10 +26,16 @@ fn path() -> PathBuf {
 
 impl Settings {
     pub fn load() -> Self {
-        std::fs::read_to_string(path())
+        let mut s: Settings = std::fs::read_to_string(path())
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // Migrate the old boolean HEV flag to the theme index.
+        if s.theme == 0 && s.theme_hev {
+            s.theme = 1;
+        }
+        s.theme_hev = false;
+        s
     }
 
     pub fn save(&self) {
