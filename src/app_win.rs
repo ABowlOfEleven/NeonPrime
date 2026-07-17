@@ -3261,7 +3261,48 @@ fn wire_history(
     (timer, refresh)
 }
 
+/// Print a line to the console that launched us and exit-friendly flush. This is
+/// a windows-subsystem (GUI) binary with no console of its own, so we attach to
+/// the parent process's console; when launched from a shell that captures stdout,
+/// the inherited pipe already carries it. Lets `--version` / `--help` produce
+/// real output instead of silently opening a window (what winget validation and
+/// CLI users expect).
+fn console_print(msg: &str) {
+    use std::io::Write;
+    // SAFETY: AttachConsole is a benign attach-to-parent; failure (no console) is
+    // ignored, in which case the stdout write below is a harmless no-op.
+    unsafe {
+        use windows::Win32::System::Console::{AttachConsole, ATTACH_PARENT_PROCESS};
+        let _ = AttachConsole(ATTACH_PARENT_PROCESS);
+    }
+    let mut out = std::io::stdout();
+    let _ = writeln!(out, "{msg}");
+    let _ = out.flush();
+}
+
 fn main() -> Result<(), slint::PlatformError> {
+    // CLI flags, handled before any window is created. `neonprime.exe --version`
+    // must print and exit, not launch the GUI (which produces no console output
+    // and fails to open on a machine with no display/GPU, e.g. a validation
+    // sandbox, looking like a broken binary).
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--version" || a == "-V" || a == "-v") {
+        console_print(&format!("NeonPrime {}", env!("CARGO_PKG_VERSION")));
+        return Ok(());
+    }
+    if args.iter().any(|a| a == "--help" || a == "-h" || a == "/?") {
+        console_print(&format!(
+            "NeonPrime {}\n\
+             A holographic system control deck (graphical app for Windows).\n\n\
+             Usage:\n  \
+             neonprime              Open the app.\n  \
+             neonprime --version    Print the version and exit.\n  \
+             neonprime --help       Show this help.",
+            env!("CARGO_PKG_VERSION")
+        ));
+        return Ok(());
+    }
+
     // Single-instance guard, a second launch exits rather than racing the journal.
     let instance = single_instance::SingleInstance::new("neonprime-singleton").ok();
     if let Some(inst) = &instance {
