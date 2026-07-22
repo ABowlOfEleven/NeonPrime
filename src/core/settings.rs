@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Default, Debug, Clone)]
 pub struct Settings {
-    /// Selected theme: 0 Holo, 1 HEV, 2 Mann Co. (TF2), 3 Aperture (Portal).
+    /// Selected theme: 0 Holo, 1 HEV, 2 Mann Co. (TF2), 3 Aperture (Portal),
+    /// 4 SteamOS (Steam Deck Gaming Mode).
     #[serde(default)]
     pub theme: i32,
     /// Legacy pre-multi-theme flag. Read once to migrate an old config, then

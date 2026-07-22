@@ -4,56 +4,59 @@
 import { ListView } from "std-widgets.slint";
 
 export global Theme {
-    // 0 = Holo (default), 1 = HEV, 2 = Mann Co. (TF2), 3 = Aperture (Portal).
+    // 0 = Holo (default), 1 = HEV, 2 = Mann Co. (TF2), 3 = Aperture (Portal),
+    // 4 = SteamOS (Steam Deck Gaming Mode).
     in-out property <int> mode: 0;
     // Read-only alias kept for any legacy references.
     out property <bool> hev: mode == 1;
 
     out property <color> bg:
-        mode == 1 ? #0d0b06 : mode == 2 ? #d5c39c : mode == 3 ? #e8e6dc : #061119;
+        mode == 1 ? #0d0b06 : mode == 2 ? #d5c39c : mode == 3 ? #e8e6dc : mode == 4 ? #0d1520 : #061119;
     out property <color> track:
-        mode == 1 ? #261b07 : mode == 2 ? #ecdfbd : mode == 3 ? #f4f2ea : #0e2230;
+        mode == 1 ? #261b07 : mode == 2 ? #ecdfbd : mode == 3 ? #f4f2ea : mode == 4 ? #172231 : #0e2230;
     out property <color> divider:
-        mode == 1 ? #463209 : mode == 2 ? #8c7647 : mode == 3 ? #837e66 : #123043;
+        mode == 1 ? #463209 : mode == 2 ? #8c7647 : mode == 3 ? #837e66 : mode == 4 ? #26364a : #123043;
 
     out property <color> accent:
-        mode == 1 ? #ff9f2e : mode == 2 ? #3d6373 : mode == 3 ? #cc601e : #34d2ff;
+        mode == 1 ? #ff9f2e : mode == 2 ? #3d6373 : mode == 3 ? #cc601e : mode == 4 ? #1a9fff : #34d2ff;
     out property <color> accent-soft:
-        mode == 1 ? #ffc061 : mode == 2 ? #2a4f5e : mode == 3 ? #1f6f68 : #8ae9ff;
+        mode == 1 ? #ffc061 : mode == 2 ? #2a4f5e : mode == 3 ? #1f6f68 : mode == 4 ? #7cc4ff : #8ae9ff;
     // Secondary series tone for the dashboard sparklines (the "assist" colour):
-    // each theme's ember, except Aperture, which routes its seafoam here.
+    // each theme's ember, except Aperture (seafoam) and SteamOS (cyan).
     out property <color> accent-2:
-        mode == 1 ? #e24b4a : mode == 2 ? #a2564a : mode == 3 ? #1f6f68 : #ce8a1f;
+        mode == 1 ? #e24b4a : mode == 2 ? #a2564a : mode == 3 ? #1f6f68 : mode == 4 ? #22d3ee : #ce8a1f;
     out property <color> ember:
-        mode == 1 ? #e24b4a : mode == 2 ? #a2564a : mode == 3 ? #a83a1e : #ce8a1f;
+        mode == 1 ? #e24b4a : mode == 2 ? #a2564a : mode == 3 ? #a83a1e : mode == 4 ? #ef5350 : #ce8a1f;
     out property <color> ember-soft:
-        mode == 1 ? #ff7a6a : mode == 2 ? #863a2f : mode == 3 ? #93331a : #e6ae45;
+        mode == 1 ? #ff7a6a : mode == 2 ? #863a2f : mode == 3 ? #93331a : mode == 4 ? #ff8079 : #e6ae45;
 
     // Body/dim shades: on the two light themes these are deep espresso/tan so
     // 11px labels clear WCAG AA 4.5:1 on the pale surfaces.
     out property <color> text-dim:
-        mode == 1 ? #a8853a : mode == 2 ? #52442a : mode == 3 ? #5e5844 : #6b90a4;
+        mode == 1 ? #a8853a : mode == 2 ? #52442a : mode == 3 ? #5e5844 : mode == 4 ? #8497ad : #6b90a4;
     out property <color> text-body:
-        mode == 1 ? #c9a766 : mode == 2 ? #241d10 : mode == 3 ? #262117 : #a9c6d6;
+        mode == 1 ? #c9a766 : mode == 2 ? #241d10 : mode == 3 ? #262117 : mode == 4 ? #cdd8e6 : #a9c6d6;
 
     out property <string> overview-title:
         mode == 1 ? "HAZARD SYSTEMS ONLINE"
         : mode == 2 ? "MANN CO. SYSTEMS NOMINAL"
         : mode == 3 ? "ENRICHMENT CENTER: SYSTEMS NOMINAL"
+        : mode == 4 ? "GAMING MODE: SYSTEMS NOMINAL"
         : "SYSTEM OVERVIEW";
     // Dashboard flavour line, in each theme's voice.
     out property <string> overview-sub:
         mode == 1 ? "Suit systems nominal. Hazards read amber, alarms read red."
         : mode == 2 ? "Both teams nominal. BLU runs the deck, RED runs the warnings."
         : mode == 3 ? "The lab boys told me the machine's running clean. Keep testing."
+        : mode == 4 ? "Gaming Mode engaged. Everything's warm, quiet, and ready to play."
         : "Live telemetry across GPU, memory, and thermals.";
     out property <string> modes-title: mode == 1 ? "OPERATING MODES" : "SYSTEM MODES";
     // Version-number prefix shown in the title bar (flavour near the version).
     out property <string> version-prefix:
-        mode == 1 ? "HEV · v" : mode == 2 ? "MANN CO · v" : mode == 3 ? "AS · v" : "v";
+        mode == 1 ? "HEV · v" : mode == 2 ? "MANN CO · v" : mode == 3 ? "AS · v" : mode == 4 ? "DECK · v" : "v";
     // Short label for the theme dropdown.
     out property <string> theme-name:
-        mode == 1 ? "HEV" : mode == 2 ? "MANN CO" : mode == 3 ? "APERTURE" : "HOLO";
+        mode == 1 ? "HEV" : mode == 2 ? "MANN CO" : mode == 3 ? "APERTURE" : mode == 4 ? "STEAMOS" : "HOLO";
     // Nav/panel labels stay accurate across themes; the flavour lives in the
     // brand mark and the dashboard title, not in a confusing "PRY BLOAT" rename.
     out property <string> tweaks-label: "TWEAKS";
@@ -4500,6 +4503,7 @@ export component AppWindow inherits Window {
                         source: Theme.mode == 1 ? @image-url("icons/lambda.svg")
                             : Theme.mode == 2 ? @image-url("icons/mannco.svg")
                             : Theme.mode == 3 ? @image-url("icons/aperture.svg")
+                            : Theme.mode == 4 ? @image-url("icons/steamos.svg")
                             : @image-url("icons/logo.svg");
                         colorize: Theme.accent-soft;
                     }
@@ -4630,6 +4634,10 @@ export component AppWindow inherits Window {
                                     }
                                     ThemeOption {
                                         idx: 3; label: "APERTURE"; dot: #cc601e;
+                                        chosen(i) => { Ui.set-theme(i); themenu.close(); }
+                                    }
+                                    ThemeOption {
+                                        idx: 4; label: "STEAMOS"; dot: #1a9fff;
                                         chosen(i) => { Ui.set-theme(i); themenu.close(); }
                                     }
                                 }
