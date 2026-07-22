@@ -534,30 +534,85 @@ fn wire_modes(
 
 fn wire_installs(app: &AppWindow, notify: &Notify) -> Timer {
     let catalog = Rc::new(installs::catalog());
-    let rows: Vec<AppRow> = catalog
-        .iter()
-        .enumerate()
-        .map(|(i, a)| AppRow {
-            id: i as i32,
+
+    // Display rows: a collapsible header whenever the category changes, then that
+    // category's apps. App rows carry their catalog index in `id`; header rows use
+    // id = -1. Ordered by (category, name) so apps group under their header.
+    let mut order: Vec<usize> = (0..catalog.len()).collect();
+    order.sort_by(|&a, &b| {
+        let (ca, cb) = (&catalog[a], &catalog[b]);
+        ca.category
+            .to_lowercase()
+            .cmp(&cb.category.to_lowercase())
+            .then_with(|| ca.name.to_lowercase().cmp(&cb.name.to_lowercase()))
+    });
+    let mut display: Vec<AppRow> = Vec::with_capacity(catalog.len() + 16);
+    let mut last_cat = String::new();
+    for &ci in &order {
+        let a = &catalog[ci];
+        if a.category != last_cat {
+            last_cat.clone_from(&a.category);
+            display.push(AppRow {
+                id: -1,
+                name: Default::default(),
+                desc: Default::default(),
+                category: a.category.as_str().into(),
+                installed: false,
+                known: false,
+                icon: Default::default(),
+                monogram: Default::default(),
+                is_header: true,
+                collapsed: false,
+            });
+        }
+        display.push(AppRow {
+            id: ci as i32,
             name: a.name.as_str().into(),
             desc: a.desc.as_str().into(),
             category: a.category.as_str().into(),
             installed: false,
             known: false,
-        })
-        .collect();
-    let source = Rc::new(VecModel::from(rows));
+            icon: Default::default(),
+            monogram: monogram_of(&a.name).into(),
+            is_header: false,
+            collapsed: false,
+        });
+    }
+    let source = Rc::new(VecModel::from(display));
 
-    // Search filter over name / description / category (~300 apps).
+    // catalog id -> source row index, for the scan and icon pumps.
+    let mut id_to_row = std::collections::HashMap::<i32, usize>::new();
+    for i in 0..source.row_count() {
+        if let Some(r) = source.row_data(i) {
+            if !r.is_header && r.id >= 0 {
+                id_to_row.insert(r.id, i);
+            }
+        }
+    }
+    let id_to_row = Rc::new(id_to_row);
+
+    // Search filter over name / description / category, plus category collapse.
+    let collapsed = Rc::new(RefCell::new(std::collections::HashSet::<String>::new()));
     let filter_text = Rc::new(RefCell::new(String::new()));
     let filtered = Rc::new(FilterModel::new(ModelRc::from(source.clone()), {
         let ft = filter_text.clone();
+        let collapsed = collapsed.clone();
         move |row: &AppRow| {
             let t = ft.borrow();
-            t.is_empty()
+            let searching = !t.is_empty();
+            if row.is_header {
+                // Results are flat while searching, so hide category headers.
+                return !searching;
+            }
+            let matches = !searching
                 || row.name.to_lowercase().contains(t.as_str())
                 || row.desc.to_lowercase().contains(t.as_str())
-                || row.category.to_lowercase().contains(t.as_str())
+                || row.category.to_lowercase().contains(t.as_str());
+            if !matches {
+                return false;
+            }
+            // Hide apps in a collapsed category (unless searching).
+            searching || !collapsed.borrow().contains(row.category.as_str())
         }
     }));
     app.global::<Installer>()
@@ -572,6 +627,32 @@ fn wire_installs(app: &AppWindow, notify: &Notify) -> Timer {
                 *ft.borrow_mut() = app.global::<Installer>().get_filter_text().to_lowercase();
                 filtered.reset();
             }
+        });
+    }
+    {
+        let collapsed = collapsed.clone();
+        let filtered = filtered.clone();
+        let source = source.clone();
+        app.global::<Installer>().on_toggle_category(move |cat| {
+            let cat = cat.to_string();
+            {
+                let mut c = collapsed.borrow_mut();
+                if !c.remove(&cat) {
+                    c.insert(cat.clone());
+                }
+            }
+            // Reflect the new state on the header row so its chevron rotates.
+            let is_col = collapsed.borrow().contains(&cat);
+            for i in 0..source.row_count() {
+                if let Some(mut r) = source.row_data(i) {
+                    if r.is_header && r.category.as_str() == cat {
+                        r.collapsed = is_col;
+                        source.set_row_data(i, r);
+                        break;
+                    }
+                }
+            }
+            filtered.reset();
         });
     }
 
@@ -634,6 +715,78 @@ fn wire_installs(app: &AppWindow, notify: &Notify) -> Timer {
         });
     }
 
+    // App icons: a background thread fetches each favicon (DuckDuckGo, cached to
+    // disk via curl), sending (catalog-id, path) back; the pump timer below decodes
+    // and sets them on the rows. Gated by the "show app icons" setting.
+    let (icon_tx, icon_rx) = mpsc::channel::<(i32, std::path::PathBuf)>();
+    // (catalog-id, link) for apps that have a homepage. Arc so the fetch thread
+    // can own a Send-able snapshot (the catalog itself is Rc, not Send).
+    let icon_links: std::sync::Arc<Vec<(i32, String)>> = std::sync::Arc::new(
+        catalog
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| !a.link.is_empty())
+            .map(|(i, a)| (i as i32, a.link.clone()))
+            .collect(),
+    );
+    let spawn_icon_fetch: Rc<dyn Fn()> = {
+        let icon_tx = icon_tx.clone();
+        let icon_links = icon_links.clone();
+        Rc::new(move || {
+            let icon_tx = icon_tx.clone();
+            let icon_links = icon_links.clone();
+            std::thread::spawn(move || {
+                // Phase 1: already-cached icons, instantly (no network), so the
+                // list fills immediately on a warm cache.
+                for (id, link) in icon_links.iter() {
+                    if let Some(path) = installs::cached_icon(link) {
+                        let _ = icon_tx.send((*id, path));
+                    }
+                }
+                // Phase 2: fetch the ones still missing. A slow/uncached app can't
+                // hold up the cached ones anymore.
+                for (id, link) in icon_links.iter() {
+                    if installs::cached_icon(link).is_none() {
+                        if let Some(path) = installs::ensure_icon(link) {
+                            let _ = icon_tx.send((*id, path));
+                        }
+                    }
+                }
+            });
+        })
+    };
+    let icons_on = settings::Settings::load().show_app_icons;
+    app.global::<Installer>().set_show_icons(icons_on);
+    if icons_on {
+        spawn_icon_fetch();
+    }
+    {
+        let weak = app.as_weak();
+        let spawn = spawn_icon_fetch.clone();
+        let source = source.clone();
+        app.global::<Installer>().on_toggle_icons(move || {
+            let Some(app) = weak.upgrade() else { return };
+            let mut s = settings::Settings::load();
+            s.show_app_icons = !s.show_app_icons;
+            let now_on = s.show_app_icons;
+            s.save();
+            app.global::<Installer>().set_show_icons(now_on);
+            if now_on {
+                spawn();
+            } else {
+                // Clear loaded icons so a later re-enable starts clean.
+                for i in 0..source.row_count() {
+                    if let Some(mut r) = source.row_data(i) {
+                        if !r.is_header {
+                            r.icon = slint::Image::default();
+                            source.set_row_data(i, r);
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     // Scan installed apps off-thread (`winget export` is slow), then flag each row
     // installed / available. An empty scan result means winget failed or is
     // missing, so we leave those rows "unknown" rather than falsely marking
@@ -669,10 +822,11 @@ fn wire_installs(app: &AppWindow, notify: &Notify) -> Timer {
         });
     }
 
-    // Pump scan results onto the rows.
+    // Pump scan results and fetched icons onto the rows.
     let weak = app.as_weak();
     let catalog2 = catalog.clone();
     let source2 = source.clone();
+    let id_to_row2 = id_to_row.clone();
     let timer = Timer::default();
     timer.start(TimerMode::Repeated, Duration::from_millis(200), move || {
         while let Ok(scan) = rx.try_recv() {
@@ -680,23 +834,89 @@ fn wire_installs(app: &AppWindow, notify: &Notify) -> Timer {
             // "unknown" rather than falsely marking them uninstalled; author apps
             // resolve from Add/Remove Programs regardless.
             let winget_ok = !scan.ids.is_empty();
-            for (i, a) in catalog2.iter().enumerate() {
-                if let Some(mut r) = source2.row_data(i) {
+            for (ci, a) in catalog2.iter().enumerate() {
+                let Some(&ri) = id_to_row2.get(&(ci as i32)) else {
+                    continue;
+                };
+                if let Some(mut r) = source2.row_data(ri) {
                     if !a.id.is_empty() && !winget_ok {
                         r.known = false;
                     } else {
                         r.installed = installs::is_installed(a, &scan);
                         r.known = true;
                     }
-                    source2.set_row_data(i, r);
+                    source2.set_row_data(ri, r);
                 }
             }
             if let Some(app) = weak.upgrade() {
                 app.global::<Installer>().set_scanning(false);
             }
         }
+        // Decode a few fetched icons per tick, spreading the work across frames.
+        let mut budget = 16;
+        while budget > 0 {
+            let Ok((id, path)) = icon_rx.try_recv() else {
+                break;
+            };
+            budget -= 1;
+            if let Some(&ri) = id_to_row2.get(&id) {
+                if let Some(img) = load_icon(&path) {
+                    if let Some(mut r) = source2.row_data(ri) {
+                        r.icon = img;
+                        source2.set_row_data(ri, r);
+                    }
+                }
+            }
+        }
     });
     timer
+}
+
+/// First character of a name, uppercased, for the icon monogram fallback.
+fn monogram_of(name: &str) -> String {
+    name.chars()
+        .next()
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_default()
+}
+
+/// Decode a cached favicon into a Slint image. The DuckDuckGo service serves a
+/// mix of formats under the `.ico` name (ICO, PNG, even WebP), so we detect the
+/// format from the bytes rather than the extension. Returns None on a
+/// missing/undecodable file, in which case the row keeps its monogram.
+fn load_icon(path: &std::path::Path) -> Option<slint::Image> {
+    let bytes = std::fs::read(path).ok()?;
+    let img = decode_favicon(&bytes)?;
+    let (w, h) = img.dimensions();
+    let mut buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(w, h);
+    buf.make_mut_bytes().copy_from_slice(img.as_raw());
+    Some(slint::Image::from_rgba8(buf))
+}
+
+fn decode_favicon(bytes: &[u8]) -> Option<image::RgbaImage> {
+    let mut img = decode_favicon_bytes(bytes)?;
+    // Some 32-bpp BMP icons carry a zero alpha channel (their transparency lived
+    // in the ICO's separate AND mask, which the decoder drops), so they decode to
+    // a fully transparent image. Treat all-zero alpha as opaque so it stays visible.
+    if img.pixels().all(|p| p.0[3] == 0) {
+        for p in img.pixels_mut() {
+            p.0[3] = 255;
+        }
+    }
+    Some(img)
+}
+
+fn decode_favicon_bytes(bytes: &[u8]) -> Option<image::RgbaImage> {
+    if let Ok(img) = image::load_from_memory(bytes) {
+        return Some(img.to_rgba8());
+    }
+    // Some ICOs embed a non-RGBA PNG that image's ICO decoder rejects. Find the
+    // embedded PNG and decode it directly (the PNG decoder handles any colour type).
+    const PNG_SIG: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+    let pos = bytes.windows(PNG_SIG.len()).position(|w| w == PNG_SIG)?;
+    image::load_from_memory_with_format(&bytes[pos..], image::ImageFormat::Png)
+        .ok()
+        .map(|img| img.to_rgba8())
 }
 
 // ── Config ──────────────────────────────────────────────────────────
@@ -890,11 +1110,10 @@ fn wire_theme(app: &AppWindow) {
     app.global::<Ui>().on_set_theme(move |mode| {
         let Some(app) = weak.upgrade() else { return };
         app.global::<Theme>().set_mode(mode);
-        settings::Settings {
-            theme: mode,
-            theme_hev: false,
-        }
-        .save();
+        // Load-modify-save so other settings (e.g. show_app_icons) are preserved.
+        let mut s = settings::Settings::load();
+        s.theme = mode;
+        s.save();
     });
 }
 

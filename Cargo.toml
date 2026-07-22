@@ -9,8 +9,8 @@ license = "MIT"
 # Cross-platform dependencies (Windows + Linux).
 [dependencies]
 slint = "1"
-sysinfo = "0.33"
-dns-lookup = "2"
+sysinfo = "0.39"
+dns-lookup = "3"
 
 # Linux-only: the terminal UI (headless/SSH-friendly, no display needed).
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -19,17 +19,22 @@ crossterm = "0.29"
 
 # Windows-only backend: registry, WMI, DXGI/PDH telemetry, NVML, shell.
 [target.'cfg(windows)'.dependencies]
-nvml-wrapper = "0.10"
-winreg = "0.52"
-wmi = "0.14"
+nvml-wrapper = "0.12"
+winreg = "0.56"
+wmi = "0.18"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 single-instance = "0.3"
-toml = "0.8"
-getrandom = "0.2" # CSPRNG for the broker handshake token
+toml = "1.1"
+getrandom = "0.4" # CSPRNG for the broker handshake token
+# Decode cached app favicons (ICO/PNG) into RGBA for the Install list. Minimal
+# codec set, no default features, so it stays light and pure-Rust.
+# ICO sub-images are usually BMP or PNG, so both codecs are needed to decode
+# favicons; jpeg/gif cover the occasional oddball.
+image = { version = "0.25", default-features = false, features = ["ico", "png", "bmp", "jpeg", "gif", "webp"] }
 
 [target.'cfg(windows)'.dependencies.windows]
-version = "0.58"
+version = "0.62"
 features = [
     "Win32_Foundation",
     "Win32_Graphics_Dxgi",

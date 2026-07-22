@@ -39,7 +39,7 @@ fn broker_exe() -> io::Result<std::path::PathBuf> {
 /// that residual is the named-pipe + DACL migration tracked separately.)
 fn handshake_token() -> String {
     let mut buf = [0u8; 16];
-    getrandom::getrandom(&mut buf).expect("OS CSPRNG unavailable");
+    getrandom::fill(&mut buf).expect("OS CSPRNG unavailable");
     buf.iter().map(|b| format!("{b:02x}")).collect()
 }
 

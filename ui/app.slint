@@ -147,6 +147,10 @@ export struct AppRow {
     category: string,
     installed: bool,
     known: bool, // false until the winget scan has reported for this row
+    icon: image, // app favicon (empty until fetched / when icons are off)
+    monogram: string, // first letter, shown as a tile when there is no icon
+    is-header: bool, // true = a collapsible category header, not an app
+    collapsed: bool, // for header rows: whether the category is collapsed
 }
 
 export global Installer {
@@ -154,11 +158,14 @@ export global Installer {
     in-out property <string> filter-text;
     in property <int> count;
     in property <bool> scanning: true; // winget install-state scan in progress
+    in-out property <bool> show-icons: true; // fetch + show app favicons
     callback install(int);
     callback remove(int);
     callback filter();
     callback update-all();
     callback recheck();
+    callback toggle-icons();
+    callback toggle-category(string);
 }
 
 // Build/version info, set from Rust (CARGO_PKG_VERSION).
@@ -1205,6 +1212,33 @@ component AppRowView inherits Rectangle {
         padding-left: 18px;
         padding-right: 18px;
         spacing: 14px;
+        // App icon (favicon, cached) with a letter-monogram fallback beneath it,
+        // shown only when the "app icons" toggle is on. The Image overlays the
+        // monogram: an unset icon renders nothing, so the monogram shows through.
+        if Installer.show-icons: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 26px;
+                height: 26px;
+                border-radius: 6px;
+                background: Theme.accent.with-alpha(0.10);
+                Text {
+                    width: 100%;
+                    height: 100%;
+                    text: root.app.monogram;
+                    color: Theme.accent-soft;
+                    font-size: 12px;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                Image {
+                    source: root.app.icon;
+                    width: 22px;
+                    height: 22px;
+                    image-fit: contain;
+                }
+            }
+        }
         VerticalLayout {
             alignment: center;
             spacing: 3px;
@@ -1275,6 +1309,51 @@ component AppRowView inherits Rectangle {
     }
 }
 
+// A collapsible category header row in the Install list.
+component CategoryHeader inherits Rectangle {
+    in property <AppRow> entry;
+    background: hdr-touch.has-hover ? Theme.accent.with-alpha(0.05) : transparent;
+    HorizontalLayout {
+        padding-left: 18px;
+        padding-right: 18px;
+        spacing: 9px;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Image {
+                source: @image-url("icons/caret.svg");
+                colorize: Theme.text-dim;
+                width: 11px;
+                height: 11px;
+                transform-rotation: root.entry.collapsed ? -90deg : 0deg;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.entry.category;
+                color: Theme.accent-soft;
+                font-size: 11px;
+                letter-spacing: 0.6px;
+                vertical-alignment: center;
+            }
+        }
+    }
+    Rectangle {
+        x: 0;
+        y: parent.height - 1px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.divider;
+    }
+    hdr-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            Installer.toggle-category(root.entry.category);
+        }
+    }
+}
+
 component InstallView inherits VerticalLayout {
     padding-top: 18px;
     padding-bottom: 8px;
@@ -1300,7 +1379,9 @@ component InstallView inherits VerticalLayout {
     HorizontalLayout {
         padding-left: 20px;
         padding-right: 20px;
+        spacing: 12px;
         Rectangle {
+            horizontal-stretch: 1;
             height: 30px;
             border-radius: 6px;
             border-width: 1px;
@@ -1328,6 +1409,33 @@ component InstallView inherits VerticalLayout {
                 vertical-alignment: center;
             }
         }
+        // "Show app icons" toggle (default on). Off = no favicon fetch.
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: 8px;
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "APP ICONS";
+                        color: Theme.text-dim;
+                        font-size: 10px;
+                        letter-spacing: 0.4px;
+                        vertical-alignment: center;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Toggle {
+                        on: Installer.show-icons;
+                        a11y-label: "Show app icons";
+                        toggled(v) => {
+                            Installer.toggle-icons();
+                        }
+                    }
+                }
+            }
+        }
     }
     if Installer.rows.length == 0: EmptyState {
         vertical-stretch: 1;
@@ -1335,8 +1443,16 @@ component InstallView inherits VerticalLayout {
     }
     if Installer.rows.length > 0: ListView {
         vertical-stretch: 1;
-        for a in Installer.rows: AppRowView {
-            app: a;
+        for a in Installer.rows: Rectangle {
+            height: a.is-header ? 34px : 54px;
+            if a.is-header: CategoryHeader {
+                entry: a;
+                width: 100%;
+            }
+            if !a.is-header: AppRowView {
+                app: a;
+                width: 100%;
+            }
         }
     }
 }

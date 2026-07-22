@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Default, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Settings {
     /// Selected theme: 0 Holo, 1 HEV, 2 Mann Co. (TF2), 3 Aperture (Portal),
     /// 4 SteamOS (Steam Deck Gaming Mode).
@@ -14,6 +14,25 @@ pub struct Settings {
     /// dropped (never written back).
     #[serde(default, skip_serializing)]
     pub theme_hev: bool,
+    /// Show app favicons in the Install list. Default on; when off, no icon
+    /// network fetch happens and the list shows letter monograms instead.
+    #[serde(default = "default_true")]
+    pub show_app_icons: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+// Manual Default (not derived) so a missing config file defaults icons ON.
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            theme: 0,
+            theme_hev: false,
+            show_app_icons: true,
+        }
+    }
 }
 
 fn path() -> PathBuf {

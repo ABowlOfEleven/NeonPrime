@@ -61,7 +61,7 @@ const PDH_MORE_DATA_U32: u32 = 0x800007D2;
 
 /// Sum a PDH counter's instances as doubles. Returns `Some(0.0)` when there are
 /// no instances (idle), `None` on error.
-unsafe fn read_sum(counter: isize) -> Option<f64> {
+unsafe fn read_sum(counter: PDH_HCOUNTER) -> Option<f64> {
     let mut size: u32 = 0;
     let mut count: u32 = 0;
     let probe = PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &mut size, &mut count, None);
@@ -96,18 +96,18 @@ unsafe fn read_sum(counter: isize) -> Option<f64> {
 /// Live PDH counters for vendor-neutral GPU load + dedicated VRAM usage, the
 /// same sources Task Manager reads, so they work for NVIDIA / AMD / Intel.
 pub struct GpuCounters {
-    query: isize,
-    util: isize,
-    mem: isize,
+    query: PDH_HQUERY,
+    util: PDH_HCOUNTER,
+    mem: PDH_HCOUNTER,
     ready: bool,
 }
 
 impl GpuCounters {
     pub fn new() -> Self {
         unsafe {
-            let mut query: isize = 0;
-            let mut util: isize = 0;
-            let mut mem: isize = 0;
+            let mut query = PDH_HQUERY::default();
+            let mut util = PDH_HCOUNTER::default();
+            let mut mem = PDH_HCOUNTER::default();
             let mut ready = false;
 
             if PdhOpenQueryW(PCWSTR::null(), 0, &mut query) == 0 {

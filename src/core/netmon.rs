@@ -6,7 +6,6 @@ use std::ffi::c_void;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 
-use windows::Win32::Foundation::BOOL;
 use windows::Win32::NetworkManagement::IpHelper::{
     GetExtendedTcpTable, MIB_TCPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_ALL,
 };
@@ -51,7 +50,7 @@ pub fn connections() -> Vec<Conn> {
         GetExtendedTcpTable(
             None,
             &mut size,
-            BOOL(0),
+            false,
             AF_INET.0 as u32,
             TCP_TABLE_OWNER_PID_ALL,
             0,
@@ -65,7 +64,7 @@ pub fn connections() -> Vec<Conn> {
         GetExtendedTcpTable(
             Some(buf.as_mut_ptr() as *mut c_void),
             &mut size,
-            BOOL(0),
+            false,
             AF_INET.0 as u32,
             TCP_TABLE_OWNER_PID_ALL,
             0,

@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::Deserialize;
-use wmi::{COMLibrary, WMIConnection};
+use wmi::WMIConnection;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -31,9 +31,8 @@ impl CpuTempMonitor {
         let shared = latest.clone();
 
         std::thread::spawn(move || {
-            // COM is initialized for THIS thread only, no clash with the UI.
-            let Ok(com) = COMLibrary::new() else { return };
-            let Ok(conn) = WMIConnection::with_namespace_path("root\\WMI", com) else {
+            // wmi initializes COM for THIS thread as needed, no clash with the UI.
+            let Ok(conn) = WMIConnection::with_namespace_path("root\\WMI") else {
                 return;
             };
 

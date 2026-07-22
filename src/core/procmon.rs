@@ -27,7 +27,7 @@ fn pid_from_instance(name: &str) -> Option<u32> {
 }
 
 /// Read a PDH per-instance counter, summing values per owning PID.
-unsafe fn read_by_pid(counter: isize) -> HashMap<u32, f64> {
+unsafe fn read_by_pid(counter: PDH_HCOUNTER) -> HashMap<u32, f64> {
     let mut map = HashMap::new();
     let mut size = 0u32;
     let mut count = 0u32;
@@ -65,18 +65,18 @@ unsafe fn read_by_pid(counter: isize) -> HashMap<u32, f64> {
 
 /// Persistent per-process GPU counters (utilization needs deltas between samples).
 struct GpuByPid {
-    query: isize,
-    util: isize,
-    mem: isize,
+    query: PDH_HQUERY,
+    util: PDH_HCOUNTER,
+    mem: PDH_HCOUNTER,
     ready: bool,
 }
 
 impl GpuByPid {
     fn new() -> Self {
         unsafe {
-            let mut query = 0isize;
-            let mut util = 0isize;
-            let mut mem = 0isize;
+            let mut query = PDH_HQUERY::default();
+            let mut util = PDH_HCOUNTER::default();
+            let mut mem = PDH_HCOUNTER::default();
             let mut ready = false;
             if PdhOpenQueryW(PCWSTR::null(), 0, &mut query) == 0 {
                 let up: Vec<u16> = "\\GPU Engine(*engtype_3D)\\Utilization Percentage\0"

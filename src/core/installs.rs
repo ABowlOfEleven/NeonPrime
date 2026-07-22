@@ -20,6 +20,8 @@ pub struct App {
     /// `owner/name` for apps installed from a GitHub release MSI instead of
     /// winget. Empty for normal winget apps.
     pub repo: String,
+    /// The app's homepage, used to derive its favicon for the Install list.
+    pub link: String,
 }
 
 // Shape of `winget export` output, we only want the package identifiers.
@@ -164,6 +166,8 @@ struct WinutilApp {
     winget: String,
     #[serde(default)]
     description: String,
+    #[serde(default)]
+    link: String,
 }
 
 const APPS_JSON: &str = include_str!("../../assets/winutil-applications.json");
@@ -181,6 +185,7 @@ pub fn catalog() -> Vec<App> {
             id: a.winget,
             category: a.category,
             repo: String::new(),
+            link: a.link,
         })
         .collect();
     apps.extend(author_apps());
@@ -192,12 +197,15 @@ pub fn catalog() -> Vec<App> {
 /// them all). hopscout ships on winget; the others install from their GitHub
 /// release MSI. NeonPrime itself is intentionally omitted, you're running it.
 fn author_apps() -> Vec<App> {
+    // All author apps live on GitHub, so their favicon is GitHub's mark (the same
+    // fallback WinUtil uses for GitHub-hosted apps).
     let author = |name: &str, desc: &str, id: &str, repo: &str| App {
         name: name.into(),
         desc: desc.into(),
         id: id.into(),
         category: "ABowlOfEleven".into(),
         repo: repo.into(),
+        link: "https://github.com".into(),
     };
     vec![
         author(
@@ -219,6 +227,118 @@ fn author_apps() -> Vec<App> {
             "ABowlOfEleven/Formant",
         ),
     ]
+}
+
+// ── App icons (favicons) ────────────────────────────────────────────────────
+// The Install list can show each app's logo. We derive it from the app's
+// homepage, fetch the favicon from DuckDuckGo's icon service (privacy-respecting,
+// no Google), and cache it to disk so it is a one-time network hit per app. All
+// of this is gated behind the "show app icons" setting.
+
+/// The on-disk favicon cache directory (`%LOCALAPPDATA%\NeonPrime\iconcache`).
+pub fn icon_cache_dir() -> std::path::PathBuf {
+    let mut p = std::env::var_os("LOCALAPPDATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    p.push("NeonPrime");
+    p.push("iconcache");
+    p
+}
+
+/// The registrable host for a homepage link, used both for the favicon service
+/// and the cache filename. Strips the scheme, path, and a leading `www.`.
+pub fn icon_domain(link: &str) -> Option<String> {
+    let host = link
+        .trim()
+        .split("://")
+        .last()?
+        .split('/')
+        .next()?
+        .split('?')
+        .next()?
+        .trim();
+    let host = host.strip_prefix("www.").unwrap_or(host);
+    if host.is_empty() || !host.contains('.') {
+        return None;
+    }
+    // Only real hostname characters, so the domain is safe to use as a cache
+    // filename (no path separators or other surprises from a malformed link).
+    if !host
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
+    {
+        return None;
+    }
+    Some(host.to_ascii_lowercase())
+}
+
+/// The cache path for a link's favicon (whether or not it has been fetched yet).
+pub fn icon_cache_path(link: &str) -> Option<std::path::PathBuf> {
+    let mut p = icon_cache_dir();
+    p.push(format!("{}.ico", icon_domain(link)?));
+    Some(p)
+}
+
+/// The favicon path for `link` only if it is already cached on disk (no network).
+/// Lets the UI show cached icons instantly before fetching the missing ones.
+pub fn cached_icon(link: &str) -> Option<std::path::PathBuf> {
+    let path = icon_cache_path(link)?;
+    if std::fs::metadata(&path)
+        .map(|m| m.len() > 64)
+        .unwrap_or(false)
+    {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+/// Ensure the favicon for `link` is cached, fetching it from DuckDuckGo via the
+/// built-in `curl.exe` if it is not already on disk. Returns the cached path on
+/// success. This does network I/O, so callers must run it off the UI thread, and
+/// only when the "show app icons" setting is on.
+#[cfg(windows)]
+pub fn ensure_icon(link: &str) -> Option<std::path::PathBuf> {
+    use std::os::windows::process::CommandExt;
+
+    let domain = icon_domain(link)?;
+    let path = icon_cache_path(link)?;
+    let is_good = |p: &std::path::Path| std::fs::metadata(p).map(|m| m.len() > 64).unwrap_or(false);
+    if is_good(&path) {
+        return Some(path);
+    }
+    // A ".miss" marker records that DuckDuckGo has no usable icon for this domain,
+    // so we don't re-fetch it (an 8s curl each) on every launch.
+    let mut miss = icon_cache_dir();
+    miss.push(format!("{domain}.miss"));
+    if miss.exists() {
+        return None;
+    }
+    let _ = std::fs::create_dir_all(icon_cache_dir());
+    let url = format!("https://icons.duckduckgo.com/ip3/{domain}.ico");
+    let mut cmd = std::process::Command::new("curl");
+    cmd.args([
+        "-s",
+        "-L",
+        "--max-time",
+        "8",
+        "-o",
+        &path.to_string_lossy(),
+        &url,
+    ]);
+    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    let curl_ok = cmd.status().map(|s| s.success()).unwrap_or(false);
+    if curl_ok && is_good(&path) {
+        return Some(path);
+    }
+    // Never leave a 0-byte/placeholder file behind, or we'd cache a bad image.
+    let _ = std::fs::remove_file(&path);
+    if curl_ok {
+        // curl reached DDG but there's no real icon: remember the miss. A network
+        // or timeout error (curl_ok == false) is left uncached to retry later.
+        let _ = std::fs::write(&miss, b"");
+    }
+    None
 }
 
 /// The full `winget` argument vector for installing an app id.
@@ -326,6 +446,7 @@ mod tests {
             id: "Mozilla.Firefox".into(),
             category: String::new(),
             repo: String::new(),
+            link: String::new(),
         };
         assert!(is_installed(&ff, &scan));
         // Author app matched by ARP display name (substring).
@@ -335,6 +456,7 @@ mod tests {
             id: String::new(),
             category: String::new(),
             repo: "ABowlOfEleven/genomeforge".into(),
+            link: String::new(),
         };
         assert!(is_installed(&gf, &scan));
         let missing = App {
@@ -343,6 +465,7 @@ mod tests {
             id: "No.Thing".into(),
             category: String::new(),
             repo: String::new(),
+            link: String::new(),
         };
         assert!(!is_installed(&missing, &scan));
     }
@@ -353,6 +476,26 @@ mod tests {
         assert!(s.contains("ABowlOfEleven/genomeforge"));
         assert!(s.contains(".msi"));
         assert!(s.contains("msiexec"));
+    }
+
+    #[test]
+    fn icon_domain_extraction() {
+        assert_eq!(
+            icon_domain("https://www.mozilla.org/firefox/"),
+            Some("mozilla.org".into())
+        );
+        assert_eq!(icon_domain("https://github.com"), Some("github.com".into()));
+        assert_eq!(icon_domain("http://7-zip.org/"), Some("7-zip.org".into()));
+        assert_eq!(icon_domain(""), None);
+        assert_eq!(icon_domain("na"), None);
+        // Rejects anything that isn't a clean hostname, keeping the cache
+        // filename safe (no path separators from a malformed link).
+        assert_eq!(icon_domain("https://a\\b.com"), None);
+        // Path is stripped to the host before the first slash.
+        assert_eq!(
+            icon_domain("https://good.com/../etc"),
+            Some("good.com".into())
+        );
     }
 
     #[test]
